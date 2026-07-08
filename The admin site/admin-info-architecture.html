@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BullPort Admin Information Architecture</title>
+  <style>
+    :root {
+      --bg: #f6f8f7;
+      --panel: #ffffff;
+      --ink: #101814;
+      --muted: #65706a;
+      --line: #dfe6e1;
+      --green: #16a34a;
+      --green-dark: #0f6b34;
+      --amber: #b7791f;
+      --red: #b42318;
+      --blue: #2563eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .page {
+      min-height: 100vh;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 16px 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--green);
+      color: white;
+      font-weight: 800;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand-subtitle {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .nav a {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: white;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+      gap: 20px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 22px;
+      box-shadow: 0 14px 40px rgba(16, 24, 20, 0.04);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      border-radius: 999px;
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--green-dark);
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      letter-spacing: 0;
+      line-height: 1.15;
+    }
+
+    h1 {
+      max-width: 820px;
+      font-size: 42px;
+    }
+
+    h2 {
+      font-size: 23px;
+    }
+
+    h3 {
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .lead {
+      max-width: 780px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .meta {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 13px;
+      background: #fbfcfb;
+    }
+
+    .meta span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .meta strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 14px;
+    }
+
+    .section {
+      margin-top: 24px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .section-head p {
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+      padding: 18px;
+    }
+
+    .card p {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: #f1f5f2;
+      color: #334139;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .tag.green {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--green-dark);
+    }
+
+    .tag.amber {
+      background: rgba(183, 121, 31, 0.12);
+      color: var(--amber);
+    }
+
+    .tag.red {
+      background: rgba(180, 35, 24, 0.1);
+      color: var(--red);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+    }
+
+    table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8faf8;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .workflow {
+      counter-reset: step;
+    }
+
+    .workflow .card {
+      position: relative;
+      padding-left: 58px;
+    }
+
+    .workflow .card::before {
+      counter-increment: step;
+      content: counter(step, decimal-leading-zero);
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--green);
+      color: white;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .note {
+      border-left: 4px solid var(--green);
+      background: rgba(22, 163, 74, 0.08);
+      padding: 16px 18px;
+      color: #274231;
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      .hero,
+      .grid.cols-2,
+      .grid.cols-3 {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 32px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      main {
+        padding: 22px 14px 42px;
+      }
+
+      .topbar-inner {
+        padding: 14px;
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">BP</div>
+          <div>
+            <p class="brand-title">BullPort Admin Site</p>
+            <p class="brand-subtitle">Internal broker operations architecture</p>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Page sections">
+          <a href="#modules">Modules</a>
+          <a href="#workflows">Workflows</a>
+          <a href="#roles">Roles</a>
+          <a href="#backend">Backend Hooks</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="panel">
+          <p class="eyebrow">Admin IA Draft</p>
+          <h1>Broker operations console for managing the full BullPort investment lifecycle.</h1>
+          <p class="lead">The admin site will be separate from the investor dashboard. It should control clients, verification, money movement, portfolio products, investments, payouts, instruments, risk, support, reports, roles, and system settings.</p>
+        </div>
+        <aside class="panel">
+          <div class="meta-grid">
+            <div class="meta">
+              <span>Folder</span>
+              <strong>The admin site</strong>
+            </div>
+            <div class="meta">
+              <span>Audience</span>
+              <strong>Internal staff</strong>
+            </div>
+            <div class="meta">
+              <span>First scope</span>
+              <strong>UI prototype</strong>
+            </div>
+            <div class="meta">
+              <span>Later scope</span>
+              <strong>Backend connected</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section" id="modules">
+        <div class="section-head">
+          <div>
+            <h2>Primary Admin Modules</h2>
+            <p>The admin IA should be workflow-based first because it maps cleanly to the client dashboard and demo journey.</p>
+          </div>
+        </div>
+        <div class="grid cols-3">
+          <article class="card">
+            <h3>Overview</h3>
+            <p>Operational control center for pending KYC, deposits, withdrawals, investments, payout tasks, risk alerts, tickets, and recent staff activity.</p>
+            <div class="tag-row"><span class="tag green">KPI</span><span class="tag">Queues</span><span class="tag">Alerts</span></div>
+          </article>
+          <article class="card">
+            <h3>Clients</h3>
+            <p>Search, filter, inspect, restrict, reactivate, and review every investor account with wallet, KYC, investment, and support context.</p>
+            <div class="tag-row"><span class="tag">Profiles</span><span class="tag amber">Restrictions</span></div>
+          </article>
+          <article class="card">
+            <h3>KYC Queue</h3>
+            <p>Review identity documents, proof of address, bank confirmation, liveness checks, approval decisions, rejection reasons, and audit notes.</p>
+            <div class="tag-row"><span class="tag green">Approve</span><span class="tag red">Reject</span><span class="tag amber">Escalate</span></div>
+          </article>
+          <article class="card">
+            <h3>Wallet Operations</h3>
+            <p>Central view for balances, pending funds, reserved funds, deposit confirmations, withdrawal requests, fees, and settlement references.</p>
+            <div class="tag-row"><span class="tag">Ledger</span><span class="tag">Reconcile</span></div>
+          </article>
+          <article class="card">
+            <h3>Portfolio Products</h3>
+            <p>Create and manage portfolio models, risk levels, minimums, projected wording, payout schedules, asset mix, and visibility.</p>
+            <div class="tag-row"><span class="tag green">Publish</span><span class="tag">Draft</span><span class="tag amber">Review</span></div>
+          </article>
+          <article class="card">
+            <h3>Client Investments</h3>
+            <p>Monitor subscriptions, invested capital, current value, projected return labels, top-ups, exits, reinvestments, and mandate status.</p>
+            <div class="tag-row"><span class="tag">Mandates</span><span class="tag">Performance</span></div>
+          </article>
+          <article class="card">
+            <h3>Payouts</h3>
+            <p>Manage dividends, profit credits, schedules, wallet crediting, reinvestment instructions, failed payouts, and approval history.</p>
+            <div class="tag-row"><span class="tag green">Posted</span><span class="tag amber">Scheduled</span></div>
+          </article>
+          <article class="card">
+            <h3>Markets & Instruments</h3>
+            <p>Manage stocks, ETFs, commodities, bonds, REITs, indices, and options with visibility, status, risk labels, and tradability controls.</p>
+            <div class="tag-row"><span class="tag">Tradable</span><span class="tag">Investable</span><span class="tag red">Restricted</span></div>
+          </article>
+          <article class="card">
+            <h3>Risk & Compliance</h3>
+            <p>Review exposure, concentration, options eligibility, suitability, suspicious activity, restricted users, and compliance exceptions.</p>
+            <div class="tag-row"><span class="tag red">High risk</span><span class="tag amber">Review</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Secondary Modules</h2>
+            <p>These support the operational console and become important once the backend is connected.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>Purpose</th>
+                <th>Key screens</th>
+                <th>Connects to client dashboard</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Reports</td>
+                <td>Generate and manage account statements, exports, performance reports, and audit records.</td>
+                <td>Statements, exports, audit trail, report templates.</td>
+                <td>Reports & Statements</td>
+              </tr>
+              <tr>
+                <td>Notifications</td>
+                <td>Publish account notices, KYC updates, funding alerts, risk messages, payout messages, and support replies.</td>
+                <td>Notification composer, templates, sent history, delivery status.</td>
+                <td>Notifications</td>
+              </tr>
+              <tr>
+                <td>Support Tickets</td>
+                <td>Assign, escalate, resolve, and track support cases from investors.</td>
+                <td>Ticket queue, ticket detail, SLA board, category settings.</td>
+                <td>Support</td>
+              </tr>
+              <tr>
+                <td>Admin Users & Roles</td>
+                <td>Control internal staff access by role and permission level.</td>
+                <td>Users, roles, permissions, invite staff, activity log.</td>
+                <td>Not client-facing</td>
+              </tr>
+              <tr>
+                <td>Platform Settings</td>
+                <td>Define approval rules, withdrawal limits, KYC rules, risk thresholds, currencies, and platform defaults.</td>
+                <td>Rules, limits, fee settings, platform profile, integrations.</td>
+                <td>Multiple dashboard workflows</td>
+              </tr>
+              <tr>
+                <td>Content Sync</td>
+                <td>Manage selected public-site and client-dashboard content, such as portfolio copy, education items, and disclosures.</td>
+                <td>Portfolio copy, education content, disclosures, announcements.</td>
+                <td>Public site and dashboard</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="workflows">
+        <div class="section-head">
+          <div>
+            <h2>Core Workflows</h2>
+            <p>These are the workflows the prototype should simulate before backend work begins.</p>
+          </div>
+        </div>
+        <div class="grid cols-2 workflow">
+          <article class="card">
+            <h3>KYC Approval Flow</h3>
+            <p>Client submits documents, admin reviews requirements, approves or rejects, then the client dashboard unlocks funding and withdrawal capabilities.</p>
+          </article>
+          <article class="card">
+            <h3>Deposit Confirmation Flow</h3>
+            <p>Client creates a deposit request, admin verifies payment reference, marks it confirmed, and wallet balance updates on the client side.</p>
+          </article>
+          <article class="card">
+            <h3>Withdrawal Approval Flow</h3>
+            <p>Client requests withdrawal, admin checks KYC, balance, risk, and destination, then approves, holds, rejects, or escalates.</p>
+          </article>
+          <article class="card">
+            <h3>Portfolio Publishing Flow</h3>
+            <p>Admin creates or edits a portfolio product, reviews risk and copy, publishes it, and it becomes available on the investor dashboard and public site if enabled.</p>
+          </article>
+          <article class="card">
+            <h3>Payout Posting Flow</h3>
+            <p>Admin records dividend or profit payout, selects wallet credit or reinvestment, confirms posting, and the client dashboard reflects the entry.</p>
+          </article>
+          <article class="card">
+            <h3>Options Access Flow</h3>
+            <p>Client applies for advanced access, admin reviews suitability and risk profile, assigns access level, and restricted options become available only if approved.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="roles">
+        <div class="section-head">
+          <div>
+            <h2>Admin Roles</h2>
+            <p>The UI should be designed with permissions in mind, even while the first pass remains static.</p>
+          </div>
+        </div>
+        <div class="grid cols-3">
+          <article class="card">
+            <h3>Super Admin</h3>
+            <p>Full platform control, role management, settings, audit review, and final override authority.</p>
+          </article>
+          <article class="card">
+            <h3>Compliance Officer</h3>
+            <p>KYC review, risk exceptions, options suitability, account restrictions, and compliance notes.</p>
+          </article>
+          <article class="card">
+            <h3>Finance Operations</h3>
+            <p>Deposits, withdrawals, fees, reconciliation, payout posting, and settlement tracking.</p>
+          </article>
+          <article class="card">
+            <h3>Portfolio Manager</h3>
+            <p>Portfolio products, allocations, investment mandates, performance notes, and published portfolio content.</p>
+          </article>
+          <article class="card">
+            <h3>Support Agent</h3>
+            <p>Support tickets, user communication, client issue tracking, and operational handoffs.</p>
+          </article>
+          <article class="card">
+            <h3>Read-Only Auditor</h3>
+            <p>Audit logs, reports, client records, admin decisions, and export history without mutation access.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="backend">
+        <div class="section-head">
+          <div>
+            <h2>Backend Contract Preview</h2>
+            <p>These domains should become backend entities later. Designing the admin around them now will reduce rebuild work.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Likely entities</th>
+                <th>Admin writes</th>
+                <th>Dashboard reads</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Clients</td>
+                <td>User, profile, bank account, restrictions, activity log.</td>
+                <td>Approve, restrict, update notes, assign tier.</td>
+                <td>Profile, KYC state, limits, eligibility.</td>
+              </tr>
+              <tr>
+                <td>KYC</td>
+                <td>KYC application, document, checklist item, review note.</td>
+                <td>Approve, reject, request resubmission.</td>
+                <td>Verification progress and blocked actions.</td>
+              </tr>
+              <tr>
+                <td>Wallet</td>
+                <td>Wallet, ledger entry, deposit, withdrawal, fee, settlement.</td>
+                <td>Confirm deposits, approve withdrawals, post fees.</td>
+                <td>Balance, transactions, pending movement.</td>
+              </tr>
+              <tr>
+                <td>Investments</td>
+                <td>Portfolio product, subscription, holding, allocation, mandate.</td>
+                <td>Create products, publish, pause, update allocation.</td>
+                <td>Portfolio listings, active investments, holdings.</td>
+              </tr>
+              <tr>
+                <td>Payouts</td>
+                <td>Dividend, profit credit, payout schedule, reinvestment instruction.</td>
+                <td>Schedule, approve, post, reverse where permitted.</td>
+                <td>Dividends, profits, next payout date.</td>
+              </tr>
+              <tr>
+                <td>Risk</td>
+                <td>Risk profile, risk alert, suitability record, options level.</td>
+                <td>Set risk state, approve options, flag account.</td>
+                <td>Risk center and options access.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="note">
+          Build order recommendation: start with a static admin UI prototype using the existing dashboard component language, then connect backend modules in this order: auth and roles, clients, KYC, wallet, investments, payouts, reports, notifications, support.
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
