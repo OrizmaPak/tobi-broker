@@ -1,0 +1,3216 @@
+@media only screen and (min-width: 1200px) and (max-width: 1250px) {
+    .main-header-style4__content .container {
+        padding-left: 35px;
+        padding-right: 35px;
+    }
+}
+
+@media only screen and (min-width: 1200px) and (max-width: 1570px) {
+    .contact-style1__img {
+        left: -155px;
+    }
+}
+
+
+
+
+
+@media only screen and (min-width: 1200px) and (max-width: 1700px) {
+
+    /*======== Home Two =========*/
+    .choose-style2__img {
+        display: none;
+    }
+
+    .choose-style2 .col-xl-5 {
+        flex: 0 0 auto;
+        width: 50%;
+    }
+
+    .choose-style2 .col-xl-2 {
+        display: none;
+    }
+
+    .single-choose-style2 {
+        padding-right: 39px;
+        margin-right: 0px;
+    }
+
+    .single-choose-style2__content {
+        margin-left: 25px;
+    }
+
+    .single-choose-style2.instyle2 {
+        margin-left: 0px;
+    }
+
+    .single-choose-style2__content.instyle2 {
+        margin-right: 25px;
+    }
+
+    .single-choose-style2__img {
+        width: 260px;
+    }
+
+    .single-choose-style2__content-text li p {
+        font-size: 16px;
+    }
+
+    .single-trade-market-style2__content {
+        padding: 20.5px 10px 16.5px;
+    }
+
+    .single-trade-market-style2__content-text h3 {
+        font-size: 19px;
+    }
+
+    .single-trade-market-style2__img-inner {
+        width: 55px;
+    }
+
+}
+
+/* Medium screen  */
+@media only screen and (min-width: 992px) and (max-width: 1199px) {
+
+    /*======== Home One =========*/
+    .trading-style1__content-title {
+        padding: 19px 30px 19px;
+    }
+
+    .trading-style1__content-text {
+        padding: 28px 30px 68px;
+    }
+
+    .trading-style1__content-btn {
+        padding: 18px 30px 18px;
+    }
+
+    .about-style1__bg {
+        display: none;
+    }
+
+    .about-style1__content-inner .row {
+        align-items: center;
+    }
+
+    .about-style1__fact {
+        margin-top: 60px;
+    }
+
+    .account-style1 .row {
+        justify-content: center;
+    }
+
+    .single-account-style1 {
+        margin-bottom: 55px;
+    }
+
+    .account-style1__text {
+        margin-top: 0px;
+    }
+
+    .platform-style1__bg {
+        width: calc((100% + -210px) / 2);
+    }
+
+    .single-users-style1__content-btn a {
+        padding: 15px 10px 15px;
+    }
+
+    .single-trading-tools-style1__content {
+        padding: 50px 30px 43px;
+    }
+
+    .single-trading-tools-style1__left {
+        padding-right: 20px;
+        flex: 1;
+    }
+
+    .single-trading-tools-style1__right {
+        padding-left: 20px;
+    }
+
+    .single-trading-tools-style1__right-title {
+        display: none;
+    }
+
+    .trading-tools-style1__tab .tabs-content-box {
+        margin: 0px 160px 0px;
+    }
+
+    .trading-tools-style1__tab-btn ul li .count {
+        width: 80px;
+    }
+
+    .single-process-style1 {
+        max-width: 270px;
+        margin: 0 auto 30px;
+    }
+
+    .process-style1 ul li:nth-child(3) .single-process-style1 {
+        margin-bottom: 0;
+    }
+
+    .process-style1 ul li:nth-child(4) .single-process-style1 {
+        margin-bottom: 0;
+    }
+
+    .process-style1 ul li:nth-child(2) .single-process-style1__arrow {
+        display: none;
+    }
+
+    .single-choose-style1__content-text h3 {
+        font-size: 20px;
+    }
+
+    .single-blog-style1__content-meta-info ul li+li {
+        margin-left: 10px;
+    }
+
+    .single-testimonials-style1__content-text {
+        padding: 64px 15px 32px;
+        padding-right: 15px;
+    }
+
+    .partners-style1__inner ul li:nth-child(8) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(9) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(10) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(11) .single-partners-style1 {
+        border-bottom: 1px solid #e4e9ec;
+    }
+
+    .partners-style1__inner ul li:nth-child(4) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(7) .single-partners-style1,
+    .partners-style1__inner ul li:last-child .single-partners-style1 {
+        border-right: 1px solid #e4e9ec;
+    }
+
+    .footer-main__bg {
+        display: none;
+    }
+
+    .footer-widget__social-links {
+        margin-top: 64px;
+    }
+
+    .trading-instruments-style1__single-content-3 {
+        width: 15%;
+    }
+
+    .trading-instruments-style1__single-content-2 {
+        width: 40%;
+    }
+
+    .trading-instruments-style1__single-content-1 {
+        width: 45%;
+    }
+
+    .trading-instruments-style1__single-content-2-graph {
+        margin-top: 7px;
+    }
+
+    .single-account-style2__middle-list li .right p {
+        font-size: 16px;
+    }
+
+    .single-account-style2__bottom-btn2 {
+        padding: 0px 17px 0px;
+        font-size: 12px;
+    }
+
+    .single-account-style2__bottom-btn1 {
+        font-size: 12px;
+    }
+
+    .single-account-style2__bottom {
+        padding: 18px 20px 18px;
+        padding-right: 112px;
+    }
+
+    .trading-tools-style2__img {
+        position: relative;
+        top: 0px;
+        bottom: 0;
+        margin-top: 100px;
+    }
+
+    .single-choose-style2 {
+        max-width: 700px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner {
+        border: 2px solid #e3e8ef;
+        border-left: 2px solid #e3e8ef;
+    }
+
+    .choose-style2__img-box {
+        margin: 0 auto;
+    }
+
+    .choose-style2__img-inner {
+        text-align: center;
+    }
+
+    .choose-style2__img-box {
+        left: 0px;
+    }
+
+    .choose-style2__img {
+        margin-top: 60px;
+        margin-bottom: 60px;
+    }
+
+    .single-choose-style2.instyle2 {
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner.instyle2 {
+        border-right: 2px solid #e3e8ef;
+    }
+
+    .platform-style2__content {
+        margin-top: 60px;
+    }
+
+
+    .blog-style2__single-date {
+        height: 70px;
+        width: 60px;
+    }
+
+    .blog-style2__single-date h3 {
+        font-size: 16px;
+        line-height: 18px;
+    }
+
+    .blog-style2__single-date h3 span {
+        font-size: 11px;
+    }
+
+    .blog-style2__single-meta-box li h5 {
+        font-size: 14px;
+    }
+
+    .blog-style2__single-content {
+        margin-left: 15px;
+    }
+
+    .blog-style2__single {
+        padding: 25px 20px 25px;
+    }
+
+    .blog-style2__single-img-title h2 a br {
+        display: none;
+    }
+
+    .blog-style2__single.style2 .blog-style2__single-content h2 a br {
+        display: none;
+    }
+
+    .faq-style1__content {
+        max-width: 545px;
+        width: 100%;
+    }
+
+    .contact-style1__img {
+        top: -120px;
+        left: -300px;
+    }
+
+    .faq-style1__content .accordion-box .block .acc-btn.active h3 {
+        font-size: 18px;
+    }
+
+    .contact-style1__content {
+        margin-left: 245px;
+    }
+
+    .footer-widget-style2__about {
+        margin-bottom: 90px;
+    }
+
+    .trade-market-style3__top {
+        display: block;
+    }
+
+    .trade-market-style3__top-text {
+        margin-left: 0px;
+        margin-top: 22px;
+    }
+
+    .trade-market-style3__content {
+        margin-top: 55px;
+        max-width: 620px;
+        width: 100%;
+    }
+
+    .trade-market-style3__content::before {
+        top: 10px;
+        bottom: 0px;
+    }
+
+    .about-style2__img {
+        max-width: 550px;
+        width: 100%;
+    }
+
+    .about-style2__content {
+        margin-top: 70px;
+        margin-left: 0px;
+    }
+
+    .choose-style3__img {
+        display: none;
+    }
+
+    .choose-style3__content {
+        margin-bottom: 53px;
+        margin-top: 20px;
+    }
+
+    .single-blog-style3 {
+        padding: 25px 20px 25px;
+    }
+
+    .single-blog-style3__content-date {
+        width: 60px;
+        height: 70px;
+    }
+
+    .single-blog-style3__content-date h4 {
+        font-size: 16px;
+        line-height: 22px;
+    }
+
+    .single-blog-style3__content-date h6 {
+        font-size: 11px;
+    }
+
+    .single-blog-style3__content-meta-info li h4 {
+        font-size: 14px;
+    }
+
+    .single-blog-style1__content-title h3 {
+        font-size: 23px;
+    }
+
+    .testimonials-style2__img {
+        right: -105px;
+    }
+
+    .footer-top-style1__banner {
+        padding: 32px 15px 32px;
+    }
+
+    .footer-top-style1__banner-title h2 {
+        font-size: 24px;
+    }
+
+    .single-footer-widget-style3__subscribe {
+        margin-top: 40px;
+    }
+
+    .single-trade-market-style2 {
+        margin-bottom: 30px;
+    }
+
+    .trade-market-style2__wrap {
+        position: relative;
+        display: block;
+        padding: 30px 30px 0px;
+    }
+
+    .fact-counter-style3__inner {
+        margin-bottom: 30px;
+    }
+
+    .account-style1.account-style3 {
+        padding-top: 90px;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul li {
+        border-bottom: 0px solid #3a3a3a;
+    }
+
+    .choose-style4__title-box .sec-title h2 {
+        font-size: 28px;
+    }
+
+    .choose-style4__title-box {
+        padding: 42px 25px 34px;
+    }
+
+    .single-choose-style4__content-text h3 {
+        font-size: 21px;
+    }
+
+    .choose-style4__img {
+        height: 275px;
+    }
+
+    .choose-style4__img img {
+        height: 100%;
+    }
+
+    .testimonials-style1--style3 .single-testimonials-style1__content-name .icon i {
+        font-size: 65px;
+        line-height: 65px;
+    }
+
+    .testimonials-style1--style3 .single-testimonials-style1__content-name .icon {
+        top: -15px;
+    }
+
+    .faq-style1__left {
+        margin-bottom: 60px;
+    }
+
+    .single-footer-widget-style4.mt70 {
+        margin-top: 70px;
+    }
+
+
+
+    /*======== Stocks Css =========*/
+
+    .stocks-style1__img {
+        max-width: 770px;
+    }
+
+    .stocks-style1__content {
+        max-width: 770px;
+        margin-top: 60px;
+    }
+
+
+
+
+    /*======== Accounts-1 Standard Account Css =========*/
+
+    .standard-account {
+        padding: 120px 0 98px;
+    }
+
+    .standard-account__left {
+        margin-right: 0;
+        max-width: 770px;
+    }
+
+    .standard-account__right {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+
+    /*======== Education Details Css =========*/
+
+    .video-style1 {
+        padding: 120px 0px 98px;
+    }
+
+    .video-style1__img {
+        max-width: 770px;
+        margin-right: 0px;
+    }
+
+    .video-style1__content {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+    /*======== History Css =========*/
+
+    .single-history-page__content {
+        margin-left: 85px;
+        margin-right: 0;
+    }
+
+    .single-history-page__content--instyle2 {
+        margin-left: 0;
+        margin-right: 85px;
+    }
+
+    /*======== Coming Soon Css =========*/
+
+    .coming-soon-page__big-title h2 {
+        font-size: 75px;
+    }
+
+    /*======== Blog 1 Css =========*/
+
+    .blog-page__sidebar {
+        margin-left: 0;
+    }
+
+    .blog-page__sidebar.style2 {
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .blog-page-three__content {
+        margin-left: 0px;
+    }
+
+    .blog-page__sidebar.style3 {
+        margin-left: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 60px auto 0px;
+    }
+
+    .blog-page-four__content {
+        margin-right: 0px;
+    }
+
+    .blog-details-page .blog-page__sidebar.style2 {
+        margin-left: 0px;
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .main-contact-form__info {
+        max-width: 650px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .contact-form {
+        max-width: 650px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+
+
+    /*======== History Page =========*/
+
+    .history-page__inner {
+        padding: 0px 0px 0px;
+    }
+
+    .history-page__inner::before {
+        display: none;
+    }
+
+    .single-history-page__angle1,
+    .single-history-page__angle2,
+    .single-history-page__angle3 {
+        display: none;
+    }
+
+}
+
+
+
+
+
+
+
+
+
+/* Tablet Layout: 768px. */
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+
+    /*======== Default Css =========*/
+    .sec-title p br {
+        display: none;
+    }
+
+    /*======== Home One =========*/
+    .trading-style1__single {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .about-style1__bg {
+        display: none;
+    }
+
+    .about-style1__content-inner .row {
+        align-items: center;
+    }
+
+    .about-style1__fact {
+        margin-top: 60px;
+    }
+
+    .single-account-style1 {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .platform-style1__bg {
+        display: none;
+    }
+
+    .users-style1__inner ul li .single-users-style1 {
+        padding: 15px 0px 15px;
+    }
+
+    .users-style1__inner {
+        padding: 30px 0px 30px;
+    }
+
+    .users-style1__inner ul li .single-users-style1 {
+        border-right: none;
+    }
+
+    .trading-tools-style1__tab .tabs-content-box {
+        position: relative;
+        margin: 0;
+    }
+
+    .single-trading-tools-style1__content {
+        padding: 50px 20px 43px;
+    }
+
+    .single-trading-tools-style1__right {
+        padding-left: 70px;
+    }
+
+    .trading-tools-style1__tab-btn {
+        justify-content: inherit;
+        gap: 30px;
+        padding: 30px 0px 30px;
+    }
+
+    .single-process-style1 {
+        max-width: 270px;
+        margin: 0 auto 30px;
+    }
+
+    .process-style1 ul li:nth-child(3) .single-process-style1 {
+        margin-bottom: 0;
+    }
+
+    .process-style1 ul li:nth-child(4) .single-process-style1 {
+        margin-bottom: 0;
+    }
+
+    .single-process-style1__arrow {
+        display: none;
+    }
+
+    .choose-slider-slider-nav {
+        right: 7%;
+    }
+
+    .partners-style1__inner ul li:nth-child(8) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(9) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(10) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(11) .single-partners-style1 {
+        border-bottom: 1px solid #e4e9ec;
+    }
+
+    .partners-style1__inner ul li:nth-child(4) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(7) .single-partners-style1,
+    .partners-style1__inner ul li:last-child .single-partners-style1 {
+        border-right: 1px solid #e4e9ec;
+    }
+
+    .single-partners-style1__content {
+        text-align: center;
+    }
+
+    .footer-main__bg {
+        display: none;
+    }
+
+    .footer-widget__social-links {
+        margin-top: 64px;
+    }
+
+    .footer-bottom-inner {
+        flex-direction: column;
+    }
+
+    .copyright-text {
+        margin-bottom: 15px;
+    }
+
+    .trading-instruments-style1__video-box {
+        margin-top: 20px;
+    }
+
+    .trading-instruments-style1__tab .tabs-content-box {
+        border-top: 1px solid #2b3850;
+    }
+
+    .trading-instruments-style1__single-content-box ul {
+        border-left: none;
+    }
+
+    .trading-instruments-style1__tab-btn {
+        margin-bottom: 50px;
+    }
+
+    .single-account-style2 {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 40px;
+    }
+
+    .trading-tools-style2__img {
+        position: relative;
+        top: 0px;
+        bottom: 0;
+        margin-top: 100px;
+    }
+
+    .single-choose-style2 {
+        max-width: 700px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner {
+        border: 2px solid #e3e8ef;
+        border-left: 2px solid #e3e8ef;
+    }
+
+    .choose-style2__img-box {
+        margin: 0 auto;
+    }
+
+    .choose-style2__img-inner {
+        text-align: center;
+    }
+
+    .choose-style2__img-box {
+        left: 0px;
+    }
+
+    .choose-style2__img {
+        margin-top: 60px;
+        margin-bottom: 60px;
+    }
+
+    .single-choose-style2.instyle2 {
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner.instyle2 {
+        border-right: 2px solid #e3e8ef !important;
+    }
+
+    .platform-style2__content {
+        margin-top: 60px;
+    }
+
+    .platform-style2__tab-btn::before {
+        display: none;
+    }
+
+    .platform-style2__tab-btn::after {
+        display: none;
+    }
+
+    .platform-style2__tab-btn {
+        padding-right: 0px;
+        max-width: 450px;
+        width: 100%;
+    }
+
+    .single-platform-style2 {
+        margin-top: 50px;
+        max-width: 600px;
+        width: 100%;
+    }
+
+    .faq-style1__left {
+        margin-bottom: 60px;
+    }
+
+    .faq-style1__content {
+        position: relative;
+        max-width: 100%;
+    }
+
+    .contact-style1__content {
+        margin-left: 0px;
+    }
+
+    .contact-style1__img {
+        display: none;
+    }
+
+    .contact-style1 {
+        padding: 60px 0px 0px;
+    }
+
+    .contact-style1__content {
+        padding: 120px 0px 120px;
+    }
+
+    .footer-widget-style2__about {
+        margin-bottom: 90px;
+    }
+
+    .footer-bottom-style2-inner {
+        flex-direction: column;
+    }
+
+    .footer-bottom-style2__left {
+        margin-bottom: 10px;
+    }
+
+    .trade-market-style3__top {
+        display: block;
+    }
+
+    .trade-market-style3__top-text {
+        margin-left: 0px;
+        margin-top: 22px;
+    }
+
+    .trade-market-style3__content {
+        margin-top: 55px;
+        max-width: 620px;
+        width: 100%;
+    }
+
+    .trade-market-style3__content::before {
+        top: 10px;
+        bottom: 0px;
+    }
+
+    .about-style2__img {
+        max-width: 550px;
+        width: 100%;
+    }
+
+    .about-style2__content {
+        margin-top: 70px;
+        margin-left: 0px;
+    }
+
+    .choose-style3__img {
+        display: none;
+    }
+
+    .choose-style3__content {
+        margin-bottom: 53px;
+        margin-top: 20px;
+    }
+
+    .testimonials-style2__rotated {
+        position: relative;
+        top: 0px;
+        margin-left: 0;
+        margin-top: 30px;
+    }
+
+    .testimonials-style2__img {
+        display: none;
+    }
+
+    .footer-top-style1__banner {
+        padding: 32px 20px 32px;
+        margin-bottom: 30px;
+    }
+
+    .footer-top-style1::before {
+        display: none;
+    }
+
+    .footer-top-style1__banner-title h2 {
+        font-size: 28px;
+    }
+
+    .single-footer-widget-style3__subscribe {
+        margin-top: 40px;
+    }
+
+    .single-trade-market-style2 {
+        margin-bottom: 30px;
+    }
+
+    .trade-market-style2__wrap {
+        position: relative;
+        display: block;
+        padding: 30px 30px 0px;
+    }
+
+    .single-trade-market-style2__img-inner {
+        width: 60px;
+    }
+
+    .single-trade-market-style2__content {
+        padding: 20.5px 10px 16.5px;
+    }
+
+    .single-trade-market-style2__content-text p {
+        font-size: 15px;
+    }
+
+    .fact-counter-style3__inner {
+        margin-bottom: 30px;
+    }
+
+    .account-style1.account-style3 {
+        padding-top: 90px;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul li {
+        border-bottom: 0px solid #3a3a3a;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul {
+        border-left: 0px solid #3a3a3a;
+    }
+
+    .single-choose-style4 {
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .choose-style4__title-box {
+        padding: 64px 30px 58px;
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .choose-style4__title-box .sec-title h2 {
+        font-size: 40px;
+    }
+
+    .choose-style4__img-box {
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .testimonials-style1--style3 .single-testimonials-style1__content-name .icon i {
+        font-size: 80px;
+        line-height: 80px;
+    }
+
+    .single-blog-style1 {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 33px;
+    }
+
+    .blog-style1--style4 {
+        padding: 120px 0px 80px;
+    }
+
+    .faq-style1__left {
+        margin-bottom: 60px;
+    }
+
+    .single-footer-widget-style4.mt70 {
+        margin-top: 70px;
+    }
+
+    .footer-bottom-style4-inner {
+        flex-direction: column;
+    }
+
+
+
+    /*======== Markets Css =========*/
+
+    .all-market-style1__title-box {
+        padding: 18px 20px 18px;
+    }
+
+    .all-market-style1__text-box {
+        padding: 32px 20px 0px;
+    }
+
+    .tall-market-style1__btn-box {
+        padding: 18px 20px 18px;
+    }
+
+    .all-market-style1__text-box h2 {
+        font-size: 40px;
+        margin-bottom: -9px;
+    }
+
+
+
+    /*======== Stocks Css =========*/
+
+    .stocks-style1__img {
+        max-width: 570px;
+    }
+
+    .stocks-style1__content {
+        max-width: 570px;
+        margin-top: 60px;
+    }
+
+
+
+    /*======== Accounts-1 Standard Account Css =========*/
+
+    .standard-account {
+        padding: 120px 0 98px;
+    }
+
+    .standard-account__left {
+        margin-right: 0;
+        max-width: 770px;
+    }
+
+    .standard-account__right {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+
+    /*======== Education Css =========*/
+
+    .single-education-page__content {
+        padding: 13px 30px 33px;
+    }
+
+
+    /*======== Education Details Css =========*/
+
+    .video-style1 {
+        padding: 120px 0px 98px;
+    }
+
+    .video-style1__img {
+        max-width: 770px;
+        margin-right: 0px;
+    }
+
+    .video-style1__content {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+
+
+    /*======== History Css =========*/
+
+    .single-history-page {
+        display: block;
+        max-width: 700px;
+        width: 100%;
+    }
+
+    .history-page__inner {
+        padding: 0px 0px 0px;
+    }
+
+    .history-page__inner::before {
+        display: none;
+    }
+
+    .single-history-page__angle1,
+    .single-history-page__angle2,
+    .single-history-page__angle3 {
+        display: none;
+    }
+
+    .single-history-page__img {
+        width: 380px;
+        margin: 0px auto;
+    }
+
+    .single-history-page__year {
+        margin-left: 0px;
+        text-align: center;
+        margin-top: 34px;
+    }
+
+    .single-history-page__content {
+        margin-left: 0px;
+        text-align: center;
+        margin-top: 15px;
+    }
+
+    .single-history-page__year--instyle2 {
+        margin-left: 0px;
+        margin-right: 0px;
+    }
+
+    .single-history-page__content--instyle2 {
+        margin-left: 0;
+        margin-right: 0px;
+    }
+
+    .history-page__inner {
+        padding: 0px 0px 0px;
+    }
+
+    .history-page__inner::before {
+        display: none;
+    }
+
+
+
+    /*======== 404 Css =========*/
+
+    .error-page__content-big-title h2 {
+        font-size: 180px;
+    }
+
+    .error-page__content-big-title h3 {
+        font-size: 70px;
+    }
+
+
+    /*======== Coming Soon Css =========*/
+
+    .coming-soon-page__big-title h2 {
+        font-size: 60px;
+    }
+
+    .coming-soon-page__text p br {
+        display: none;
+    }
+
+    /*======== Blog 1 Css =========*/
+
+    .blog-page__sidebar {
+        margin-left: 0;
+        max-width: 500px;
+        margin: 60px auto 0px;
+    }
+
+    /*======== Blog 2 Css =========*/
+
+    .single-blog-style1__content-title h3 {
+        font-size: 20px;
+        line-height: 28px;
+    }
+
+    .blog-page__sidebar.style2 {
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .blog-page-three__content {
+        margin-left: 0px;
+    }
+
+    .blog-page__sidebar.style3 {
+        margin-left: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 60px auto 0px;
+    }
+
+    .blog-page-four__content {
+        margin-right: 0px;
+    }
+
+    .blog-details-page .blog-page__sidebar.style2 {
+        margin-left: 0px;
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .faq-style1-instyle3 {
+        padding-bottom: 0;
+    }
+
+    .main-contact-form__info {
+        max-width: 650px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .contact-form {
+        max-width: 650px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+
+}
+
+/* Mobile Layout: 320px. */
+@media only screen and (max-width: 767px) {
+
+
+	.team-details .image-column{
+		margin-bottom: 60px;
+	}
+    .sec-title h2 {
+        font-size: 30px;
+        line-height: 1.3em;
+    }
+
+    .sec-title h2 br {
+        display: none;
+    }
+
+    .sec-title p br {
+        display: none;
+    }
+
+    /*======== Home One =========*/
+    .trading-style1__single {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .trading-style1__content-title {
+        padding: 19px 30px 19px;
+    }
+
+    .trading-style1__content-text {
+        padding: 28px 30px 68px;
+    }
+
+    .trading-style1__content-btn {
+        padding: 18px 30px 18px;
+    }
+
+    .about-style1__content-right {
+        margin-top: 50px;
+    }
+
+    .about-style1__content-btn {
+        display: block;
+    }
+
+    .about-style1__content-btn a {
+        margin-left: 0px;
+        margin-top: 10px;
+    }
+
+    .about-style1__fact {
+        margin-top: 57px;
+    }
+
+    .about-style1__bg {
+        display: none;
+    }
+
+    .account-style1__img-content {
+        padding: 23px 20px 0px;
+    }
+
+    .account-style1__img-content-text h3 {
+        font-size: 19px;
+    }
+
+    .account-style1__text {
+        display: block;
+    }
+
+    .account-style1__text a {
+        margin-left: 0px;
+        margin-top: 10px;
+    }
+
+    .platform-style1__bg {
+        display: none;
+    }
+
+    .platform-style1__tab-btn ul {
+        display: block;
+    }
+
+    .platform-style1__tab-btn ul li {
+        border-right: none;
+    }
+
+    .users-style1__inner ul li .single-users-style1 {
+        padding: 15px 0px 15px;
+    }
+
+    .users-style1__inner {
+        padding: 30px 25px 30px;
+    }
+
+    .users-style1__inner ul li .single-users-style1 {
+        border-right: none;
+    }
+
+    .single-users-style1__content-btn {
+        flex-direction: column;
+    }
+
+    .single-users-style1__content-btn a+a {
+        margin-left: 0px;
+        margin-top: 10px;
+    }
+
+    .market-style1__tab-btn ul li {
+        padding: 13px 21px 13px;
+    }
+
+    .market-style1__text {
+        display: block;
+    }
+
+    .market-style1__text a {
+        margin-left: 0px;
+        margin-top: 10px;
+    }
+
+    .trading-tools-style1__tab .tabs-content-box {
+        position: relative;
+        margin: 0;
+    }
+
+    .single-trading-tools-style1__content {
+        padding: 50px 15px 43px;
+        flex-direction: column;
+    }
+
+    .single-trading-tools-style1__right {
+        padding-left: 55px;
+        padding-top: 50px;
+    }
+
+    .trading-tools-style1__tab-btn {
+        justify-content: inherit;
+        gap: 30px;
+        padding: 0px 0px 30px;
+        flex-direction: column;
+    }
+
+    .single-trading-tools-style1__left {
+        padding-right: 0;
+    }
+
+    .single-process-style1 {
+        max-width: 270px;
+        margin: 0 auto 30px;
+    }
+
+    .process-style1 ul li:nth-child(2) .single-process-style1 {
+        margin-bottom: 98px;
+    }
+
+    .process-style1 ul li:nth-child(4) .single-process-style1 {
+        margin-bottom: 0;
+    }
+
+    .single-process-style1__arrow {
+        display: none;
+    }
+
+    .process-style1 {
+        padding: 90px 0 81px;
+    }
+
+    .trading-tools-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .market-style1 {
+        padding: 90px 0px 82px;
+    }
+
+    .account-style1 {
+        padding: 90px 0px 82px;
+    }
+
+    .about-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .trading-style1 {
+        padding: 90px 0px 60px;
+    }
+
+    .single-choose-style1 {
+        padding: 23px 20px 32px;
+        max-width: 330px;
+        margin: 0 auto 0;
+    }
+
+    .single-choose-style1__content-text h3 {
+        font-size: 20px;
+    }
+
+    .choose-slider-slider-nav {
+        position: relative;
+        top: 0;
+        right: auto;
+        margin-bottom: 30px;
+    }
+
+    .choose-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .single-blog-style1__content-meta-info ul li+li {
+        margin-left: 10px;
+    }
+
+    .blog-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .single-testimonials-style1__content-text {
+        padding: 64px 15px 32px;
+        padding-right: 15px;
+    }
+
+    .testimonials-slider-slider-nav {
+        position: relative;
+        top: 0;
+        margin-bottom: 30px;
+        right: 0px;
+    }
+
+    .testimonials-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .partners-style1__inner ul li:nth-child(8) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(9) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(10) .single-partners-style1,
+    .partners-style1__inner ul li:nth-child(11) .single-partners-style1 {
+        border-bottom: 1px solid #e4e9ec;
+    }
+
+    .single-partners-style1__content {
+        text-align: center;
+    }
+
+    .partners-style1 {
+        padding: 90px 0px 90px;
+    }
+
+    .platform-style1 {
+        padding: 90px 0px 184px;
+    }
+
+
+
+    .footer-main__bg {
+        display: none;
+    }
+
+    .footer-widget__social-links {
+        margin-top: 64px;
+    }
+
+    .footer-bottom-inner {
+        flex-direction: column;
+    }
+
+    .copyright-text {
+        margin-bottom: 15px;
+    }
+
+    .footer-widget-about {
+        margin-bottom: 70px;
+    }
+
+    .footer-widget__social-links ul li a {
+        height: 50px;
+        width: 50px;
+        font-size: 18px;
+    }
+
+    .single-footer-widget__courses {
+        padding-left: 0px;
+    }
+
+    .single-footer-widget__courses-img {
+        position: relative;
+        top: 0px;
+    }
+
+    .single-footer-widget__courses-content {
+        margin-top: 20px;
+    }
+
+    .footer-card {
+        flex-direction: column;
+    }
+
+    .footer-card__text {
+        margin-bottom: 15px;
+    }
+
+    .copyright-text {
+        text-align: center;
+    }
+
+    /*======== Home 02 =========*/
+    .single-trade-market-style1 {
+        padding-left: 0px;
+    }
+
+    .single-trade-market-style1__img {
+        position: relative;
+        top: 0px;
+        transform: translateY(0%);
+        left: 0;
+        justify-content: center;
+        margin-bottom: 30px;
+    }
+
+    .trade-market-style1__bottom {
+        flex-direction: column;
+    }
+
+    .trade-market-style1__bottom-text {
+        margin-top: 15px;
+        margin-left: 0px;
+        text-align: center;
+    }
+
+    .trading-instruments-style1__video-box {
+        margin-top: 20px;
+    }
+
+    .trading-instruments-style1__tab .tabs-content-box {
+        border-top: 1px solid #2b3850;
+    }
+
+    .trading-instruments-style1__single-content-box ul {
+        border-left: none;
+    }
+
+    .trading-instruments-style1__tab-btn {
+        padding: 35px 25px 30px;
+        margin: 20px;
+    }
+
+    .trading-instruments-style1__tab-btn {
+        margin-bottom: 50px;
+    }
+
+    .trading-instruments-style1__chat-box {
+        display: block;
+    }
+
+    .trading-instruments-style1__content {
+        margin-top: 10px;
+    }
+
+    .trading-instruments-style1__single-content-1 {
+        width: 100%;
+    }
+
+    .trading-instruments-style1__single-content-2 {
+        width: 100%;
+    }
+
+    .trading-instruments-style1__single-content-3 {
+        width: 100%;
+        padding-bottom: 29px;
+    }
+
+    .trading-instruments-style1__single-content-2-inner {
+        flex-direction: column;
+    }
+
+    .trading-instruments-style1__single-content-1 {
+        padding: 32px 30px 0px;
+    }
+
+    .trading-instruments-style1__single-content-2-graph {
+        margin-top: 15px;
+    }
+
+    .trading-instruments-style1__single-content-2 {
+        padding: 31px 30px 25px;
+    }
+
+    .trading-instruments-style1__eur-to-usd-content {
+        flex: none;
+    }
+
+    .trading-instruments-style1__eur-to-usd {
+        justify-content: center;
+    }
+
+    .single-account-style2 {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 40px;
+    }
+
+    .single-account-style2__middle-list li .right p {
+        font-size: 16px;
+    }
+
+    .single-account-style2__bottom-btn2 {
+        padding: 0px 17px 0px;
+        font-size: 12px;
+    }
+
+    .single-account-style2__bottom-btn1 {
+        font-size: 12px;
+    }
+
+    .single-account-style2__bottom {
+        padding: 18px 20px 18px;
+        padding-right: 112px;
+    }
+
+    .trading-tools-style2__img {
+        position: relative;
+        top: 0px;
+        bottom: 0;
+        margin-top: 100px;
+    }
+
+    .trading-tools-style2__content {
+        padding-left: 0px;
+    }
+
+    .trading-tools-style2__tab-btn {
+        position: relative;
+        display: block;
+        top: 0px;
+        left: 0;
+        margin-bottom: 60px;
+    }
+
+    .choose-style2 .container {
+        padding: 0px 15px 0px;
+    }
+
+    .single-choose-style2 {
+        max-width: 700px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner {
+        display: block;
+        border: 2px solid #e3e8ef;
+        border-left: 2px solid #e3e8ef;
+    }
+
+    .choose-style2__img-box {
+        margin: 0 auto;
+    }
+
+    .choose-style2__img-inner {
+        text-align: center;
+    }
+
+    .choose-style2__img-box {
+        display: none;
+    }
+
+    .choose-style2__img {
+        margin-top: 60px;
+        margin-bottom: 60px;
+    }
+
+    .single-choose-style2.instyle2 {
+        margin: 0 auto;
+    }
+
+    .single-choose-style2__inner.instyle2 {
+        border-right: 2px solid #e3e8ef !important;
+    }
+
+    .single-choose-style2__content {
+        margin-left: 0px;
+        margin-top: 20px;
+    }
+
+    .platform-style2__content {
+        margin-top: 60px;
+    }
+
+    .platform-style2__tab-btn::before {
+        display: none;
+    }
+
+    .platform-style2__tab-btn::after {
+        display: none;
+    }
+
+    .platform-style2__tab-btn {
+        padding-right: 0px;
+        max-width: 450px;
+        width: 100%;
+    }
+
+    .single-platform-style2 {
+        margin-top: 50px;
+        max-width: 600px;
+        width: 100%;
+    }
+
+    .single-platform-style2__content-features li h4 {
+        font-size: 15px;
+        line-height: 23px;
+    }
+
+    .single-platform-style2__content-text p br {
+        display: none;
+    }
+
+    .single-platform-style2__img-btn a {
+        padding: 16px 14px 16px;
+
+    }
+
+    .blog-style2__single-top {
+        display: block;
+    }
+
+    .blog-style2__single-content {
+        margin-left: 0px;
+        margin-top: 20px;
+    }
+
+    .blog-style2__single-meta-box {
+        display: block;
+    }
+
+    .blog-style2__single-meta-box li+li {
+        margin-left: 0px;
+        margin-top: 5px;
+    }
+
+    .blog-style2__single-img-title h2 a br {
+        display: none;
+    }
+
+    .blog-style2__single-img-title h2 {
+        font-size: 20px;
+        line-height: 30px;
+    }
+
+    .blog-style2__single.style2 .blog-style2__single-content {
+        margin-left: 0px;
+    }
+
+    .blog-style2__single.style2 .blog-style2__single-content h2 a br {
+        display: none;
+    }
+
+    .faq-style1__left {
+        margin-bottom: 60px;
+    }
+
+    .faq-style1__content {
+        position: relative;
+        max-width: 100%;
+    }
+
+    .contact-style1__content {
+        margin-left: 0px;
+    }
+
+    .contact-style1__img {
+        display: none;
+    }
+
+    .contact-style1 {
+        padding: 60px 0px 0px;
+    }
+
+    .contact-style1__content {
+        padding: 120px 0px 112px;
+        display: block;
+    }
+
+    .faq-style1__content {
+        padding: 29px 17px 29px;
+    }
+
+    .faq-style1__content .accordion-box .block .acc-btn {
+        padding: 21px 15px 21px;
+        padding-right: 65px;
+    }
+
+    .faq-style1__content .accordion-box .block .acc-btn.active h3 {
+        font-size: 18px;
+    }
+
+    .contact-style1__content-text-shape {
+        display: none;
+    }
+
+    .contact-style1__content-phn {
+        margin-left: 0px;
+    }
+
+    .contact-style1__content-text {
+        max-width: 230px;
+        padding-right: 0px;
+        padding-bottom: 45px;
+    }
+
+    .contact-style1__content-mail {
+        margin-bottom: 40px;
+    }
+
+    .footer-widget-style2__about {
+        margin-bottom: 70px;
+    }
+
+    .footer-bottom-style2-inner {
+        flex-direction: column;
+    }
+
+    .footer-bottom-style2__left {
+        margin-bottom: 10px;
+        flex-direction: column;
+    }
+
+    .single-footer-widget-style2.mt70 {
+        margin-top: 70px;
+    }
+
+    .footer-logo-style2 {
+        border-right: none;
+        padding-right: 0px;
+        margin-bottom: 10px;
+    }
+
+    .copyright-text-style2 {
+        text-align: center;
+    }
+
+    .trade-market-style3__top {
+        display: block;
+    }
+
+    .trade-market-style3__top-text {
+        margin-left: 0px;
+        margin-top: 22px;
+    }
+
+    .trade-market-style3__content {
+        margin-top: 55px;
+        max-width: 620px;
+        width: 100%;
+    }
+
+    .trade-market-style3__content::before {
+        display: none;
+    }
+
+    .trade-market-style3__top-text p br {
+        display: none;
+    }
+
+    .trade-market-style3__img {
+        padding-left: 0px;
+    }
+
+    .trade-market-style3__nav {
+        display: none;
+    }
+
+    .about-style2__img {
+        max-width: 550px;
+        width: 100%;
+        padding-left: 0px;
+        padding-right: 0px;
+    }
+
+    .about-style2__content {
+        margin-top: 70px;
+        margin-left: 0px;
+    }
+
+    .about-style2__img-list {
+        position: relative;
+        bottom: 0px;
+        right: 0px;
+        margin-top: 30px;
+    }
+
+    .about-style2__content-text2-single {
+        margin-bottom: 30px;
+    }
+
+    .about-style2__content-btn {
+        margin-top: 15px;
+    }
+
+    .single-trading-tools-style1__right-title {
+        display: none;
+    }
+
+    .single-trading-tools-style1__right {
+        padding-left: 0px;
+    }
+
+    .choose-style3__img {
+        display: none;
+    }
+
+    .choose-style3__content {
+        margin-bottom: 53px;
+        margin-top: 20px;
+    }
+
+    .single-blog-style3__content {
+        display: block;
+    }
+
+    .single-blog-style3__content-meta-info {
+        display: block;
+    }
+
+    .single-blog-style3__content-meta-info li+li {
+        margin-left: 0px;
+        margin-top: 7px;
+    }
+
+    .single-blog-style3__content-inner {
+        margin-top: 20px;
+        margin-left: 0px;
+    }
+
+    .single-blog-style3 {
+        padding: 25px 20px 25px;
+    }
+
+    .single-blog-style3__img-title {
+        left: 15px;
+        bottom: 10px;
+        right: 15px;
+    }
+
+    .single-blog-style3__img-title h3 {
+        font-size: 20px;
+        line-height: 28px;
+    }
+
+    .testimonials-style2__rotated {
+        position: relative;
+        top: 0px;
+        margin-left: 0;
+        margin-top: 30px;
+    }
+
+    .testimonials-style2__img {
+        display: none;
+    }
+
+    .testimonials-style2__content {
+        padding: 40px 15px 40px;
+    }
+
+    .single-testimonials-style2__top {
+        padding-left: 0;
+    }
+
+    .single-testimonials-style2__top-emoji {
+        position: relative;
+        top: 0;
+        margin-bottom: 10px;
+    }
+
+    .single-testimonials-style2 {
+        padding: 34px 15px 40px;
+    }
+
+    .testimonials-style2__inner {
+        padding-top: 30px;
+    }
+
+    .testimonials-style2 {
+        padding: 0px 0px 90px;
+    }
+
+    .footer-top-style1__banner {
+        padding: 32px 15px 32px;
+        flex-direction: column;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+
+    .footer-top-style1__banner-title h2 {
+        font-size: 30px;
+        margin-bottom: 20px;
+    }
+
+    .footer-top-style1__social ul.row li {
+        max-width: 33.333333%;
+    }
+
+    .footer-widget-style3__about-bottom {
+        flex-direction: column;
+        align-items: baseline;
+    }
+
+    .footer-widget-style3__about-phn {
+        margin-left: 0;
+        margin-top: 20px;
+    }
+
+    .single-footer-widget-style3__useful-links {
+        margin-top: 50px;
+        margin-bottom: 45px;
+    }
+
+    .footer-bottom-style3-inner {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .copyright-text-style3 {
+        margin-top: 10px;
+    }
+
+    .footer-main-style3 {
+        padding: 90px 0px 83px;
+    }
+
+    .single-trade-market-style2 {
+        margin-bottom: 30px;
+    }
+
+    .trade-market-style2__wrap {
+        position: relative;
+        display: block;
+        padding: 30px 30px 0px;
+    }
+
+    .single-trade-market-style2__img-inner {
+        width: 60px;
+    }
+
+    .single-trade-market-style2__content {
+        padding: 20.5px 10px 16.5px;
+    }
+
+    .single-trade-market-style2__content-text p {
+        font-size: 15px;
+    }
+
+    .trade-market-style2 {
+        margin-left: 0px;
+        margin-right: 0px;
+    }
+
+    .single-trade-market-style2__content-text h3 {
+        font-size: 20px;
+    }
+
+    .fact-counter-style3__inner {
+        margin-bottom: 30px;
+    }
+
+    .account-style1.account-style3 {
+        padding-top: 90px;
+    }
+
+    .fact-counter-style3__inner>ul>li:nth-child(2) {
+        border-left: 0px solid #e4dddc;
+    }
+
+    .account-style1__img-content {
+        left: 10px;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul li {
+        border-bottom: 1px solid #3a3a3a;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul li:last-child {
+        border-bottom: none;
+    }
+
+    .trading-instruments-style2 .trading-instruments-style1__single-content-box ul {
+        border-left: 0px solid #3a3a3a;
+    }
+
+    .single-choose-style4 {
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .choose-style4__title-box {
+        padding: 64px 20px 58px;
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .choose-style4__img-box {
+        max-width: 550px;
+        width: 100%;
+        margin: 0 auto 30px;
+    }
+
+    .single-blog-style1 {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 33px;
+    }
+
+    .blog-style1--style4 {
+        padding: 120px 0px 80px;
+    }
+
+    .single-footer-widget-style4.mt70 {
+        margin-top: 70px;
+    }
+
+    .single-footer-widget-style4.mt75 {
+        margin-top: 75px;
+    }
+
+    .footer-bottom-style4-inner {
+        display: block;
+        text-align: center;
+    }
+
+    .footer-menu ul {
+        display: block;
+        margin-top: 10px;
+    }
+
+    .footer-menu ul li+li {
+        margin-left: 0px;
+    }
+
+    .footer-widget-style4__contact {
+        padding: 24px 15px 22px;
+    }
+
+    .footer-widget-style4__communicate {
+        padding: 24px 15px 30px;
+        margin-top: 30px;
+    }
+
+
+
+    /*======== Markets Css =========*/
+
+    .all-market-style1__single {
+        max-width: 400px;
+        margin: 0px auto 30px;
+    }
+
+    .all-market-style1__title-box {
+        padding: 18px 25px 18px;
+    }
+
+    .all-market-style1__text-box {
+        padding: 32px 25px 0px;
+    }
+
+    .tall-market-style1__btn-box {
+        padding: 18px 25px 18px;
+    }
+
+    .all-market-style1__text-box h2 {
+        font-size: 40px;
+        margin-bottom: -9px;
+    }
+
+
+
+    /*======== Stocks Css =========*/
+
+    .stocks-style1__content {
+        margin-top: 60px;
+    }
+
+    .stocks-style1__content-title h3 {
+        font-size: 20px;
+        line-height: 28px;
+    }
+
+
+
+
+    /*======== Accounts-1 Standard Account Css =========*/
+
+    .standard-account {
+        padding: 120px 0 98px;
+    }
+
+    .standard-account__left {
+        margin-right: 0;
+    }
+
+    .standard-account__img-box {
+        padding-bottom: 0px;
+    }
+
+    .standard-account__right {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+    .standard-account__content {
+        padding: 23px 15px 21px;
+    }
+
+    .standard-account__content-box {
+        position: relative;
+        max-width: 100%;
+        flex-direction: column;
+    }
+
+    .standard-account__content-icon {
+        margin-top: 20px;
+    }
+
+
+
+    /*======== Education Css =========*/
+
+    .single-education-page__content {
+        padding: 13px 15px 33px;
+    }
+
+
+    /*======== Education Details Css =========*/
+
+    .video-style1 {
+        padding: 120px 0px 98px;
+    }
+
+    .video-style1__img {
+        margin-right: 0;
+        padding-bottom: 0;
+    }
+
+    .video-style1__img-overlay {
+        position: relative;
+        max-width: 100%;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .video-style1__content {
+        margin-left: 0px;
+        margin-top: 55px;
+    }
+
+    .video-style1__img-content {
+        width: 100%;
+    }
+
+    .video-style1__img-icon {
+        margin-top: 20px;
+    }
+
+
+
+    /*======== History Css =========*/
+
+    .single-history-page {
+        display: block;
+        max-width: 700px;
+        width: 100%;
+    }
+
+    .history-page__inner {
+        padding: 0px 0px 0px;
+    }
+
+    .history-page__inner::before {
+        display: none;
+    }
+
+    .single-history-page__angle1,
+    .single-history-page__angle2,
+    .single-history-page__angle3 {
+        display: none;
+    }
+
+    .single-history-page__img {
+        width: 300px;
+        height: 300px;
+        margin: 0px auto;
+        padding-right: 0;
+    }
+
+    .single-history-page__img--instyle2 {
+        padding-right: 0px;
+        padding-left: 0px;
+    }
+
+    .single-history-page__year {
+        margin-left: 0px;
+        text-align: center;
+        margin-top: 34px;
+    }
+
+    .single-history-page__content {
+        margin-left: 0px;
+        text-align: center;
+        margin-top: 15px;
+    }
+
+    .single-history-page__year--instyle2 {
+        margin-left: 0px;
+        margin-right: 0px;
+    }
+
+    .single-history-page__content--instyle2 {
+        margin-left: 0;
+        margin-right: 0px;
+    }
+
+    .history-page__inner {
+        padding: 0px 0px 0px;
+    }
+
+    .history-page__inner::before {
+        display: none;
+    }
+
+
+    /*======== 404 Css =========*/
+
+    .error-page__content-big-title h2 {
+        font-size: 140px;
+    }
+
+    .error-page__content-big-title h3 {
+        font-size: 50px;
+    }
+
+    .error-page__content-text p br {
+        display: none;
+    }
+
+
+
+    /*======== Coming Soon Css =========*/
+
+    .coming-soon-page__sub-title h3 {
+        font-size: 25px;
+    }
+
+    .coming-soon-page__big-title h2 {
+        font-size: 30px;
+        line-height: 1.2em;
+    }
+
+    .coming-soon-page__text p br {
+        display: none;
+    }
+
+    .coming-soon-page__bottom {
+        display: block;
+        margin: 52px auto 0;
+    }
+
+    .coming-soon-page__menu {
+        margin-bottom: 16px;
+    }
+
+    .coming-soon-page__sub-title {
+        margin-top: 54px;
+    }
+
+
+
+    /*======== Blog 1 Css =========*/
+
+    .single-blog-page-one__content-text h3 {
+        font-size: 20px;
+        line-height: 28px;
+    }
+
+    .single-blog-page-one__content-author {
+        display: block;
+    }
+
+    .single-blog-page-one__content-author-img {
+        width: 40px;
+        height: 40px;
+    }
+
+    .single-blog-page-one__content-author-text {
+        margin-left: 0px;
+        margin-top: 16px;
+    }
+
+    .blog-page__sidebar-categories {
+        padding: 36px 20px 33px;
+    }
+
+    .blog-page__sidebar-banner {
+        padding: 33px 30px 30px;
+    }
+
+    .blog-page__sidebar-post {
+        padding: 30px 20px 35px;
+    }
+
+    .blog-page__sidebar-tag {
+        padding: 35px 20px 35px;
+    }
+
+    .blog-page__sidebar {
+        margin-left: 0;
+        max-width: 500px;
+        margin: 60px auto 0px;
+    }
+
+
+    /*======== Blog 2 Css =========*/
+
+    .single-blog-style1__content-title h3 {
+        font-size: 20px;
+        line-height: 28px;
+    }
+
+    .breadcrumb-style1__content-title h2 {
+        font-size: 40px;
+        line-height: 1.1em;
+    }
+
+    .breadcrumb-menu ul {
+        display: block;
+    }
+
+    .breadcrumb-menu ul li:nth-child(7) {
+        margin-left: 0px;
+    }
+
+    .blog-page__sidebar.style2 {
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .blog-page-three__content {
+        margin-left: 0px;
+    }
+
+    .styled-pagination li a {
+        width: 50px;
+        height: 50px;
+    }
+
+    .styled-pagination li.prev a,
+    .styled-pagination li.next a {
+        width: 50px;
+        height: 50px;
+    }
+
+    .blog-page__sidebar.style3 {
+        margin-left: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 60px auto 0px;
+    }
+
+    .blog-page-four__content {
+        margin-right: 0px;
+    }
+
+    .blog-details-page .blog-page__sidebar.style2 {
+        margin-left: 0px;
+        margin-right: 0px;
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .blog-details-content__quote-title {
+        padding: 29px 25px 27px;
+    }
+
+    .blog-details-content__quote-name {
+        padding: 6px 25px 6px;
+    }
+
+    .blog-details-content__quote-name {
+        padding: 6px 25px 6px;
+        padding-right: 40px;
+    }
+
+    .blog-details-content__quote-name p span {
+        font-size: 15px;
+    }
+
+    .blog-details-author-inner {
+        padding-left: 0px;
+    }
+
+    .blog-details-author .img-box {
+        position: relative;
+        top: 0px;
+        left: 0;
+        margin-bottom: 25px;
+    }
+
+    .blog-details-author .content-box .social-links {
+        position: relative;
+        margin-top: 15px;
+    }
+
+    .blog-details-prev-next-option {
+        display: block;
+    }
+
+    .blog-details-prev-next-option::before {
+        display: none;
+    }
+
+    .blog-details-prev-next-option .single-box.left {
+        margin-bottom: 40px;
+    }
+
+    .faq-style1-instyle3 {
+        padding-bottom: 0;
+    }
+
+    .coming-soon-page__content {
+        padding: 0px 15px 0px;
+    }
+
+    .timer-box .countdown-timer li span.days,
+    .timer-box .countdown-timer li span.hours,
+    .timer-box .countdown-timer li span.minutes,
+    .timer-box .countdown-timer li span.seconds {
+        font-size: 32px;
+    }
+
+    .timer-box .countdown-timer li::before {
+        display: none;
+    }
+
+    .timer-box .countdown-timer li::after {
+        display: none;
+    }
+
+    .subscribe-box-style1 form .btn-box {
+        position: relative;
+        margin-top: 10px;
+    }
+
+    .subscribe-box-style1 form .btn-box button {
+        display: inline-block;
+        border-radius: 7px;
+    }
+
+    .subscribe-box-style1 form input[type="email"] {
+        padding-right: 25px;
+    }
+
+    .subscribe-box-style1 {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        flex-direction: column;
+        margin: 0 auto;
+    }
+
+    .subscribe-box-style1 .inner-title {
+        text-align: center;
+    }
+
+    .main-contact-form__info {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto 60px;
+    }
+
+    .contact-form {
+        max-width: 500px;
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    .main-contact-form__info-single {
+        display: block;
+    }
+
+    .main-contact-form__info-list-text {
+        margin-left: 0px;
+        margin-top: 10px;
+    }
+
+}
+
+
+
+/*--------------------------------------------------------------
+////////////////////////////////
+# Main Header All Responsive Css
+////////////////////////////////
+--------------------------------------------------------------*/
+@media only screen and (min-width: 1200px) and (max-width: 1350px) {
+
+    /*======== Home 01 =========*/
+    .side-content-button-style1 {
+        display: none;
+    }
+
+    .main-header-style2__phn {
+        padding-right: 0px;
+        border-right: none;
+    }
+
+    .main-menu-style2 {
+        margin-left: 50px;
+    }
+
+}
+
+
+
+@media only screen and (min-width: 1200px) and (max-width: 1500px) {
+
+    /*======== Home 01 =========*/
+    .main-header-style1__phn {
+        display: none;
+    }
+
+    .language-switcher-style1 {
+        display: none;
+    }
+
+    .main-menu-style1 {
+        margin-left: 41px;
+    }
+
+    .box-search-style1 {
+        padding-right: 0px;
+    }
+
+    .main-header-style1__account {
+        margin-left: 30px;
+    }
+
+    /*======== Home 03 =========*/
+    .main-header-style3__account {
+        display: none;
+    }
+
+}
+
+
+@media only screen and (min-width: 1200px) and (max-width: 1700px) {
+
+    /*======== Home 01 =========*/
+    .main-header-style4 .main-header-style1__phn {
+        display: flex;
+    }
+
+}
+
+@media only screen and (min-width: 992px) and (max-width: 1199px) {
+
+    .main-menu .mobile-nav__toggler {
+        display: inline-block;
+        padding: 30px 0 30px;
+        line-height: 0;
+    }
+
+    .main-menu .mobile-nav__toggler--style2 {
+        padding: 20px 0 20px;
+    }
+
+    /*======== Home 01 =========*/
+    .header-social-link-style1 {
+        display: none;
+    }
+
+    .main-header-style1__phn {
+        display: none;
+    }
+
+    .box-search-style1 {
+        padding-right: 0px;
+    }
+
+    /*======== Home 02 =========*/
+    .main-header-style2__content-bottom {
+        padding: 0px 35px 0px;
+    }
+
+    /*======== Home 04 =========*/
+    .main-header-style4 .main-header-style1__phn {
+        display: flex;
+    }
+
+}
+
+
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+
+    .main-menu .mobile-nav__toggler {
+        display: inline-block;
+        padding: 25px 0 25px;
+        line-height: 0;
+    }
+
+    .main-menu .mobile-nav__toggler--style2 {
+        padding: 20px 0 20px;
+    }
+
+    .box-search-style1 {
+        padding-right: 0px;
+    }
+
+    .main-header-style1__content-top {
+        display: none;
+    }
+
+    .main-menu-style1 {
+        margin-left: 50px;
+    }
+
+    /*======== Home 02 =========*/
+    .main-header-style2__content-bottom {
+        padding: 0px 35px 0px;
+    }
+
+    /*======== Home 03 =========*/
+    .main-header-style3__account {
+        display: none;
+    }
+
+    /*======== Home 04 =========*/
+    .main-header-style4 .main-header-style1__phn {
+        display: flex;
+    }
+
+}
+
+
+
+
+@media (max-width: 767px) {
+
+    .main-menu .mobile-nav__toggler {
+        display: inline-block;
+        padding: 25px 0 25px;
+        line-height: 0;
+    }
+
+    .main-menu .mobile-nav__toggler--style2 {
+        padding: 20px 0 20px;
+    }
+
+    /*======== Home 01 =========*/
+    .main-header-style1__content-top {
+        display: none;
+    }
+
+    .main-header-style1__content-bottom-right {
+        display: none;
+    }
+
+    .main-header-style1__content-bottom {
+        padding: 19px 20px 19px;
+    }
+
+    .main-header-style1__content-bottom-left {
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    .main-menu-style1 {
+        margin-left: 0px;
+    }
+
+    /*======== Home 02 =========*/
+    .main-header-style2__content-bottom {
+        padding: 0px 20px 0px;
+    }
+
+    .main-header-style2__content-bottom-right {
+        display: none;
+    }
+
+    .main-menu-style2 {
+        margin-left: 0px;
+    }
+
+    .main-header-style2__content-bottom-left {
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    /*======== Home 03 =========*/
+    .main-header-style3__content-right {
+        display: none;
+    }
+
+    .main-header-style3__content-left {
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    .main-menu-style3 {
+        margin-left: 0px;
+    }
+
+    /*======== Home 04 =========*/
+    .main-header-style4__top {
+        padding: 20px 0px 20px;
+        justify-content: center;
+    }
+
+    .main-header-style4__top-right {
+        display: none;
+    }
+
+    .banner-style1 {
+        margin: 20px 0px 0;
+    }
+
+    .banner-style1__content-big-title h2 {
+        font-size: 40px;
+    }
+
+    .banner-style1__content-list {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 30px 0px;
+    }
+
+}
+
+
+/*--------------------------------------------------------------
+///////////////////////////
+# Slider All Responsice Css
+///////////////////////////
+--------------------------------------------------------------*/
+@media only screen and (min-width: 1200px) and (max-width: 1500px) {
+
+    /*======== Home 03 =========*/
+    .main-slider-style3__shape-2 {
+        display: none;
+    }
+
+    .main-slider-style3__content {
+        margin-left: 0px;
+    }
+
+    .main-slider-style3__shape-1 {
+        display: none;
+    }
+
+    .main-slider-style3__tab {
+        right: 200px;
+    }
+
+}
+
+
+@media only screen and (min-width: 1200px) and (max-width: 1450px) {
+
+    /*======== Home 01 =========*/
+    .main-slider-style1__inner .container {
+        padding-left: 145px;
+    }
+
+}
+
+
+@media only screen and (min-width: 992px) and (max-width: 1199px) {
+
+    /*======== Home 01 =========*/
+    .main-slider-style1__inner .container {
+        padding-left: 140px;
+    }
+
+    .main-slider-style1__rating {
+        right: 180px;
+    }
+
+    /*======== Home 03 =========*/
+    .main-slider-style3__shape-2 {
+        display: none;
+    }
+
+    .main-slider-style3__content {
+        margin-left: 0px;
+    }
+
+    .main-slider-style3__shape-1 {
+        display: none;
+    }
+
+    .main-slider-style3__tab {
+        right: 200px;
+    }
+
+    .main-slider-style3__bg-img {
+        width: 100%;
+        -webkit-mask: none;
+    }
+
+    .main-slider-style3__content-big-title h2 {
+        font-size: 100px;
+    }
+
+    /*======== Home 04 =========*/
+    .banner-style1__img img {
+        width: 55%;
+    }
+
+    .banner-style1__content {
+        margin-top: 68px;
+    }
+
+    .banner-style1__img {
+        margin-top: 16px;
+        margin-left: -40px;
+        margin-right: -142px;
+    }
+
+}
+
+
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+
+    /*======== Home 01 =========*/
+    .main-slider__nav {
+        left: 30px;
+        right: 30px;
+    }
+
+    .main-slider-style1__rating {
+        right: 40px;
+    }
+
+    .main-slider-style1__inner .container {
+        padding-left: 90px;
+    }
+
+    .main-slider-style1__content-big-title h2 {
+        font-size: 60px;
+    }
+
+    /*======== Home 03 =========*/
+    .main-slider-style3__shape-2 {
+        display: none;
+    }
+
+    .main-slider-style3__content {
+        margin-left: 0px;
+    }
+
+    .main-slider-style3__shape-1 {
+        display: none;
+    }
+
+    .main-slider-style3__tab {
+        right: 65px;
+    }
+
+    .main-slider-style3__bg-img {
+        width: 100%;
+        -webkit-mask: none;
+    }
+
+    .main-slider-style3__content-big-title h2 {
+        font-size: 80px;
+    }
+
+    .main-slider-style3__badges {
+        right: 15px;
+        width: 240px;
+    }
+
+    /*======== Home 04 =========*/
+    .banner-style1__img img {
+        width: 60%;
+    }
+
+    .banner-style1__content {
+        margin-top: 68px;
+    }
+
+    .banner-style1__img {
+        margin-top: 21px;
+        margin-left: -40px;
+        margin-right: -142px;
+    }
+
+}
+
+
+@media only screen and (max-width: 767px) {
+
+    .main-slider__nav {
+        display: none;
+    }
+
+    .main-slider-nav {
+        display: none;
+    }
+
+    #main-slider-pagination {
+        right: 20px;
+    }
+
+
+    /*======== Home 01 =========*/
+    .main-slider-style1__content-big-title h2 {
+        font-size: 42px;
+    }
+
+    .main-slider-style1__inner .container {
+        padding-top: 87px;
+        padding-bottom: 315px;
+    }
+
+    .main-slider-style1__rating {
+        bottom: 80px;
+        right: 15px;
+        max-width: 300px;
+    }
+
+    /*======== Home 02 =========*/
+    .main-slider-style2__content-big-title h2 {
+        font-size: 47px;
+        line-height: 1.2em;
+    }
+
+    /*======== Home 03 =========*/
+    .main-slider-style3__shape-2 {
+        display: none;
+    }
+
+    .main-slider-style3__content {
+        margin-left: 0px;
+    }
+
+    .main-slider-style3__shape-1 {
+        display: none;
+    }
+
+    .main-slider-style3__tab {
+        right: 65px;
+    }
+
+    .main-slider-style3__bg-img {
+        width: 100%;
+        -webkit-mask: none;
+    }
+
+    .main-slider-style3__content-big-title h2 {
+        font-size: 50px;
+    }
+
+    .main-slider-style3__badges {
+        top: 0px;
+        right: auto;
+        left: 15px;
+        width: 240px;
+        margin: 50px 0px 50px;
+    }
+
+    .main-slider-style3__content-sub-title h4 {
+        font-size: 25px;
+        line-height: 35px;
+    }
+
+    .main-slider-style3__tab {
+        right: auto;
+        max-width: 300px;
+        left: 10px;
+    }
+
+    .main-slider-style3__inner .container {
+        padding-top: 500px;
+        padding-bottom: 290px;
+    }
+
+    .main-slider-style3 #main-slider-pagination {
+        display: none;
+    }
+
+    /*======== Home 04 =========*/
+    .banner-style1__img img {
+        width: 60%;
+    }
+
+    .banner-style1__content {
+        margin-top: 68px;
+    }
+
+    .banner-style1__img {
+        margin-top: 21px;
+        margin-left: -20px;
+        margin-right: -142px;
+    }
+
+    .banner-style1__content-list li h3 {
+        font-size: 22px;
+        line-height: 30px;
+    }
+    
+    .single-comment-inner {
+        flex-direction: column;
+    }
+    
+    .single-comment .content-box {
+        width: 100%;
+    }
+    
+    .single-comment .img-box {
+        width: 70px;
+        height: 70px;
+    }
+
+}
+
+
+@media only screen and (max-width: 1199px) {
+    .order11 {
+        order: 1;
+    }
+
+    .order22 {
+        order: 2;
+    }
+
+}
+
+
+
+@media only screen and (max-width: 991px) {
+    .order111 {
+        order: 1;
+    }
+
+    .order222 {
+        order: 2;
+    }
+
+}
+
+@media (max-width: 1200px) {
+  .footer-widget:nth-child(1),
+  .footer-widget:nth-child(2) {
+    margin-bottom: 30px;
+  }
+  .te-header4 .stricky-header.stricky-fixed{
+	padding-left: 20px;
+	padding-right: 20px;
+  }
+}
+@media (max-width: 768px) {
+  .footer-widget:nth-child(3) {
+    margin-bottom: 30px;
+  }
+  .bullport-comment-item .bullport-comment-item{
+	margin-left: 0px;
+  }
+}

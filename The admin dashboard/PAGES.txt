@@ -1,0 +1,24 @@
+dashboard.html - Dashboard
+wallet.html - Wallet Overview
+deposit.html - Deposit Funds
+withdraw.html - Withdraw Funds
+transactions.html - Transactions
+investment-plans.html - Investment Plans
+active-investments.html - Active Investments
+portfolio.html - Portfolio Management
+dividends.html - Dividends & Profits
+market.html - Market Watch
+trading.html - Trading Terminal
+watchlist.html - Watchlist
+orders.html - Order History
+options-access.html - Options Access
+risk.html - Risk Center
+reports.html - Reports & Statements
+notifications.html - Notifications
+kyc.html - KYC Verification
+profile.html - Profile
+settings.html - Settings
+support.html - Support
+login.html - Login
+register.html - Register
+forgot-password.html - Forgot Password

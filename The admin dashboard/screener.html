@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vault Dashboard - Investment Admin Template</title>
+  <meta name="description" content="A clean, Robinhood-inspired investment dashboard built with Next.js, shadcn/ui, and Tailwind CSS v4. Track portfolios, monitor markets, manage dividends, and analyze investments." />
+  <link rel="preload" href="_next/static/media/2b3f1035ed87a788-s.p.woff2" as="font" crossorigin type="font/woff2" />
+  <link rel="preload" href="_next/static/media/93f479601ee12b01-s.p.woff2" as="font" crossorigin type="font/woff2" />
+  <link rel="stylesheet" href="_next/static/css/642a8584326f74d6.css" />
+  <link rel="stylesheet" href="_next/static/css/99e709ab15bdac52.css" />
+  <link rel="icon" href="faviconfe84.ico" type="image/x-icon" sizes="16x16" />
+  <script>(function(){try{var d=localStorage.getItem("vault-density");if(d&&["compact","comfortable","spacious"].includes(d)){document.documentElement.classList.add("density-"+d)}else{document.documentElement.classList.add("density-comfortable")}}catch(e){document.documentElement.classList.add("density-comfortable")}})();
+(function(){try{var c=localStorage.getItem("vault-color-preset");var p={"robinhood":[142,0.195],"ocean":[220,0.18],"violet":[280,0.18],"gold":[75,0.18],"rose":[350,0.19],"graphite":[230,0.02]};if(c&&p[c]){var s=document.documentElement.style;var v="oklch(0.55 "+p[c][1]+" "+p[c][0]+")";s.setProperty("--primary",v);s.setProperty("--primary-foreground","oklch(1 0 0)");s.setProperty("--sidebar-primary",v);s.setProperty("--chart-1",v);s.setProperty("--ring",v)}}catch(e){}})();
+(function(){try{var l=localStorage.getItem("vault-layout");if(l==="topnav"){document.documentElement.classList.add("layout-topnav")}else{document.documentElement.classList.add("layout-sidebar")}}catch(e){document.documentElement.classList.add("layout-sidebar")}})();
+(function(){try{var b=localStorage.getItem("vault-container");if(b==="boxed"){document.documentElement.classList.add("container-boxed")}else{document.documentElement.classList.add("container-fluid")}}catch(e){document.documentElement.classList.add("container-fluid")}})();
+(function(){try{var r=localStorage.getItem("vault-direction");if(r==="rtl"){document.documentElement.dir="rtl";document.documentElement.classList.add("dir-rtl")}else{document.documentElement.dir="ltr";document.documentElement.classList.add("dir-ltr")}}catch(e){document.documentElement.dir="ltr";document.documentElement.classList.add("dir-ltr")}})();</script>
+</head>
+<body class="__variable_08814d __variable_508d3e antialiased">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none">Skip to content</a>
+  <div class="min-h-screen bg-background">
+    <div class="flex min-h-screen">
+      <aside class="fixed ltr:left-0 rtl:right-0 top-0 z-40 hidden h-screen flex-col bg-sidebar transition-all duration-300 ease-in-out lg:flex w-[260px]">
+        <div class="flex h-16 items-center gap-3 border-b border-sidebar-border px-4">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up h-4 w-4 text-sidebar-primary-foreground" aria-hidden="true"><path d="M16 7h6v6"></path><path d="m22 7-8.5 8.5-5-5L2 17"></path></svg>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-sm font-bold tracking-tight text-sidebar-foreground">Vault</span>
+            <span class="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/40">Dashboard</span>
+          </div>
+        </div>
+        <nav role="navigation" aria-label="Main navigation" class="flex-1 space-y-3 overflow-y-auto px-3 py-4"></nav>
+      </aside>
+      <div class="flex flex-1 flex-col transition-all duration-300 lg:ms-[260px]">
+        <div class="sticky top-0 z-30">
+          <header class="flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
+            <div class="flex min-w-0 flex-1 items-center gap-3">
+              <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-foreground lg:hidden" aria-label="Open menu">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu h-4 w-4" aria-hidden="true"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg>
+              </button>
+              <div class="hidden sm:block">
+                <p class="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">BullPort Client Portal</p>
+                <p class="text-sm font-semibold text-foreground">Dashboard workspace</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="hidden items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 sm:flex">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search h-4 w-4 text-muted-foreground" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.34-4.34"></path></svg>
+                <input type="text" class="w-48 border-0 bg-transparent p-0 text-sm outline-none" placeholder="Search anything..." />
+              </div>
+              <button aria-label="Notifications" class="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bell h-4 w-4" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
+                <span class="absolute ltr:right-1.5 rtl:left-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive"></span>
+              </button>
+              <button aria-label="User menu" class="ms-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary transition-colors hover:bg-primary/20" type="button">AS</button>
+            </div>
+          </header>
+        </div>
+        <main id="main-content" class="flex-1 p-4 sm:p-6"></main>
+      </div>
+    </div>
+  </div>
+  <section aria-label="Notifications alt+T" tabindex="-1" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></section>
+  <script src="broker-nav.js"></script>
+</body>
+</html>

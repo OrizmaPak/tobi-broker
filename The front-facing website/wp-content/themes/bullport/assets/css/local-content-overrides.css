@@ -1,0 +1,16 @@
+@media only screen and (max-width: 767px) {
+  .main-slider-style1__content-big-title h2,
+  .main-slider-style1__content-text p {
+    max-width: calc(100vw - 30px);
+    overflow-wrap: break-word;
+  }
+
+  .main-slider-style1__content-big-title h2 {
+    font-size: clamp(38px, 11vw, 54px);
+    line-height: 1.12;
+  }
+
+  .main-slider-style1__rating {
+    max-width: calc(100vw - 30px);
+  }
+}

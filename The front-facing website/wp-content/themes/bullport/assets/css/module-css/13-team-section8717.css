@@ -1,0 +1,312 @@
+/*** 
+==============================
+    Team Style1 Css
+==============================
+***/
+.team-style1 {
+    padding: 120px 0px 90px;
+}
+
+.single-team-style1 {
+    position: relative;
+    display: block;
+    margin-bottom: 30px;
+}
+
+.single-team-style1__img {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    border-radius: var(--thm-border-radius);
+}
+
+.single-team-style1__img::before {
+    position: absolute;
+    content: '';
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--thm-black-color-bg);
+    opacity: 0;
+    z-index: 1;
+    transition: opacity 0.5s ease;
+    transition: all 0.5s ease;
+}
+
+.single-team-style1:hover .single-team-style1__img::before {
+    opacity: .6;
+}
+
+.single-team-style1__img img {
+    width: 100%;
+    transform: scale(1.0);
+    transition: all 1300ms ease;
+}
+
+.single-team-style1:hover .single-team-style1__img img {
+    transform: scale(1.05) rotate(0deg);
+}
+
+.single-team-style1__img-share {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    opacity: 0;
+    transform: translateY(-70px);
+    -webkit-transition: all 0.7s ease;
+    -o-transition: all 0.7s ease;
+    transition: all 0.7s ease;
+    z-index: 5;
+}
+
+.single-team-style1:hover .single-team-style1__img-share {
+    opacity: 1;
+    transform: translateY(0px);
+}
+
+.single-team-style1__img-share span {
+    position: relative;
+    display: block;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: transparent;
+    border: 1px solid var(--thm-primary-color);
+    color: var(--thm-primary-color);
+    font-size: 18px;
+    line-height: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    z-index: 1;
+}
+
+.single-team-style1__img-share:hover span {
+    color: var(--thm-white-color);
+    background-color: var(--thm-primary-color);
+    border-color: var(--thm-primary-color);
+}
+
+.single-team-style1__img-share ul {
+    position: absolute;
+    top: 0;
+    left: 0%;
+    white-space: nowrap;
+    transform: translateX(100px);
+    padding-top: 50px;
+    opacity: 0;
+    transition: all 0.3s;
+}
+
+.single-team-style1__img-share:hover ul {
+    opacity: 1;
+    transform: translateX(0px);
+}
+
+.single-team-style1__img-share ul li {
+    position: relative;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.single-team-style1__img-share ul li:last-child {
+    margin-bottom: 0;
+}
+
+.single-team-style1__img-share ul li a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    width: 40px;
+    border-radius: 50%;
+    background-color: transparent;
+    border: 1px solid var(--thm-primary-color);
+    color: var(--thm-primary-color);
+    font-size: 16px;
+    text-align: center;
+    transition: all 200ms linear;
+    transition-delay: 0.1s;
+    z-index: 1;
+}
+
+.single-team-style1__img-share ul li a:hover {
+    color: var(--thm-white-color);
+    background-color: var(--thm-primary-color);
+    border-color: var(--thm-primary-color);
+}
+
+.single-team-style1__img-share ul li a:before {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    bottom: 0px;
+    right: 0px;
+    background-color: var(--thm-base);
+    content: "";
+    opacity: 0;
+    transform: scale(0.5);
+    transform-style: preserve-3d;
+    transition: all 0.4s cubic-bezier(0.62, 0.21, 0.45, 1.52);
+    z-index: -1;
+}
+
+.single-team-style1__img-share ul li:hover a:before {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 50%;
+}
+
+.single-team-style1__img-text {
+    position: absolute;
+    left: 5px;
+    bottom: 5px;
+    right: 5px;
+    overflow: hidden;
+    text-align: center;
+    border-radius: var(--thm-border-radius);
+    background: linear-gradient(0deg, rgba(143, 229, 143, .2), rgba(143, 229, 143, .2));
+    backdrop-filter: blur(10.9px);
+    -webkit-backdrop-filter: blur(10.9px);
+    padding: 8.5px 20px 8.5px;
+    -webkit-transition: all 0.4s ease;
+    -o-transition: all 0.4s ease;
+    transition: all 0.4s ease;
+    z-index: 1;
+}
+
+.single-team-style1__img-text::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    opacity: 0;
+    background-color: var(--thm-black-color-bg);
+    transition: opacity 0.5s ease, transform 0.5s ease, visibility 0.5s ease;
+    transform-origin: left top;
+    -webkit-transform: scale(1, 0);
+    transform: scale(1, 0);
+    z-index: -1;
+}
+
+.single-team-style1:hover .single-team-style1__img-text::before {
+    opacity: 1;
+    -webkit-transform: scale(1, 1);
+    transform: scale(1, 1);
+    transform-origin: bottom center;
+}
+
+.single-team-style1__img-text h3 {
+    color: var(--thm-white-color);
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+}
+
+.single-team-style1__img-text h3 a {
+    color: var(--thm-white-color);
+    transition: all 200ms linear;
+    transition-delay: .1s;
+}
+
+.single-team-style1__img-text h3 a:hover {
+    color: var(--thm-primary-color);
+}
+
+.single-team-style1__img-text p {
+    color: #DADADA;
+}
+
+.single-team-style1:hover .single-team-style1__img-text p {
+    color: #A8B0A6;
+}
+
+
+/*** 
+==============================
+    Team Style1 Team Css
+==============================
+***/
+.team-style1--team {
+    position: relative;
+    display: block;
+    padding-top: 0px;
+    padding-bottom: 120px;
+}
+
+.team-style1--team__btn {
+    position: relative;
+    display: block;
+    line-height: 0;
+    margin-top: 35px;
+    text-align: center;
+}
+
+.team-style1--team__btn a {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 5px;
+    background-color: var(--thm-black-color-bg);
+    padding: 16px 30px 16px;
+    color: var(--thm-white-color);
+    font-size: 14px;
+    line-height: 24px;
+    font-family: var(--thm-font-2);
+    font-weight: 700;
+    text-transform: uppercase;
+    transition: all 200ms linear;
+    transition-delay: 0.1s;
+}
+
+.team-style1--team__btn a:hover {
+    color: var(--thm-primary-color);
+}
+
+.team-style1--team__btn a i {
+    color: var(--thm-primary-color);
+    font-size: 24px;
+    line-height: 0;
+    margin-right: 8px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*** 
+===========================
+    End Css
+===========================
+***/
