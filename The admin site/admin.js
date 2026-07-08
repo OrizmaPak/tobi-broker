@@ -188,6 +188,29 @@
     }
   };
 
+  const appState = {
+    audit: data.audit.slice(),
+    decisions: {}
+  };
+
+  const actionLabels = {
+    approveKyc: "Approve KYC",
+    rejectKyc: "Reject KYC",
+    requestKycResubmission: "Request KYC resubmission",
+    creditDeposit: "Credit deposit",
+    flagDeposit: "Flag deposit",
+    requestDepositProof: "Request deposit proof",
+    approveWithdrawal: "Approve withdrawal",
+    holdWithdrawal: "Place withdrawal on hold",
+    requestWithdrawalInfo: "Request withdrawal information",
+    saveProduct: "Save product changes",
+    reviewProduct: "Send product to review",
+    hideProduct: "Hide product",
+    sendSupportReply: "Send support reply",
+    escalateSupport: "Escalate support ticket",
+    resolveSupport: "Resolve support ticket"
+  };
+
   const iconPaths = {
     grid: '<rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect>',
     list: '<path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path>',
@@ -236,8 +259,12 @@
     return '<a class="btn ' + (kind || "") + '" href="' + href + '">' + label + "</a>";
   }
 
-  function decisionButton(label, kind, result) {
-    return '<button type="button" class="btn ' + (kind || "") + '" data-action="decision" data-result="' + result + '">' + label + "</button>";
+  function modalButton(label, modal, kind) {
+    return '<button type="button" class="btn ' + (kind || "") + '" data-action="open-modal" data-modal="' + modal + '">' + label + "</button>";
+  }
+
+  function decisionButton(label, kind, result, apiAction) {
+    return '<button type="button" class="btn ' + (kind || "") + '" data-action="decision" data-result="' + result + '" data-api-action="' + apiAction + '">' + label + "</button>";
   }
 
   function metric(label, value, meta, state) {
@@ -249,7 +276,19 @@
   }
 
   function table(headers, rows) {
-    return '<div class="table-wrap"><table><thead><tr>' + headers.map((h) => "<th>" + h + "</th>").join("") + "</tr></thead><tbody>" + rows.map((row) => "<tr>" + row.map((cell) => "<td>" + cell + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
+    return '<div class="table-wrap"><table data-filter-table><thead><tr>' + headers.map((h) => "<th>" + h + "</th>").join("") + "</tr></thead><tbody>" + rows.map((row) => '<tr data-search="' + stripHtml(row.join(" ")) + '">' + row.map((cell) => "<td>" + cell + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
+  }
+
+  function stripHtml(value) {
+    return String(value).replace(/<[^>]*>/g, " ").replace(/"/g, "&quot;").toLowerCase();
+  }
+
+  function filters(placeholder) {
+    return '<div class="filter-bar"><label class="filter-search">' + svg("grid") + '<input data-table-search placeholder="' + placeholder + '" /></label><select data-table-status><option value="">All statuses</option><option value="pending">Pending</option><option value="review">Review</option><option value="approved">Approved</option><option value="active">Active</option><option value="hold">Hold</option><option value="blocked">Blocked</option><option value="restricted">Restricted</option><option value="ready">Ready</option><option value="open">Open</option></select></div>';
+  }
+
+  function filterableTable(placeholder, headers, rows) {
+    return filters(placeholder) + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching records. Adjust the search or status filter.</div>';
   }
 
   function details(rows) {
@@ -257,7 +296,7 @@
   }
 
   function queueList(items) {
-    return '<div class="queue-list">' + items.map((item) => '<article class="queue-item"><div><h3>' + item.title + '</h3><p>' + item.client + ' - ' + item.owner + ' - ' + item.age + '</p></div><div class="action-row">' + badge(item.state) + linkButton("Open", routeForQueue(item)) + "</div></article>").join("") + "</div>";
+    return '<div class="queue-list">' + items.map((item) => '<article class="queue-item" data-search="' + stripHtml(item.title + " " + item.client + " " + item.owner + " " + item.state) + '"><div><h3>' + item.title + '</h3><p>' + item.client + ' - ' + item.owner + ' - ' + item.age + '</p></div><div class="action-row">' + badge(item.state) + linkButton("Open", routeForQueue(item)) + "</div></article>").join("") + '</div><div class="empty-state" data-empty-state>No matching queue items.</div>';
   }
 
   function routeForQueue(item) {
@@ -282,14 +321,18 @@
   }
 
   function reviewPanel(title, subtitle, actions) {
-    return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
+    return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><div class="decision-state" data-decision-state>No decision saved in this prototype session.</div><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
+  }
+
+  function auditPanel() {
+    return section("Live audit trail", "Prototype-only log of admin actions. These map to future backend audit events.", timeline(appState.audit.slice(0, 6)));
   }
 
   function overview() {
     return '<div class="grid metrics">' + data.metrics.map((m) => metric(m[0], m[1], m[2], m[3])).join("") + "</div>" +
       '<div class="grid two">' +
       section("Priority queues", "Highest-impact operations requiring staff attention.", queueList(data.queues.slice(0, 4)), button("Open queues", "primary", "goto-queues")) +
-      section("Recent admin activity", "Latest decisions and operational actions across the desk.", timeline(data.audit)) +
+      section("Recent admin activity", "Latest decisions and operational actions across the desk.", timeline(appState.audit)) +
       "</div>" +
       section("Client operations snapshot", "A compact cross-section of investor records, status, value, and restrictions.", clientTable(data.clients.slice(0, 4)), button("View clients", "", "goto-clients"));
   }
@@ -304,7 +347,7 @@
       metric("Finance queue", "17", "Deposits, withdrawals and payouts.", "Pending"),
       metric("Portfolio desk", "6", "Product edits and mandate actions.", "Open"),
       metric("Support escalations", "5", "Ticket issues requiring manager input.", "Escalated")
-    ].join("") + "</div>" + section("Unified operations queue", "All pending work across teams, sorted by operational priority.", queueList(data.queues), button("Assign selected", "primary"));
+    ].join("") + "</div>" + section("Unified operations queue", "All pending work across teams, sorted by operational priority.", filters("Search queue, client, owner...") + queueList(data.queues), modalButton("Assign selected", "assign-task", "primary"));
   }
 
   function clientTable(rows) {
@@ -317,41 +360,41 @@
       metric("Restricted accounts", "14", "Funding, withdrawal or trading limits.", "Hold"),
       metric("Premium managed", "83", "High-touch mandates.", "Active"),
       metric("Pending onboarding", "31", "Registration and KYC in progress.", "Pending")
-    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", table(["Account", "Client", "Tier", "Portfolio value", "KYC", "Risk", "Status", "Action"], data.clients.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), row[5], badge(row[6]), linkButton("Open", "client-detail.html")])), button("Create client note", "primary"));
+    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", filterableTable("Search account, client, tier...", ["Account", "Client", "Tier", "Portfolio value", "KYC", "Risk", "Status", "Action"], data.clients.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), row[5], badge(row[6]), linkButton("Open", "client-detail.html")])), modalButton("Create client note", "client-note", "primary"));
   }
 
   function kycPage() {
     return '<div class="grid two">' +
-      section("KYC decision queue", "Document reviews awaiting compliance action.", table(["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html")])), button("Approve selected", "primary")) +
-      section("Review detail sample", "The detail panel the admin will use before approving or rejecting verification.", details([["Client", "Tobi Adeyemi"], ["Requirement", "Proof of address"], ["Uploaded", "Utility bill - June 2026"], ["Decision", "Review before approval"], ["Blocked actions", "Withdrawals and large crypto funding"], ["Audit note", "Address matches bank city but needs date confirmation"]]) + '<div class="action-row" style="margin-top:14px">' + button("Approve", "primary") + button("Reject", "danger") + button("Request resubmission") + "</div>") +
+      section("KYC decision queue", "Document reviews awaiting compliance action.", filterableTable("Search account, client, requirement...", ["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html")])), modalButton("Approve selected", "bulk-kyc", "primary")) +
+      section("Review detail sample", "The detail panel the admin will use before approving or rejecting verification.", details([["Client", "Tobi Adeyemi"], ["Requirement", "Proof of address"], ["Uploaded", "Utility bill - June 2026"], ["Decision", "Review before approval"], ["Blocked actions", "Withdrawals and large crypto funding"], ["Audit note", "Address matches bank city but needs date confirmation"]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html", "primary") + modalButton("Request resubmission", "bulk-kyc") + "</div>") +
       "</div>";
   }
 
   function depositsPage() {
-    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", table(["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html")])), button("Confirm selected", "primary")) +
+    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", filterableTable("Search reference, client, rail...", ["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html")])), modalButton("Confirm selected", "bulk-deposit", "primary")) +
       section("Reconciliation checklist", "Controls to keep demo behavior aligned with real settlement workflow.", details([["Reference check", "Required"], ["Source name match", "Required"], ["Crypto confirmations", "Required for crypto"], ["Large funding review", "Compliance threshold applies"]]));
   }
 
   function withdrawalsPage() {
-    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", table(["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "withdrawal-review.html")])), button("Approve selected", "primary")) +
+    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", filterableTable("Search request, client, destination...", ["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "withdrawal-review.html")])), modalButton("Approve selected", "bulk-withdrawal", "primary")) +
       section("Approval controls", "Withdrawal decisions should be auditable and role-gated.", details([["KYC dependency", "Full approval required"], ["Destination check", "Verified bank or screened wallet"], ["Risk review", "Enhanced review for crypto and high value"], ["Audit", "Decision, staff user and timestamp"]]));
   }
 
   function productsPage() {
-    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", table(["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html")])), button("New product", "primary")) +
+    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html")])), modalButton("New product", "product", "primary")) +
       section("Product publishing rules", "Published products can appear in the client dashboard and selected public-site areas.", details([["Projected returns", "Must be labelled projected or market-based"], ["Options", "Never default access"], ["Risk labels", "Required"], ["Visibility", "Draft, review, published, hidden"]]));
   }
 
   function investmentsPage() {
-    return section("Client investment mandates", "Monitor subscribed portfolios, value, requested actions, and mandate state.", table(["Client", "Portfolio", "Invested", "Current value", "Next action", "Status"], data.investments.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5])])), button("Create allocation note", "primary"));
+    return section("Client investment mandates", "Monitor subscribed portfolios, value, requested actions, and mandate state.", filterableTable("Search client, portfolio, action...", ["Client", "Portfolio", "Invested", "Current value", "Next action", "Status"], data.investments.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5])])), modalButton("Create allocation note", "allocation-note", "primary"));
   }
 
   function payoutsPage() {
-    return section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", table(["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), button("Open")])), button("Post payout", "primary"));
+    return section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
   }
 
   function instrumentsPage() {
-    return section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", table(["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], data.instruments.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), badge(row[5]), button("Edit")])), button("Add instrument", "primary"));
+    return section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", filterableTable("Search symbol, market, category...", ["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], data.instruments.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), badge(row[5]), modalButton("Edit", "instrument")])), modalButton("Add instrument", "instrument", "primary"));
   }
 
   function riskPage() {
@@ -369,11 +412,11 @@
   }
 
   function reportsPage() {
-    return section("Reports and exports", "Statements, audit logs, exports, and operational records.", table(["Report", "Type", "Format", "Period", "Status", "Action"], data.reports.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), button("Download")])), button("Generate report", "primary"));
+    return section("Reports and exports", "Statements, audit logs, exports, and operational records.", filterableTable("Search report, type, period...", ["Report", "Type", "Format", "Period", "Status", "Action"], data.reports.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), modalButton("Download", "report-download")])), modalButton("Generate report", "report", "primary"));
   }
 
   function notificationsPage() {
-    return section("Notification composer", "Send account, KYC, funding, investment, payout, support, and risk messages.", details([["Audience", "Single client, segment or all active clients"], ["Templates", "KYC, deposit, withdrawal, payout, risk, support"], ["Delivery", "Dashboard notification now, email later"], ["Approval", "Compliance approval for risk-sensitive notices"]]) + '<div class="action-row" style="margin-top:14px">' + button("Create notice", "primary") + button("Preview template") + "</div>") +
+    return section("Notification composer", "Send account, KYC, funding, investment, payout, support, and risk messages.", details([["Audience", "Single client, segment or all active clients"], ["Templates", "KYC, deposit, withdrawal, payout, risk, support"], ["Delivery", "Dashboard notification now, email later"], ["Approval", "Compliance approval for risk-sensitive notices"]]) + '<div class="action-row" style="margin-top:14px">' + modalButton("Create notice", "notification", "primary") + modalButton("Preview template", "notification-preview") + "</div>") +
       section("Recent notification activity", "Messages currently represented in the client portal notification feed.", queueList([
         { title: "Proof of address received", owner: "Compliance", client: "Tobi Adeyemi", age: "20 min", state: "In review" },
         { title: "Bank transfer deposit submitted", owner: "Finance", client: "Amara Okafor", age: "2 hr", state: "Pending" },
@@ -382,7 +425,7 @@
   }
 
   function supportPage() {
-    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", table(["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), linkButton("Open", "support-ticket-detail.html")])), button("Assign ticket", "primary"));
+    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", filterableTable("Search ticket, client, owner...", ["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), linkButton("Open", "support-ticket-detail.html")])), modalButton("Assign ticket", "assign-ticket", "primary"));
   }
 
   function clientDetailPage() {
@@ -395,7 +438,7 @@
     ].join("") + "</div>" +
       '<div class="grid two">' +
       section("Client operating profile", "Identity, tier, account status, and active restrictions.", details([["Account", c.account], ["Client", c.name], ["Email", c.email], ["Phone", c.phone], ["Tier", c.tier], ["Status", badge(c.status)]]) + '<div class="restriction-list">' + c.restrictions.map((r) => '<div class="restriction">' + r + "</div>").join("") + "</div>", '<div class="action-row">' + linkButton("Review KYC", "kyc-review.html", "primary") + linkButton("Open withdrawal", "withdrawal-review.html") + "</div>") +
-      section("Recent client notes", "Internal audit notes and operational context.", noteList(c.notes), button("Add note", "primary")) +
+      section("Recent client notes", "Internal audit notes and operational context.", noteList(c.notes), modalButton("Add note", "client-note", "primary")) +
       "</div>" +
       section("Client-linked activity", "A single place to move from the client profile into money movement, investments, and support.", table(["Area", "Reference", "Summary", "Status", "Action"], [
         ["Deposit", "DEP-9013", "USDT funding under compliance review", badge("Compliance review"), linkButton("Open", "deposit-review.html")],
@@ -410,7 +453,7 @@
     return workflowSteps(["Submitted", "Screened", "Staff review", "Decision"], 2) +
       '<div class="grid two">' +
       section("Document review", "Validate the uploaded document before changing client permissions.", details([["Account", r.account], ["Client", r.client], ["Requirement", r.requirement], ["Document", r.document], ["Uploaded", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Compliance decision", r.recommendation, decisionButton("Approve KYC", "primary", "KYC approved") + decisionButton("Reject", "danger", "KYC rejected") + decisionButton("Request resubmission", "", "Resubmission requested")) +
+      reviewPanel("Compliance decision", r.recommendation, decisionButton("Approve KYC", "primary", "KYC approved", "approveKyc") + decisionButton("Reject", "danger", "KYC rejected", "rejectKyc") + decisionButton("Request resubmission", "", "Resubmission requested", "requestKycResubmission")) +
       "</div>";
   }
 
@@ -419,7 +462,7 @@
     return workflowSteps(["Submitted", "Funds detected", "Reconciliation", "Wallet credit"], 2) +
       '<div class="grid two">' +
       section("Funding request", "Confirm the funding rail, amount, source, and client status before crediting wallet balance.", details([["Reference", r.reference], ["Client", r.client], ["Method", r.method], ["Rail", r.rail], ["Amount", r.amount], ["Received", r.received], ["Source", r.source], ["Status", badge(r.status)]]) + "<h3>Funding checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Finance decision", "Confirm only when the source, reference, and compliance checks are acceptable.", decisionButton("Credit wallet", "primary", "Deposit credited") + decisionButton("Flag mismatch", "danger", "Deposit flagged") + decisionButton("Request proof", "", "Proof requested")) +
+      reviewPanel("Finance decision", "Confirm only when the source, reference, and compliance checks are acceptable.", decisionButton("Credit wallet", "primary", "Deposit credited", "creditDeposit") + decisionButton("Flag mismatch", "danger", "Deposit flagged", "flagDeposit") + decisionButton("Request proof", "", "Proof requested", "requestDepositProof")) +
       "</div>";
   }
 
@@ -428,7 +471,7 @@
     return workflowSteps(["Requested", "Eligibility checked", "Admin approval", "Released"], 1) +
       '<div class="grid two">' +
       section("Withdrawal request", "Review cleared balance, destination, risk checks, and KYC status before release.", details([["Reference", r.reference], ["Client", r.client], ["Amount", r.amount], ["Destination", r.destination], ["Available balance", r.available], ["KYC", badge(r.kyc)], ["Status", badge(r.status)]]) + "<h3>Approval checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Withdrawal decision", "Every withdrawal approval should capture the operational reason and approver.", decisionButton("Approve release", "primary", "Withdrawal approved") + decisionButton("Place hold", "danger", "Withdrawal placed on hold") + decisionButton("Ask client for info", "", "Client information requested")) +
+      reviewPanel("Withdrawal decision", "Every withdrawal approval should capture the operational reason and approver.", decisionButton("Approve release", "primary", "Withdrawal approved", "approveWithdrawal") + decisionButton("Place hold", "danger", "Withdrawal placed on hold", "holdWithdrawal") + decisionButton("Ask client for info", "", "Client information requested", "requestWithdrawalInfo")) +
       "</div>";
   }
 
@@ -436,7 +479,7 @@
     const p = data.productDetail;
     return '<div class="grid two">' +
       section("Product controls", "Control how this managed portfolio appears to eligible clients.", details([["Product", p.name], ["Risk", badge(p.risk)], ["Minimum", p.minimum], ["Payout", p.payout], ["Visibility", badge(p.visibility)], ["Audience", p.audience]]) + "<h3>Publishing rules</h3>" + checklist(p.rules)) +
-      reviewPanel("Publishing action", "Changes here should later require versioned product terms and manager approval.", decisionButton("Save changes", "primary", "Product changes saved") + decisionButton("Send to review", "", "Product sent to review") + decisionButton("Hide product", "danger", "Product hidden")) +
+      reviewPanel("Publishing action", "Changes here should later require versioned product terms and manager approval.", decisionButton("Save changes", "primary", "Product changes saved", "saveProduct") + decisionButton("Send to review", "", "Product sent to review", "reviewProduct") + decisionButton("Hide product", "danger", "Product hidden", "hideProduct")) +
       "</div>" +
       section("Client impact preview", "Shows how the product will be framed before backend-managed publishing is added.", table(["Field", "Client-facing value", "Admin note"], [
         ["Strategy", "Premium managed allocation across eligible instruments", "Must stay neutral and non-guaranteed"],
@@ -450,7 +493,7 @@
     const t = data.supportDetail;
     return '<div class="grid two">' +
       section("Ticket context", "Support staff can resolve simple cases or escalate finance/compliance-linked requests.", details([["Ticket", t.ticket], ["Client", t.client], ["Subject", t.subject], ["Owner", t.owner], ["Status", badge(t.status)]]) + "<h3>Timeline</h3>" + timeline(t.timeline.map((row, i) => ["Step " + (i + 1), row[0], row[1], t.client]))) +
-      reviewPanel("Response action", "Keep ticket responses short, specific, and tied to the client request.", decisionButton("Send reply", "primary", "Reply sent") + decisionButton("Escalate", "", "Ticket escalated") + decisionButton("Resolve", "", "Ticket resolved")) +
+      reviewPanel("Response action", "Keep ticket responses short, specific, and tied to the client request.", decisionButton("Send reply", "primary", "Reply sent", "sendSupportReply") + decisionButton("Escalate", "", "Ticket escalated", "escalateSupport") + decisionButton("Resolve", "", "Ticket resolved", "resolveSupport")) +
       "</div>";
   }
 
@@ -462,7 +505,7 @@
       ["Portfolio Manager", "Portfolio products, allocations, mandate notes", "No money movement approval", badge("Active")],
       ["Support Agent", "Tickets and client communication", "No financial approvals", badge("Active")],
       ["Read-only Auditor", "Reports and audit trail", "No write access", badge("Active")]
-    ]), button("Invite admin", "primary"));
+    ]), modalButton("Invite admin", "admin-user", "primary"));
   }
 
   function settingsPage() {
@@ -516,8 +559,9 @@
     if (file === "admin-info-architecture.html") return;
     const meta = pages[file] || pages["index.html"];
     document.title = meta[0] + " | BullPort Admin";
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toast" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions"><label class="search">' + svg("grid") + '<input placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="toast">Quick action</button><div class="avatar">OA</div></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + button("Export", "", "toast") + button("New task", "primary", "toast") + '</div></div>' + bodyFor(file) + '</main></div></div><div class="toast-root" aria-live="polite"></div>';
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toast" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions"><label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><div class="avatar">OA</div></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
+    bindFilters();
   }
 
   function toast(message) {
@@ -542,13 +586,128 @@
         const action = node.getAttribute("data-action");
         if (action === "goto-queues") location.href = "queues.html";
         else if (action === "goto-clients") location.href = "clients.html";
+        else if (action === "open-modal") openModal(node.dataset.modal || "task");
         else if (action === "decision") {
           node.classList.add("is-confirmed");
-          toast((node.dataset.result || node.textContent.trim()) + ". This is stored as a prototype decision.");
+          const apiAction = node.dataset.apiAction || "prototypeDecision";
+          const result = node.dataset.result || node.textContent.trim();
+          const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
+          if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + "</span>";
+          addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
+          toast(result + ". This is stored as a prototype decision.");
         }
         else toast(node.textContent.trim() + " captured for the admin prototype.");
       });
     });
+    document.querySelectorAll("[data-close-modal]").forEach((node) => {
+      if (node.dataset.bound === "true") return;
+      node.dataset.bound = "true";
+      node.addEventListener("click", closeModal);
+    });
+    document.querySelectorAll("[data-submit-modal]").forEach((node) => {
+      if (node.dataset.bound === "true") return;
+      node.dataset.bound = "true";
+      node.addEventListener("click", () => submitModal(node.dataset.submitModal));
+    });
+  }
+
+  function pageContext() {
+    const h1 = document.querySelector("h1");
+    return h1 ? h1.textContent.trim() : "Admin";
+  }
+
+  function addAudit(time, owner, action, subject) {
+    appState.audit.unshift([time, owner, action, subject]);
+    const sections = Array.from(document.querySelectorAll(".section"));
+    const audit = sections.find((node) => node.textContent.indexOf("Live audit trail") !== -1);
+    if (audit) audit.outerHTML = auditPanel();
+  }
+
+  function modalContent(type) {
+    const copy = {
+      "client-note": ["Create client note", "createClientNote", [["Client", "Tobi Adeyemi"], ["Note type", "Compliance / finance / portfolio"], ["Note", "Proof of address reviewed; awaiting confirmation."]]],
+      "assign-task": ["Assign queue item", "assignQueueTask", [["Queue item", "Proof of address review"], ["Owner", "Compliance Officer"], ["Priority", "High"]]],
+      "bulk-kyc": ["Bulk KYC action", "bulkKycDecision", [["Action", "Approve selected eligible reviews"], ["Reviewer", "Compliance"], ["Audit reason", "Documents passed verification checks."]]],
+      "bulk-deposit": ["Bulk deposit confirmation", "bulkCreditDeposits", [["Action", "Credit selected deposits"], ["Rail", "Bank and crypto"], ["Audit reason", "References reconciled."]]],
+      "bulk-withdrawal": ["Bulk withdrawal approval", "bulkApproveWithdrawals", [["Action", "Approve selected withdrawals"], ["Approver", "Finance Operations"], ["Audit reason", "KYC, destination and balance checks passed."]]],
+      product: ["Create portfolio product", "createPortfolioProduct", [["Name", "Income Builder"], ["Risk", "Moderate"], ["Minimum", "$2,500"]]],
+      "allocation-note": ["Create allocation note", "createAllocationNote", [["Client", "Musa Danladi"], ["Portfolio", "Premium Managed"], ["Note", "Top-up request routed to portfolio desk."]]],
+      payout: ["Post payout", "postPayout", [["Source", "Dividend Income Portfolio"], ["Amount", "$620"], ["Mode", "Wallet credit"]]],
+      instrument: ["Instrument setup", "upsertInstrument", [["Symbol", "MSFT"], ["Category", "Stock"], ["Status", "Tradable"]]],
+      report: ["Generate report", "generateReport", [["Report", "Wallet Activity Export"], ["Period", "Last 90 days"], ["Format", "CSV"]]],
+      "report-download": ["Download report", "downloadReport", [["Report", "June 2026 Account Statement"], ["Format", "PDF"], ["Access", "Audited download"]]],
+      notification: ["Create notification", "createNotification", [["Audience", "Clients with pending KYC"], ["Template", "KYC update"], ["Channel", "Dashboard notification"]]],
+      "notification-preview": ["Preview notification", "previewNotification", [["Template", "KYC update"], ["Audience", "Single client"], ["Status", "Preview only"]]],
+      "assign-ticket": ["Assign support ticket", "assignSupportTicket", [["Ticket", "#BP-1208"], ["Owner", "Finance"], ["Priority", "High"]]],
+      "admin-user": ["Invite admin user", "inviteAdminUser", [["Email", "operations@example.com"], ["Role", "Finance Operations"], ["Access", "Money movement only"]]],
+      export: ["Export current view", "exportCurrentView", [["Format", "CSV"], ["Scope", pageContext()], ["Audit", "Required"]]],
+      task: ["Create admin task", "createAdminTask", [["Title", "Follow up pending review"], ["Owner", "Operations"], ["Due", "Today"]]],
+      "quick-action": ["Quick action", "createAdminTask", [["Action", "Create follow-up task"], ["Owner", "Operations"], ["Priority", "Normal"]]]
+    };
+    return copy[type] || copy.task;
+  }
+
+  function openModal(type) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const modal = modalContent(type);
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Backend action: ' + modal[1] + '</p><h2>' + modal[0] + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + modal[2].map((row) => '<label>' + row[0] + '<input value="' + row[1] + '" /></label>').join("") + '<label>Internal note<textarea>Prepared for backend endpoint ' + modal[1] + '.</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-submit-modal="' + modal[1] + '">Save prototype action</button></div></section></div>';
+    bindActions();
+  }
+
+  function closeModal() {
+    const root = document.querySelector("[data-modal-root]");
+    if (root) root.innerHTML = "";
+  }
+
+  function submitModal(apiAction) {
+    addAudit("Now", "Admin", "Submitted " + apiAction, pageContext());
+    closeModal();
+    toast(apiAction + " saved as a prototype action.");
+  }
+
+  function bindFilters() {
+    document.querySelectorAll(".filter-bar").forEach((bar) => {
+      const search = bar.querySelector("[data-table-search]");
+      const status = bar.querySelector("[data-table-status]");
+      const sectionNode = bar.closest(".section");
+      const apply = () => applyFilter(sectionNode, search ? search.value : "", status ? status.value : "");
+      if (search && search.dataset.bound !== "true") {
+        search.dataset.bound = "true";
+        search.addEventListener("input", apply);
+      }
+      if (status && status.dataset.bound !== "true") {
+        status.dataset.bound = "true";
+        status.addEventListener("change", apply);
+      }
+    });
+    const globalSearch = document.querySelector("[data-global-search]");
+    if (globalSearch && globalSearch.dataset.bound !== "true") {
+      globalSearch.dataset.bound = "true";
+      globalSearch.addEventListener("input", () => {
+        const firstSearch = document.querySelector("[data-table-search]");
+        if (firstSearch) {
+          firstSearch.value = globalSearch.value;
+          firstSearch.dispatchEvent(new Event("input"));
+        }
+      });
+    }
+  }
+
+  function applyFilter(sectionNode, query, status) {
+    if (!sectionNode) return;
+    const q = String(query || "").toLowerCase();
+    const s = String(status || "").toLowerCase();
+    const rows = Array.from(sectionNode.querySelectorAll("[data-search]"));
+    let visible = 0;
+    rows.forEach((row) => {
+      const text = row.getAttribute("data-search") || row.textContent.toLowerCase();
+      const show = (!q || text.indexOf(q) !== -1) && (!s || text.indexOf(s) !== -1);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    const empty = sectionNode.querySelector("[data-empty-state]");
+    if (empty) empty.style.display = visible ? "none" : "block";
   }
 
   if (document.readyState === "loading") {
