@@ -15,7 +15,13 @@
     "notifications.html": ["Notifications", "Account messages, funding alerts, KYC updates, payout notices, and support communication."],
     "support.html": ["Support Tickets", "Support cases, assignments, escalations, and service status."],
     "roles.html": ["Admin Users & Roles", "Staff access, role boundaries, approvals, and audit visibility."],
-    "settings.html": ["Platform Settings", "Rules, limits, approval thresholds, fee settings, and system defaults."]
+    "settings.html": ["Platform Settings", "Rules, limits, approval thresholds, fee settings, and system defaults."],
+    "client-detail.html": ["Client Detail", "Single investor operating record with wallet, KYC, investments, restrictions, notes, and recent actions."],
+    "kyc-review.html": ["KYC Review", "Compliance decision workspace for document checks, risk notes, blocked actions, and audit-ready outcomes."],
+    "deposit-review.html": ["Deposit Review", "Funding review workspace for bank and crypto deposits, source checks, proof, and reconciliation decisions."],
+    "withdrawal-review.html": ["Withdrawal Review", "Withdrawal approval workspace for KYC, destination, risk, balance, and payout controls."],
+    "portfolio-product-detail.html": ["Portfolio Product Detail", "Portfolio product controls for publishing, risk labels, minimums, projected returns, and client availability."],
+    "support-ticket-detail.html": ["Support Ticket Detail", "Ticket response workspace with assignment, timeline, client context, and resolution controls."]
   };
 
   const navGroups = [
@@ -109,7 +115,77 @@
       ["10:18 AM", "Compliance", "Requested address resubmission", "Tobi Adeyemi"],
       ["09:54 AM", "Portfolio Desk", "Updated Commodity Opportunity notes", "Portfolio Products"],
       ["09:15 AM", "Support", "Assigned ticket #BP-1208", "Nosa Bello"]
-    ]
+    ],
+    clientProfile: {
+      account: "BP-447215",
+      name: "Tobi Adeyemi",
+      email: "tobi.adeyemi@example.com",
+      phone: "+234 801 000 4472",
+      tier: "Premium Managed",
+      wallet: "$18,420",
+      portfolioValue: "$164,380",
+      kyc: "Under final review",
+      risk: "Balanced",
+      status: "Active",
+      restrictions: ["Withdrawals limited until proof of address is approved", "Large crypto funding requires compliance review"],
+      notes: [
+        ["Compliance", "Proof of address uploaded and awaiting date confirmation."],
+        ["Portfolio Desk", "Client requested Premium Managed allocation review."],
+        ["Finance", "Recent USDT deposit held for source-of-funds check."]
+      ]
+    },
+    kycReview: {
+      account: "BP-447215",
+      client: "Tobi Adeyemi",
+      requirement: "Proof of address",
+      document: "Utility bill - June 2026",
+      uploaded: "08 Jul 2026, 10:14 AM",
+      checks: [["Name match", "Passed"], ["Address match", "Passed"], ["Document date", "Needs review"], ["Fraud screen", "Clear"]],
+      blocked: "Withdrawals and large crypto funding",
+      recommendation: "Request staff confirmation of document date before final approval."
+    },
+    depositReview: {
+      reference: "DEP-9013",
+      client: "Tobi Adeyemi",
+      method: "Crypto USDT",
+      rail: "TRC20",
+      amount: "$3,500",
+      received: "3,500 USDT",
+      source: "External wallet ending 8F41",
+      status: "Compliance review",
+      checks: [["Wallet screening", "Clear"], ["Network confirmations", "42 confirmations"], ["Source of funds", "Needs note"], ["Client KYC", "Address pending"]]
+    },
+    withdrawalReview: {
+      reference: "WDR-3381",
+      client: "Nosa Bello",
+      amount: "$2,400",
+      destination: "Verified bank account",
+      available: "$7,920",
+      kyc: "Approved",
+      status: "Under review",
+      checks: [["Available balance", "Passed"], ["Bank destination", "Verified"], ["Recent deposit hold", "Clear"], ["Risk pattern", "Normal"]]
+    },
+    productDetail: {
+      name: "Premium Managed",
+      risk: "Custom",
+      minimum: "$25,000",
+      payout: "Custom",
+      visibility: "Published",
+      audience: "High-value clients with completed suitability checks",
+      rules: [["Projected return label", "Required"], ["Manager review", "Required before subscription"], ["Options exposure", "Disabled by default"], ["Client dashboard visibility", "Published"]]
+    },
+    supportDetail: {
+      ticket: "#BP-1208",
+      client: "Nosa Bello",
+      subject: "Withdrawal timing clarification",
+      owner: "Finance",
+      status: "Awaiting broker response",
+      timeline: [
+        ["Client", "Asked when withdrawal WDR-3381 will be settled."],
+        ["Support", "Confirmed the request is in finance review."],
+        ["Finance", "Needs final destination confirmation before release."]
+      ]
+    }
   };
 
   const iconPaths = {
@@ -156,6 +232,14 @@
     return '<button type="button" class="btn ' + (kind || "") + '" data-action="' + (action || "toast") + '">' + label + "</button>";
   }
 
+  function linkButton(label, href, kind) {
+    return '<a class="btn ' + (kind || "") + '" href="' + href + '">' + label + "</a>";
+  }
+
+  function decisionButton(label, kind, result) {
+    return '<button type="button" class="btn ' + (kind || "") + '" data-action="decision" data-result="' + result + '">' + label + "</button>";
+  }
+
   function metric(label, value, meta, state) {
     return '<article class="card"><p class="metric-label">' + label + '</p><p class="metric-value">' + value + '</p><p class="metric-meta">' + meta + '</p><div style="margin-top:12px">' + badge(state) + "</div></article>";
   }
@@ -173,7 +257,32 @@
   }
 
   function queueList(items) {
-    return '<div class="queue-list">' + items.map((item) => '<article class="queue-item"><div><h3>' + item.title + '</h3><p>' + item.client + ' - ' + item.owner + ' - ' + item.age + '</p></div><div class="action-row">' + badge(item.state) + button("Open", "", "toast") + "</div></article>").join("") + "</div>";
+    return '<div class="queue-list">' + items.map((item) => '<article class="queue-item"><div><h3>' + item.title + '</h3><p>' + item.client + ' - ' + item.owner + ' - ' + item.age + '</p></div><div class="action-row">' + badge(item.state) + linkButton("Open", routeForQueue(item)) + "</div></article>").join("") + "</div>";
+  }
+
+  function routeForQueue(item) {
+    const text = (item.title + " " + item.owner).toLowerCase();
+    if (text.indexOf("address") !== -1 || text.indexOf("kyc") !== -1 || text.indexOf("suitability") !== -1) return "kyc-review.html";
+    if (text.indexOf("deposit") !== -1 || text.indexOf("transfer") !== -1 || text.indexOf("funding") !== -1) return "deposit-review.html";
+    if (text.indexOf("withdrawal") !== -1) return "withdrawal-review.html";
+    if (text.indexOf("portfolio") !== -1 || text.indexOf("top-up") !== -1) return "portfolio-product-detail.html";
+    return "support-ticket-detail.html";
+  }
+
+  function workflowSteps(steps, currentIndex) {
+    return '<div class="workflow">' + steps.map((step, index) => '<div class="workflow-step ' + (index <= currentIndex ? "is-done" : "") + '"><span>' + String(index + 1).padStart(2, "0") + '</span><strong>' + step + "</strong></div>").join("") + "</div>";
+  }
+
+  function checklist(rows) {
+    return '<div class="checklist">' + rows.map((row) => '<div class="check-item"><div><strong>' + row[0] + '</strong><p>' + row[1] + '</p></div>' + badge(row[1]) + "</div>").join("") + "</div>";
+  }
+
+  function noteList(rows) {
+    return '<div class="note-list">' + rows.map((row) => '<article class="note"><strong>' + row[0] + '</strong><p>' + row[1] + "</p></article>").join("") + "</div>";
+  }
+
+  function reviewPanel(title, subtitle, actions) {
+    return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
   }
 
   function overview() {
@@ -208,28 +317,28 @@
       metric("Restricted accounts", "14", "Funding, withdrawal or trading limits.", "Hold"),
       metric("Premium managed", "83", "High-touch mandates.", "Active"),
       metric("Pending onboarding", "31", "Registration and KYC in progress.", "Pending")
-    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", clientTable(data.clients), button("Create client note", "primary"));
+    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", table(["Account", "Client", "Tier", "Portfolio value", "KYC", "Risk", "Status", "Action"], data.clients.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), row[5], badge(row[6]), linkButton("Open", "client-detail.html")])), button("Create client note", "primary"));
   }
 
   function kycPage() {
     return '<div class="grid two">' +
-      section("KYC decision queue", "Document reviews awaiting compliance action.", table(["Account", "Client", "Requirement", "Owner", "Age", "State"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5])])), button("Approve selected", "primary")) +
+      section("KYC decision queue", "Document reviews awaiting compliance action.", table(["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html")])), button("Approve selected", "primary")) +
       section("Review detail sample", "The detail panel the admin will use before approving or rejecting verification.", details([["Client", "Tobi Adeyemi"], ["Requirement", "Proof of address"], ["Uploaded", "Utility bill - June 2026"], ["Decision", "Review before approval"], ["Blocked actions", "Withdrawals and large crypto funding"], ["Audit note", "Address matches bank city but needs date confirmation"]]) + '<div class="action-row" style="margin-top:14px">' + button("Approve", "primary") + button("Reject", "danger") + button("Request resubmission") + "</div>") +
       "</div>";
   }
 
   function depositsPage() {
-    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", table(["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), button("Review")])), button("Confirm selected", "primary")) +
+    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", table(["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html")])), button("Confirm selected", "primary")) +
       section("Reconciliation checklist", "Controls to keep demo behavior aligned with real settlement workflow.", details([["Reference check", "Required"], ["Source name match", "Required"], ["Crypto confirmations", "Required for crypto"], ["Large funding review", "Compliance threshold applies"]]));
   }
 
   function withdrawalsPage() {
-    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", table(["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), button("Review")])), button("Approve selected", "primary")) +
+    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", table(["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "withdrawal-review.html")])), button("Approve selected", "primary")) +
       section("Approval controls", "Withdrawal decisions should be auditable and role-gated.", details([["KYC dependency", "Full approval required"], ["Destination check", "Verified bank or screened wallet"], ["Risk review", "Enhanced review for crypto and high value"], ["Audit", "Decision, staff user and timestamp"]]));
   }
 
   function productsPage() {
-    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", table(["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), button("Edit")])), button("New product", "primary")) +
+    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", table(["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html")])), button("New product", "primary")) +
       section("Product publishing rules", "Published products can appear in the client dashboard and selected public-site areas.", details([["Projected returns", "Must be labelled projected or market-based"], ["Options", "Never default access"], ["Risk labels", "Required"], ["Visibility", "Draft, review, published, hidden"]]));
   }
 
@@ -273,7 +382,76 @@
   }
 
   function supportPage() {
-    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", table(["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), button("Open")])), button("Assign ticket", "primary"));
+    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", table(["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), linkButton("Open", "support-ticket-detail.html")])), button("Assign ticket", "primary"));
+  }
+
+  function clientDetailPage() {
+    const c = data.clientProfile;
+    return '<div class="grid metrics">' + [
+      metric("Wallet balance", c.wallet, "Available operating balance.", "Active"),
+      metric("Portfolio value", c.portfolioValue, "Current simulated portfolio value.", "Active"),
+      metric("KYC status", c.kyc, "Controls withdrawal and funding limits.", c.kyc),
+      metric("Risk profile", c.risk, "Used for suitability and product access.", "Info")
+    ].join("") + "</div>" +
+      '<div class="grid two">' +
+      section("Client operating profile", "Identity, tier, account status, and active restrictions.", details([["Account", c.account], ["Client", c.name], ["Email", c.email], ["Phone", c.phone], ["Tier", c.tier], ["Status", badge(c.status)]]) + '<div class="restriction-list">' + c.restrictions.map((r) => '<div class="restriction">' + r + "</div>").join("") + "</div>", '<div class="action-row">' + linkButton("Review KYC", "kyc-review.html", "primary") + linkButton("Open withdrawal", "withdrawal-review.html") + "</div>") +
+      section("Recent client notes", "Internal audit notes and operational context.", noteList(c.notes), button("Add note", "primary")) +
+      "</div>" +
+      section("Client-linked activity", "A single place to move from the client profile into money movement, investments, and support.", table(["Area", "Reference", "Summary", "Status", "Action"], [
+        ["Deposit", "DEP-9013", "USDT funding under compliance review", badge("Compliance review"), linkButton("Open", "deposit-review.html")],
+        ["Withdrawal", "WDR-3384", "Withdrawal blocked by address review", badge("Blocked"), linkButton("Open", "withdrawal-review.html")],
+        ["Portfolio", "Premium Managed", "Allocation review requested", badge("Review"), linkButton("Open", "portfolio-product-detail.html")],
+        ["Support", "#BP-1208", "Withdrawal timing clarification", badge("Awaiting broker response"), linkButton("Open", "support-ticket-detail.html")]
+      ]));
+  }
+
+  function kycReviewPage() {
+    const r = data.kycReview;
+    return workflowSteps(["Submitted", "Screened", "Staff review", "Decision"], 2) +
+      '<div class="grid two">' +
+      section("Document review", "Validate the uploaded document before changing client permissions.", details([["Account", r.account], ["Client", r.client], ["Requirement", r.requirement], ["Document", r.document], ["Uploaded", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
+      reviewPanel("Compliance decision", r.recommendation, decisionButton("Approve KYC", "primary", "KYC approved") + decisionButton("Reject", "danger", "KYC rejected") + decisionButton("Request resubmission", "", "Resubmission requested")) +
+      "</div>";
+  }
+
+  function depositReviewPage() {
+    const r = data.depositReview;
+    return workflowSteps(["Submitted", "Funds detected", "Reconciliation", "Wallet credit"], 2) +
+      '<div class="grid two">' +
+      section("Funding request", "Confirm the funding rail, amount, source, and client status before crediting wallet balance.", details([["Reference", r.reference], ["Client", r.client], ["Method", r.method], ["Rail", r.rail], ["Amount", r.amount], ["Received", r.received], ["Source", r.source], ["Status", badge(r.status)]]) + "<h3>Funding checks</h3>" + checklist(r.checks)) +
+      reviewPanel("Finance decision", "Confirm only when the source, reference, and compliance checks are acceptable.", decisionButton("Credit wallet", "primary", "Deposit credited") + decisionButton("Flag mismatch", "danger", "Deposit flagged") + decisionButton("Request proof", "", "Proof requested")) +
+      "</div>";
+  }
+
+  function withdrawalReviewPage() {
+    const r = data.withdrawalReview;
+    return workflowSteps(["Requested", "Eligibility checked", "Admin approval", "Released"], 1) +
+      '<div class="grid two">' +
+      section("Withdrawal request", "Review cleared balance, destination, risk checks, and KYC status before release.", details([["Reference", r.reference], ["Client", r.client], ["Amount", r.amount], ["Destination", r.destination], ["Available balance", r.available], ["KYC", badge(r.kyc)], ["Status", badge(r.status)]]) + "<h3>Approval checks</h3>" + checklist(r.checks)) +
+      reviewPanel("Withdrawal decision", "Every withdrawal approval should capture the operational reason and approver.", decisionButton("Approve release", "primary", "Withdrawal approved") + decisionButton("Place hold", "danger", "Withdrawal placed on hold") + decisionButton("Ask client for info", "", "Client information requested")) +
+      "</div>";
+  }
+
+  function productDetailPage() {
+    const p = data.productDetail;
+    return '<div class="grid two">' +
+      section("Product controls", "Control how this managed portfolio appears to eligible clients.", details([["Product", p.name], ["Risk", badge(p.risk)], ["Minimum", p.minimum], ["Payout", p.payout], ["Visibility", badge(p.visibility)], ["Audience", p.audience]]) + "<h3>Publishing rules</h3>" + checklist(p.rules)) +
+      reviewPanel("Publishing action", "Changes here should later require versioned product terms and manager approval.", decisionButton("Save changes", "primary", "Product changes saved") + decisionButton("Send to review", "", "Product sent to review") + decisionButton("Hide product", "danger", "Product hidden")) +
+      "</div>" +
+      section("Client impact preview", "Shows how the product will be framed before backend-managed publishing is added.", table(["Field", "Client-facing value", "Admin note"], [
+        ["Strategy", "Premium managed allocation across eligible instruments", "Must stay neutral and non-guaranteed"],
+        ["Return wording", "Projected and market-based only", "Never guaranteed"],
+        ["Eligibility", "Completed KYC and portfolio desk approval", "Required"],
+        ["Risk disclosure", "Custom mandate with market and liquidity risk", "Required"]
+      ]));
+  }
+
+  function supportTicketDetailPage() {
+    const t = data.supportDetail;
+    return '<div class="grid two">' +
+      section("Ticket context", "Support staff can resolve simple cases or escalate finance/compliance-linked requests.", details([["Ticket", t.ticket], ["Client", t.client], ["Subject", t.subject], ["Owner", t.owner], ["Status", badge(t.status)]]) + "<h3>Timeline</h3>" + timeline(t.timeline.map((row, i) => ["Step " + (i + 1), row[0], row[1], t.client]))) +
+      reviewPanel("Response action", "Keep ticket responses short, specific, and tied to the client request.", decisionButton("Send reply", "primary", "Reply sent") + decisionButton("Escalate", "", "Ticket escalated") + decisionButton("Resolve", "", "Ticket resolved")) +
+      "</div>";
   }
 
   function rolesPage() {
@@ -311,6 +489,12 @@
       case "support.html": return supportPage();
       case "roles.html": return rolesPage();
       case "settings.html": return settingsPage();
+      case "client-detail.html": return clientDetailPage();
+      case "kyc-review.html": return kycReviewPage();
+      case "deposit-review.html": return depositReviewPage();
+      case "withdrawal-review.html": return withdrawalReviewPage();
+      case "portfolio-product-detail.html": return productDetailPage();
+      case "support-ticket-detail.html": return supportTicketDetailPage();
       default: return overview();
     }
   }
@@ -358,6 +542,10 @@
         const action = node.getAttribute("data-action");
         if (action === "goto-queues") location.href = "queues.html";
         else if (action === "goto-clients") location.href = "clients.html";
+        else if (action === "decision") {
+          node.classList.add("is-confirmed");
+          toast((node.dataset.result || node.textContent.trim()) + ". This is stored as a prototype decision.");
+        }
         else toast(node.textContent.trim() + " captured for the admin prototype.");
       });
     });
