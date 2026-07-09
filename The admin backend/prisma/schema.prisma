@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  COMPLIANCE
+  FINANCE
+  PORTFOLIO_MANAGER
+  SUPPORT
+  AUDITOR
+}
+
+enum ClientStatus {
+  ACTIVE
+  PENDING
+  RESTRICTED
+  SUSPENDED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  RESUBMISSION_REQUIRED
+}
+
+enum MoneyStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  CONFIRMED
+  CREDITED
+  FLAGGED
+  HELD
+  REJECTED
+  BLOCKED
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  CUSTOM
+}
+
+enum ProductStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  HIDDEN
+}
+
+enum InvestmentStatus {
+  PENDING
+  ACTIVE
+  REVIEW
+  EXIT_REQUESTED
+  CLOSED
+}
+
+enum TicketStatus {
+  OPEN
+  AWAITING_BROKER
+  AWAITING_CLIENT
+  ESCALATED
+  RESOLVED
+}
+
+model AdminUser {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         AdminRole
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+}
+
+model Client {
+  id            String              @id @default(cuid())
+  accountNumber String              @unique
+  name          String
+  email         String              @unique
+  phone         String?
+  status        ClientStatus        @default(PENDING)
+  riskLevel     RiskLevel           @default(MODERATE)
+  tier          String              @default("Standard")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  kycReviews    KycReview[]
+  wallet        WalletAccount?
+  deposits      Deposit[]
+  withdrawals   Withdrawal[]
+  investments   ClientInvestment[]
+  payouts       Payout[]
+  tickets       SupportTicket[]
+  notes         ClientNote[]
+  notifications Notification[]
+}
+
+model ClientNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  category  String
+  body      String
+  createdBy String?
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model KycReview {
+  id          String    @id @default(cuid())
+  clientId    String
+  requirement String
+  documentRef String?
+  status      KycStatus @default(PENDING)
+  reviewer    String?
+  decisionNote String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model WalletAccount {
+  id        String              @id @default(cuid())
+  clientId  String              @unique
+  currency  String              @default("USD")
+  balance   Decimal             @db.Decimal(18, 2)
+  available Decimal             @db.Decimal(18, 2)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  client    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ledger    WalletTransaction[]
+}
+
+model WalletTransaction {
+  id        String        @id @default(cuid())
+  walletId  String
+  type      String
+  amount    Decimal       @db.Decimal(18, 2)
+  reference String
+  status    MoneyStatus
+  memo      String?
+  createdAt DateTime      @default(now())
+  wallet    WalletAccount @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+model Deposit {
+  id          String      @id @default(cuid())
+  reference   String      @unique
+  clientId    String
+  method      String
+  rail        String
+  amount      Decimal     @db.Decimal(18, 2)
+  received    Decimal?    @db.Decimal(18, 2)
+  status      MoneyStatus @default(PENDING)
+  reviewNote  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Withdrawal {
+  id          String      @id @default(cuid())
+  reference   String      @unique
+  clientId    String
+  destination String
+  amount      Decimal     @db.Decimal(18, 2)
+  status      MoneyStatus @default(PENDING)
+  reviewNote  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model PortfolioProduct {
+  id          String             @id @default(cuid())
+  name        String             @unique
+  riskLevel   RiskLevel
+  minimum     Decimal            @db.Decimal(18, 2)
+  payoutRule  String
+  status      ProductStatus      @default(DRAFT)
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  investments ClientInvestment[]
+}
+
+model ClientInvestment {
+  id             String           @id @default(cuid())
+  clientId        String
+  productId       String
+  investedAmount  Decimal          @db.Decimal(18, 2)
+  currentValue    Decimal          @db.Decimal(18, 2)
+  status          InvestmentStatus @default(PENDING)
+  nextAction      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product         PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+}
+
+model Payout {
+  id        String      @id @default(cuid())
+  reference String      @unique
+  clientId  String
+  source    String
+  amount    Decimal     @db.Decimal(18, 2)
+  mode      String
+  status    MoneyStatus @default(PENDING)
+  payoutDate DateTime
+  client    Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Instrument {
+  id        String    @id @default(cuid())
+  symbol    String    @unique
+  name      String
+  category  String
+  market    String
+  riskLevel RiskLevel
+  status    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model SupportTicket {
+  id        String       @id @default(cuid())
+  ticketNo  String       @unique
+  clientId  String
+  subject   String
+  owner     String?
+  status    TicketStatus @default(OPEN)
+  priority  String       @default("Normal")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  client    Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  clientId  String?
+  title     String
+  body      String
+  category  String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+}
+
+model ReportExport {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  format    String
+  period    String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id          String     @id @default(cuid())
+  actorId     String?
+  actorName   String
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime   @default(now())
+  actor       AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
