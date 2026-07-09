@@ -16,7 +16,12 @@ clientRouter.get("/", asyncHandler(async (req, res) => {
         { accountNumber: { contains: q, mode: "insensitive" } }
       ]
     } : undefined,
-    include: { wallet: true },
+    include: {
+      wallet: true,
+      kycReviews: { orderBy: { updatedAt: "desc" }, take: 1 },
+      investments: true,
+      notes: { orderBy: { createdAt: "desc" }, take: 3 }
+    },
     orderBy: { createdAt: "desc" }
   });
   return ok(res, clients);

@@ -225,6 +225,27 @@ a {
   font-weight: 900;
 }
 
+.api-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.api-status.live {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--green-dark);
+}
+
+.api-status.fallback {
+  background: rgba(183, 121, 31, 0.13);
+  color: var(--amber);
+}
+
 .content {
   padding: 24px;
 }
@@ -898,6 +919,10 @@ tr:last-child td {
   }
 
   .search {
+    display: none;
+  }
+
+  .api-status {
     display: none;
   }
 

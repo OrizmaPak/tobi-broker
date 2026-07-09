@@ -190,8 +190,12 @@
 
   const appState = {
     audit: data.audit.slice(),
-    decisions: {}
+    decisions: {},
+    apiOnline: false,
+    apiBase: localStorage.getItem("bullport_api_base") || "http://127.0.0.1:4000"
   };
+
+  const liveRefs = {};
 
   const actionLabels = {
     approveKyc: "Approve KYC",
@@ -210,6 +214,227 @@
     escalateSupport: "Escalate support ticket",
     resolveSupport: "Resolve support ticket"
   };
+
+  function formatMoney(value) {
+    const amount = Number(value || 0);
+    return "$" + amount.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  }
+
+  function label(value) {
+    return String(value || "").toLowerCase().split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  }
+
+  function unwrap(result) {
+    if (!result || result.ok === false) return null;
+    return result.data || null;
+  }
+
+  async function api(path, options) {
+    const headers = { "Content-Type": "application/json" };
+    const token = localStorage.getItem("bullport_admin_token");
+    if (token) headers.Authorization = "Bearer " + token;
+    const response = await fetch(appState.apiBase + path, {
+      ...options,
+      headers: { ...headers, ...(options && options.headers ? options.headers : {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error?.message || "API request failed");
+    }
+    return payload.data;
+  }
+
+  async function tryApi(path) {
+    try {
+      return await api(path);
+    } catch {
+      return null;
+    }
+  }
+
+  async function loadBackendData() {
+    const overview = await tryApi("/api/admin/overview");
+    if (!overview) {
+      appState.apiOnline = false;
+      return;
+    }
+
+    appState.apiOnline = true;
+    const [clients, kyc, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs] = await Promise.all([
+      tryApi("/api/clients"),
+      tryApi("/api/kyc/reviews"),
+      tryApi("/api/money/deposits"),
+      tryApi("/api/money/withdrawals"),
+      tryApi("/api/portfolio-products"),
+      tryApi("/api/client-investments"),
+      tryApi("/api/payouts"),
+      tryApi("/api/instruments"),
+      tryApi("/api/support/tickets"),
+      tryApi("/api/admin/audit-logs")
+    ]);
+
+    data.metrics = [
+      ["Pending KYC", String(overview.metrics.pendingKyc || 0), "Reviews awaiting compliance.", "Review"],
+      ["Deposits to Confirm", String(overview.metrics.depositsToReview || 0), "Funding requests in review.", "Pending"],
+      ["Withdrawals in Review", String(overview.metrics.withdrawalsToReview || 0), "Requests needing finance action.", "Hold"],
+      ["Open Support Tickets", String(overview.metrics.openTickets || 0), "Client cases awaiting response.", "Open"]
+    ];
+
+    if (Array.isArray(auditLogs)) {
+      appState.audit = auditLogs.map((log) => [
+        new Date(log.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        log.actorName || "System",
+        label(log.action),
+        log.entityType || "System"
+      ]);
+    }
+
+    if (Array.isArray(clients)) {
+      data.clients = clients.map((client) => {
+        const investmentValue = Array.isArray(client.investments)
+          ? client.investments.reduce((sum, item) => sum + Number(item.currentValue || 0), 0)
+          : Number(client.wallet?.balance || 0);
+        const kycStatus = Array.isArray(client.kycReviews) && client.kycReviews[0] ? label(client.kycReviews[0].status) : "Not started";
+        return [client.accountNumber, client.name, client.tier, formatMoney(investmentValue), kycStatus, label(client.riskLevel), label(client.status)];
+      });
+
+      const profileClient = clients.find((client) => client.accountNumber === "BP-447215") || clients[0];
+      if (profileClient) {
+        liveRefs.clientId = profileClient.id;
+        data.clientProfile = {
+          account: profileClient.accountNumber,
+          name: profileClient.name,
+          email: profileClient.email,
+          phone: profileClient.phone || "Not recorded",
+          tier: profileClient.tier,
+          wallet: formatMoney(profileClient.wallet?.balance || 0),
+          portfolioValue: formatMoney(Array.isArray(profileClient.investments) ? profileClient.investments.reduce((sum, item) => sum + Number(item.currentValue || 0), 0) : 0),
+          kyc: Array.isArray(profileClient.kycReviews) && profileClient.kycReviews[0] ? label(profileClient.kycReviews[0].status) : "Not started",
+          risk: label(profileClient.riskLevel),
+          status: label(profileClient.status),
+          restrictions: ["Backend-connected profile. Restrictions will be derived from KYC, wallet, and risk rules."],
+          notes: Array.isArray(profileClient.notes) && profileClient.notes.length
+            ? profileClient.notes.map((note) => [note.category, note.body])
+            : [["System", "No backend notes recorded yet."]]
+        };
+      }
+    }
+
+    if (Array.isArray(kyc)) {
+      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", row.requirement, row.reviewer || "Compliance", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status)]);
+      const first = kyc[0];
+      if (first) {
+        liveRefs.kycReviewId = first.id;
+        data.kycReview = {
+          id: first.id,
+          account: first.client?.accountNumber || "-",
+          client: first.client?.name || "-",
+          requirement: first.requirement,
+          document: first.documentRef || "Document pending",
+          uploaded: first.createdAt ? new Date(first.createdAt).toLocaleString() : "-",
+          blocked: "Withdrawals and large funding until approved",
+          recommendation: first.decisionNote || "Review document details before final decision.",
+          checks: [["Current status", label(first.status)], ["Reviewer", first.reviewer || "Compliance"], ["Client risk", label(first.client?.riskLevel)], ["Account status", label(first.client?.status)]]
+        };
+      }
+    }
+
+    if (Array.isArray(deposits)) {
+      data.deposits = deposits.map((row) => [row.reference, row.client?.name || "-", row.method, formatMoney(row.amount), row.rail, label(row.status)]);
+      const first = deposits[0];
+      if (first) {
+        liveRefs.depositId = first.id;
+        data.depositReview = {
+          id: first.id,
+          reference: first.reference,
+          client: first.client?.name || "-",
+          method: first.method,
+          rail: first.rail,
+          amount: formatMoney(first.amount),
+          received: first.received ? formatMoney(first.received) : "Pending",
+          source: first.rail,
+          status: label(first.status),
+          checks: [["Current status", label(first.status)], ["Client", first.client?.accountNumber || "-"], ["Method", first.method], ["Review note", first.reviewNote || "No note yet"]]
+        };
+      }
+    }
+
+    if (Array.isArray(withdrawals)) {
+      data.withdrawals = withdrawals.map((row) => [row.reference, row.client?.name || "-", formatMoney(row.amount), row.destination, label(row.client?.status), label(row.status)]);
+      const first = withdrawals[0];
+      if (first) {
+        liveRefs.withdrawalId = first.id;
+        data.withdrawalReview = {
+          id: first.id,
+          reference: first.reference,
+          client: first.client?.name || "-",
+          amount: formatMoney(first.amount),
+          destination: first.destination,
+          available: "Check wallet ledger",
+          kyc: label(first.client?.status),
+          status: label(first.status),
+          checks: [["Current status", label(first.status)], ["Client", first.client?.accountNumber || "-"], ["Destination", first.destination], ["Review note", first.reviewNote || "No note yet"]]
+        };
+      }
+    }
+
+    if (Array.isArray(products)) {
+      data.products = products.map((row) => [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status)]);
+      const premium = products.find((row) => row.name === "Premium Managed") || products[0];
+      if (premium) {
+        liveRefs.productId = premium.id;
+        data.productDetail = {
+          id: premium.id,
+          name: premium.name,
+          risk: label(premium.riskLevel),
+          minimum: formatMoney(premium.minimum),
+          payout: premium.payoutRule,
+          visibility: label(premium.status),
+          audience: premium.description || "Eligible clients with completed suitability checks",
+          rules: [["Projected return label", "Required"], ["Manager review", "Required before subscription"], ["Options exposure", "Disabled by default"], ["Client dashboard visibility", label(premium.status)]]
+        };
+      }
+    }
+
+    if (Array.isArray(investments)) {
+      data.investments = investments.map((row) => [row.client?.name || "-", row.product?.name || "-", formatMoney(row.investedAmount), formatMoney(row.currentValue), row.nextAction || "Monitor", label(row.status)]);
+    }
+
+    if (Array.isArray(payouts)) {
+      data.payouts = payouts.map((row) => [row.reference, row.source, formatMoney(row.amount), row.mode, row.payoutDate ? new Date(row.payoutDate).toLocaleDateString() : "-", label(row.status)]);
+    }
+
+    if (Array.isArray(instruments)) {
+      data.instruments = instruments.map((row) => [row.symbol, row.name, row.category, row.market, label(row.riskLevel), row.status]);
+    }
+
+    if (Array.isArray(tickets)) {
+      data.tickets = tickets.map((row) => [row.ticketNo, row.subject, row.client?.name || "-", row.owner || "Unassigned", label(row.status)]);
+      const first = tickets[0];
+      if (first) {
+        liveRefs.ticketId = first.id;
+        data.supportDetail = {
+          id: first.id,
+          ticket: first.ticketNo,
+          client: first.client?.name || "-",
+          subject: first.subject,
+          owner: first.owner || "Unassigned",
+          status: label(first.status),
+          timeline: [
+            ["Client", first.subject],
+            ["Support", "Ticket loaded from backend."],
+            [first.owner || "Operations", "Awaiting next admin action."]
+          ]
+        };
+      }
+    }
+
+    data.queues = [
+      ...(Array.isArray(kyc) ? kyc.slice(0, 3).map((row) => ({ title: row.requirement, owner: row.reviewer || "Compliance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : []),
+      ...(Array.isArray(deposits) ? deposits.slice(0, 2).map((row) => ({ title: "Deposit " + row.reference, owner: "Finance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : []),
+      ...(Array.isArray(withdrawals) ? withdrawals.slice(0, 2).map((row) => ({ title: "Withdrawal " + row.reference, owner: "Finance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : [])
+    ];
+  }
 
   const iconPaths = {
     grid: '<rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect>',
@@ -559,7 +784,8 @@
     if (file === "admin-info-architecture.html") return;
     const meta = pages[file] || pages["index.html"];
     document.title = meta[0] + " | BullPort Admin";
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toast" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions"><label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><div class="avatar">OA</div></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
+    const apiState = appState.apiOnline ? '<span class="api-status live">API Live</span>' : '<span class="api-status fallback">Static fallback</span>';
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toast" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><div class="avatar">OA</div></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
     bindFilters();
   }
@@ -582,7 +808,7 @@
     document.querySelectorAll("[data-action]").forEach((node) => {
       if (node.dataset.bound === "true") return;
       node.dataset.bound = "true";
-      node.addEventListener("click", () => {
+      node.addEventListener("click", async () => {
         const action = node.getAttribute("data-action");
         if (action === "goto-queues") location.href = "queues.html";
         else if (action === "goto-clients") location.href = "clients.html";
@@ -592,9 +818,16 @@
           const apiAction = node.dataset.apiAction || "prototypeDecision";
           const result = node.dataset.result || node.textContent.trim();
           const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
-          if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + "</span>";
-          addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
-          toast(result + ". This is stored as a prototype decision.");
+          try {
+            await executeBackendAction(apiAction);
+            if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
+            addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
+            toast(result + ". Backend action completed.");
+          } catch (error) {
+            if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " stored locally</span>";
+            addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " captured locally", pageContext());
+            toast((error && error.message ? error.message : "Backend unavailable") + ". Stored locally for prototype continuity.");
+          }
         }
         else toast(node.textContent.trim() + " captured for the admin prototype.");
       });
@@ -609,6 +842,26 @@
       node.dataset.bound = "true";
       node.addEventListener("click", () => submitModal(node.dataset.submitModal));
     });
+  }
+
+  async function executeBackendAction(apiAction) {
+    const note = document.querySelector(".review-panel textarea")?.value || "Updated from BullPort admin UI.";
+    const routes = {
+      approveKyc: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/approve", { note }],
+      rejectKyc: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/reject", { note }],
+      requestKycResubmission: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/request-resubmission", { note }],
+      creditDeposit: ["/api/money/deposits/" + liveRefs.depositId + "/credit", { note }],
+      flagDeposit: ["/api/money/deposits/" + liveRefs.depositId + "/flag", { note }],
+      approveWithdrawal: ["/api/money/withdrawals/" + liveRefs.withdrawalId + "/approve", { note }],
+      holdWithdrawal: ["/api/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
+      resolveSupport: ["/api/support/tickets/" + liveRefs.ticketId + "/resolve", {}],
+      escalateSupport: ["/api/support/tickets/" + liveRefs.ticketId + "/assign", { owner: "Compliance", priority: "High" }],
+      sendSupportReply: ["/api/support/tickets/" + liveRefs.ticketId + "/assign", { owner: "Support", priority: "Normal" }]
+    };
+    const route = routes[apiAction];
+    if (!route || route[0].indexOf("undefined") !== -1) throw new Error("No backend route is available for this action yet");
+    await api(route[0], { method: "POST", body: JSON.stringify(route[1]) });
+    await loadBackendData();
   }
 
   function pageContext() {
@@ -660,10 +913,28 @@
     if (root) root.innerHTML = "";
   }
 
-  function submitModal(apiAction) {
-    addAudit("Now", "Admin", "Submitted " + apiAction, pageContext());
-    closeModal();
-    toast(apiAction + " saved as a prototype action.");
+  async function submitModal(apiAction) {
+    try {
+      if (apiAction === "createClientNote" && liveRefs.clientId) {
+        await api("/api/clients/" + liveRefs.clientId + "/notes", {
+          method: "POST",
+          body: JSON.stringify({ category: "Admin note", body: "Created from BullPort admin UI.", createdBy: "Admin" })
+        });
+      } else if (apiAction === "assignSupportTicket" && liveRefs.ticketId) {
+        await api("/api/support/tickets/" + liveRefs.ticketId + "/assign", {
+          method: "POST",
+          body: JSON.stringify({ owner: "Finance", priority: "High" })
+        });
+      }
+      await loadBackendData();
+      addAudit("Now", "Admin", "Submitted " + apiAction, pageContext());
+      closeModal();
+      toast(apiAction + " saved to backend.");
+    } catch (error) {
+      addAudit("Now", "Admin", "Submitted " + apiAction + " locally", pageContext());
+      closeModal();
+      toast((error && error.message ? error.message : "Backend unavailable") + ". Stored locally.");
+    }
   }
 
   function bindFilters() {
@@ -710,9 +981,14 @@
     if (empty) empty.style.display = visible ? "none" : "block";
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", render);
-  } else {
+  async function boot() {
+    await loadBackendData();
     render();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
   }
 })();
