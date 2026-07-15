@@ -1402,6 +1402,7 @@ body.app-nav-open {
   background: var(--app-white);
   border: 1px solid var(--app-line);
   border-radius: 8px;
+  box-sizing: border-box;
   box-shadow: var(--app-shadow);
   display: grid;
   gap: 16px;
@@ -1409,13 +1410,16 @@ body.app-nav-open {
 }
 
 .static-form label {
+  box-sizing: border-box;
   color: var(--app-ink);
   display: grid;
   gap: 8px;
   font-weight: 800;
+  min-width: 0;
 }
 
 .static-form__grid {
+  align-items: start;
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1426,7 +1430,9 @@ body.app-nav-open {
 .static-form select {
   border: 1px solid var(--app-line);
   border-radius: 6px;
+  box-sizing: border-box;
   color: var(--app-ink);
+  display: block;
   min-height: 52px;
   padding: 12px 14px;
   width: 100%;
@@ -1434,6 +1440,16 @@ body.app-nav-open {
 
 .static-form textarea {
   min-height: 132px;
+  resize: vertical;
+}
+
+.static-contact-form {
+  align-content: start;
+  height: 100%;
+}
+
+.static-contact-form .static-button {
+  justify-self: start;
 }
 
 .static-notice {

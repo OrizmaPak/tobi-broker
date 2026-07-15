@@ -1497,7 +1497,7 @@
 
   function contactForm() {
     return `
-      <form class="static-form" data-static-form data-reset="true">
+      <form class="static-form static-contact-form" data-static-form data-reset="true">
         <div class="static-form__grid">
           <label>Name<input name="name" required></label>
           <label>Email<input type="email" name="email" required></label>
