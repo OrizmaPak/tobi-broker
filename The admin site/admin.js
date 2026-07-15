@@ -195,6 +195,10 @@
     apiBase: localStorage.getItem("bullport_api_base") || "http://127.0.0.1:4000"
   };
 
+  const ADMIN_TOKEN_KEY = "bullport_admin_token";
+  const DEMO_ADMIN_EMAIL = "admin@bullport.local";
+  const DEMO_ADMIN_PASSWORD = "AdminPass123!";
+
   const liveRefs = {};
 
   const actionLabels = {
@@ -231,7 +235,7 @@
 
   async function api(path, options) {
     const headers = { "Content-Type": "application/json" };
-    const token = localStorage.getItem("bullport_admin_token");
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
     if (token) headers.Authorization = "Bearer " + token;
     const response = await fetch(appState.apiBase + path, {
       ...options,
@@ -244,6 +248,20 @@
     return payload.data;
   }
 
+  async function ensureAdminToken() {
+    if (localStorage.getItem(ADMIN_TOKEN_KEY)) return true;
+    try {
+      const data = await api("/api/auth/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ email: DEMO_ADMIN_EMAIL, password: DEMO_ADMIN_PASSWORD })
+      });
+      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function tryApi(path) {
     try {
       return await api(path);
@@ -253,6 +271,7 @@
   }
 
   async function loadBackendData() {
+    await ensureAdminToken();
     const overview = await tryApi("/api/admin/overview");
     if (!overview) {
       appState.apiOnline = false;
@@ -597,7 +616,7 @@
 
   function depositsPage() {
     return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", filterableTable("Search reference, client, rail...", ["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html")])), modalButton("Confirm selected", "bulk-deposit", "primary")) +
-      section("Reconciliation checklist", "Controls to keep demo behavior aligned with real settlement workflow.", details([["Reference check", "Required"], ["Source name match", "Required"], ["Crypto confirmations", "Required for crypto"], ["Large funding review", "Compliance threshold applies"]]));
+      section("Reconciliation checklist", "Controls to keep funding behavior aligned with real settlement workflow.", details([["Reference check", "Required"], ["Source name match", "Required"], ["Crypto confirmations", "Required for crypto"], ["Large funding review", "Compliance threshold applies"]]));
   }
 
   function withdrawalsPage() {
@@ -982,8 +1001,10 @@
   }
 
   async function boot() {
-    await loadBackendData();
     render();
+    loadBackendData().then(() => {
+      render();
+    });
   }
 
   if (document.readyState === "loading") {

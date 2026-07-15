@@ -1,12 +1,12 @@
 window.APP_STATIC_DATA = {
   brand: {
-    name: "[APP_NAME]",
-    email: "support@[app-domain].com",
-    phone: "+234 000 000 0000",
-    address: "Office address placeholder",
+    name: "BullPort",
+    email: "support@bullport.com",
+    phone: "+234 800 BULLPORT",
+    address: "Lagos, Nigeria",
     supportHours: "Monday - Friday, 9:00 AM - 5:00 PM",
     tagline: "Multi-Asset Investing Built for Growth, Income and Control.",
-    risk: "Market data shown for demo purposes only. Investing involves risk. Returns are not guaranteed.",
+    risk: "Market data is informational. Investing involves risk. Returns are not guaranteed.",
     marketHours: {
       label: "Global Markets",
       timeZone: "America/New_York",
@@ -21,6 +21,16 @@ window.APP_STATIC_DATA = {
   navigation: [
     { label: "Home", href: "index.html" },
     {
+      label: "Markets",
+      href: "pages/markets.html",
+      children: [
+        { label: "All Instruments", href: "pages/markets.html" },
+        { label: "Stocks & ETFs", href: "pages/stocks-etfs.html" },
+        { label: "Commodities", href: "pages/commodities.html" },
+        { label: "Options", href: "pages/options.html" }
+      ]
+    },
+    {
       label: "Portfolios",
       href: "pages/portfolios.html",
       children: [
@@ -33,18 +43,6 @@ window.APP_STATIC_DATA = {
         { label: "Premium Managed", href: "pages/portfolio-premium-managed.html" }
       ]
     },
-    {
-      label: "Markets",
-      href: "pages/markets.html",
-      children: [
-        { label: "All Instruments", href: "pages/markets.html" },
-        { label: "Stocks & ETFs", href: "pages/stocks-etfs.html" },
-        { label: "Commodities", href: "pages/commodities.html" },
-        { label: "Options", href: "pages/options.html" }
-      ]
-    },
-    { label: "How It Works", href: "pages/how-it-works.html" },
-    { label: "Pricing & Fees", href: "pages/pricing-fees.html" },
     {
       label: "Education",
       href: "pages/education.html",
@@ -87,7 +85,7 @@ window.APP_STATIC_DATA = {
     {
       eyebrow: "Market Discovery",
       title: "Monitor Instruments, Risk and Opportunity Across Core Markets.",
-      text: "Review demo market coverage for stocks, ETFs, commodities, bonds, indices and options education before you onboard.",
+      text: "Review market coverage for stocks, ETFs, commodities, bonds, indices and options education before you onboard.",
       cta: "View Markets",
       href: "pages/markets.html"
     },
@@ -608,7 +606,7 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "No Guaranteed Returns",
-      text: "Returns, income, dividends and profits are not guaranteed. All return ranges shown are illustrative estimates for demo presentation."
+      text: "Returns, income, dividends and profits are not guaranteed. All return ranges shown are illustrative estimates for presentation."
     },
     {
       title: "User Responsibility",
@@ -668,7 +666,7 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "Instrument monitoring",
-      text: "Demo market tables and category pages for investor discovery without connecting to a live API."
+      text: "Market tables and category pages for investor discovery without connecting to a live API."
     },
     {
       title: "Support readiness",

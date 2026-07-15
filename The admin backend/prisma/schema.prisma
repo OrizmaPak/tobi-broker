@@ -87,16 +87,17 @@ model AdminUser {
 }
 
 model Client {
-  id            String              @id @default(cuid())
-  accountNumber String              @unique
+  id            String             @id @default(cuid())
+  accountNumber String             @unique
   name          String
-  email         String              @unique
+  email         String             @unique
+  passwordHash  String?
   phone         String?
-  status        ClientStatus        @default(PENDING)
-  riskLevel     RiskLevel           @default(MODERATE)
-  tier          String              @default("Standard")
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  status        ClientStatus       @default(PENDING)
+  riskLevel     RiskLevel          @default(MODERATE)
+  tier          String             @default("Standard")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
   kycReviews    KycReview[]
   wallet        WalletAccount?
   deposits      Deposit[]
@@ -119,16 +120,16 @@ model ClientNote {
 }
 
 model KycReview {
-  id          String    @id @default(cuid())
-  clientId    String
-  requirement String
-  documentRef String?
-  status      KycStatus @default(PENDING)
-  reviewer    String?
+  id           String    @id @default(cuid())
+  clientId     String
+  requirement  String
+  documentRef  String?
+  status       KycStatus @default(PENDING)
+  reviewer     String?
   decisionNote String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model WalletAccount {
@@ -156,18 +157,18 @@ model WalletTransaction {
 }
 
 model Deposit {
-  id          String      @id @default(cuid())
-  reference   String      @unique
-  clientId    String
-  method      String
-  rail        String
-  amount      Decimal     @db.Decimal(18, 2)
-  received    Decimal?    @db.Decimal(18, 2)
-  status      MoneyStatus @default(PENDING)
-  reviewNote  String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id         String      @id @default(cuid())
+  reference  String      @unique
+  clientId   String
+  method     String
+  rail       String
+  amount     Decimal     @db.Decimal(18, 2)
+  received   Decimal?    @db.Decimal(18, 2)
+  status     MoneyStatus @default(PENDING)
+  reviewNote String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model Withdrawal {
@@ -198,28 +199,28 @@ model PortfolioProduct {
 
 model ClientInvestment {
   id             String           @id @default(cuid())
-  clientId        String
-  productId       String
-  investedAmount  Decimal          @db.Decimal(18, 2)
-  currentValue    Decimal          @db.Decimal(18, 2)
-  status          InvestmentStatus @default(PENDING)
-  nextAction      String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  product         PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  clientId       String
+  productId      String
+  investedAmount Decimal          @db.Decimal(18, 2)
+  currentValue   Decimal          @db.Decimal(18, 2)
+  status         InvestmentStatus @default(PENDING)
+  nextAction     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  client         Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product        PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
 }
 
 model Payout {
-  id        String      @id @default(cuid())
-  reference String      @unique
-  clientId  String
-  source    String
-  amount    Decimal     @db.Decimal(18, 2)
-  mode      String
-  status    MoneyStatus @default(PENDING)
+  id         String      @id @default(cuid())
+  reference  String      @unique
+  clientId   String
+  source     String
+  amount     Decimal     @db.Decimal(18, 2)
+  mode       String
+  status     MoneyStatus @default(PENDING)
   payoutDate DateTime
-  client    Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model Instrument {
@@ -248,14 +249,14 @@ model SupportTicket {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   clientId  String?
   title     String
   body      String
   category  String
   readAt    DateTime?
-  createdAt DateTime @default(now())
-  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt DateTime  @default(now())
+  client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
 }
 
 model ReportExport {
@@ -269,13 +270,13 @@ model ReportExport {
 }
 
 model AuditLog {
-  id          String     @id @default(cuid())
-  actorId     String?
-  actorName   String
-  action      String
-  entityType  String
-  entityId    String?
-  metadata    Json?
-  createdAt   DateTime   @default(now())
-  actor       AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  id         String     @id @default(cuid())
+  actorId    String?
+  actorName  String
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime   @default(now())
+  actor      AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 }

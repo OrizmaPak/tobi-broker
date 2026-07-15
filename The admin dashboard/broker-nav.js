@@ -240,7 +240,7 @@
     }
   };
 
-  const STATE_KEY = "bullport-demo-state-v1";
+  const STATE_KEY = "bullport-portal-state-v1";
   const DEFAULT_STATE = {
     kycStatus: "Under final review",
     profileCompletion: 86,
@@ -252,6 +252,19 @@
     notifications: DEMO.notifications.slice(),
     transactions: DEMO.transactions.slice(),
     payouts: DEMO.payouts.slice()
+  };
+
+  const API_BASE = (localStorage.getItem("bullport_api_base") || "http://127.0.0.1:4000").replace(/\/$/, "");
+  const CLIENT_TOKEN_KEY = "bullport_client_token";
+  const CLIENT_ID_KEY = "bullport_client_id";
+  const DEMO_CLIENT_EMAIL = "tobi.adeyemi@example.com";
+  const DEMO_CLIENT_PASSWORD = "ClientPass123!";
+  const appState = {
+    apiOnline: false,
+    apiMessage: "Static fallback",
+    apiLoaded: false,
+    loadPromise: null,
+    lastSync: null
   };
 
   const NAV_GROUPS = [
@@ -296,6 +309,11 @@
   function currentFile() {
     const file = location.pathname.split("/").pop() || "index.html";
     return file === "" ? "index.html" : file;
+  }
+
+  function isAuthPage() {
+    const cur = currentFile();
+    return cur === "login.html" || cur === "register.html" || cur === "forgot-password.html";
   }
 
   function svg(icon, active) {
@@ -417,6 +435,369 @@
     sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
   }
 
+  function cloneList(rows) {
+    return Array.isArray(rows) ? rows.slice() : [];
+  }
+
+  function replaceList(target, rows) {
+    if (!Array.isArray(target)) return;
+    target.splice.apply(target, [0, target.length].concat(rows || []));
+  }
+
+  function labelize(value) {
+    return String(value || "")
+      .toLowerCase()
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
+      .join(" ");
+  }
+
+  function numberValue(value) {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : 0;
+  }
+
+  function signedMoney(value) {
+    const amount = numberValue(value);
+    return (amount > 0 ? "+" : "") + money(amount);
+  }
+
+  function formatDate(value) {
+    if (!value) return "Not scheduled";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(/ /g, " ");
+  }
+
+  function relativeTime(value) {
+    if (!value) return "Recently";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Recently";
+    const diff = Date.now() - date.getTime();
+    const minutes = Math.max(1, Math.round(diff / 60000));
+    if (minutes < 60) return minutes + " min ago";
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return hours + " hr ago";
+    return formatDate(value);
+  }
+
+  function derivedPrice(row, index) {
+    const seed = String(row.symbol || row.name || "").split("").reduce(function (sum, char) {
+      return sum + char.charCodeAt(0);
+    }, 0);
+    if (String(row.category).toLowerCase().indexOf("bond") !== -1) return (96 + (index * 0.42)).toFixed(2);
+    if (String(row.category).toLowerCase().indexOf("commod") !== -1) return (2300 + seed).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    return (42 + (seed % 180) + (index * 1.35)).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function productAssets(name) {
+    const value = String(name).toLowerCase();
+    if (value.indexOf("conservative") !== -1) return "Treasury bills, bonds, money market";
+    if (value.indexOf("commodity") !== -1) return "Gold, energy, commodity ETFs";
+    if (value.indexOf("dividend") !== -1) return "Dividend stocks, ETFs, REITs";
+    if (value.indexOf("equity") !== -1) return "Growth stocks, indices, ETFs";
+    if (value.indexOf("premium") !== -1) return "Managed multi-asset mandates";
+    return "Stocks, bonds, ETFs and income assets";
+  }
+
+  function productInvestor(name, risk) {
+    const value = String(name).toLowerCase();
+    if (value.indexOf("premium") !== -1) return "High-value clients needing managed allocation";
+    if (value.indexOf("conservative") !== -1) return "Capital preservation and income-focused clients";
+    if (value.indexOf("commodity") !== -1) return "Experienced investors accepting higher volatility";
+    if (value.indexOf("dividend") !== -1) return "Clients seeking recurring income";
+    if (String(risk).toLowerCase().indexOf("high") !== -1) return "Growth-focused investors with higher risk tolerance";
+    return "Balanced investors building diversified exposure";
+  }
+
+  function mapPlan(product) {
+    const risk = labelize(product.riskLevel);
+    return {
+      id: product.id,
+      name: product.name,
+      risk: risk,
+      investor: productInvestor(product.name, risk),
+      strategy: product.description || (product.name + " broker-managed portfolio product."),
+      assets: productAssets(product.name),
+      projected: "Projected market-based performance; returns are not guaranteed.",
+      minimum: money(numberValue(product.minimum)),
+      payout: (product.payoutRule || "Scheduled") + " payout rule",
+      button: "Review plan"
+    };
+  }
+
+  function mapInstrument(row, index) {
+    const category = row.category || "Market";
+    const risk = labelize(row.riskLevel || "Moderate");
+    const status = row.status || "Watch";
+    const tradable = /tradable/i.test(status) ? "Yes" : (/access/i.test(status) ? "Approval required" : "No");
+    const investable = /investable|tradable/i.test(status) ? "Yes" : (/access/i.test(status) ? "Gated" : "Watch only");
+    return {
+      symbol: row.symbol,
+      name: row.name,
+      category: category,
+      market: row.market || "Global",
+      currency: "USD",
+      price: "$" + derivedPrice(row, index),
+      risk: risk,
+      dividend: /stocks|etfs|bonds|reits/i.test(category) ? "Eligible" : "No",
+      tradable: tradable,
+      investable: investable,
+      status: status
+    };
+  }
+
+  function syncBackendData(data) {
+    if (!data || !data.client) return;
+    const metrics = data.metrics || {};
+    const client = data.client || {};
+    const wallet = data.wallet || {};
+    const transactions = cloneList(data.transactions);
+    const products = cloneList(data.products);
+    const investments = cloneList(data.investments);
+    const instruments = cloneList(data.instruments);
+    const payouts = cloneList(data.payouts);
+    const notifications = cloneList(data.notifications);
+    const reports = cloneList(data.reports);
+    const tickets = cloneList(data.supportTickets);
+    const kycReviews = cloneList(data.kycReviews);
+
+    DEMO.client.name = client.name || DEMO.client.name;
+    DEMO.client.email = client.email || DEMO.client.email;
+    DEMO.client.phone = client.phone || DEMO.client.phone;
+    DEMO.client.accountNo = client.accountNumber || DEMO.client.accountNo;
+    DEMO.client.tier = client.tier || DEMO.client.tier;
+    DEMO.client.riskProfile = client.riskLevel || DEMO.client.riskProfile;
+    DEMO.client.kycStatus = client.kycStatus || DEMO.client.kycStatus;
+    DEMO.client.walletBalance = numberValue(metrics.walletBalance);
+    DEMO.client.totalPortfolioValue = numberValue(metrics.totalPortfolioValue);
+    DEMO.client.activeInvestments = numberValue(metrics.activeInvestments);
+    DEMO.client.totalDividends = numberValue(metrics.totalDividends);
+    DEMO.client.totalProfits = numberValue(metrics.totalProfits);
+    DEMO.client.profitLoss = numberValue(metrics.profitLoss);
+    DEMO.client.pendingWithdrawals = numberValue(metrics.pendingWithdrawals);
+    DEMO.client.profileCompletion = numberValue(metrics.profileCompletion || 86);
+    DEMO.client.nextPayout = formatDate(metrics.nextPayoutDate);
+
+    DEMO.wallet.available = numberValue(wallet.available ?? metrics.walletBalance);
+    DEMO.wallet.reserved = numberValue(metrics.walletReserved);
+    DEMO.wallet.pendingDeposit = numberValue(metrics.pendingDeposits);
+    DEMO.wallet.pendingWithdrawal = numberValue(metrics.pendingWithdrawals);
+    DEMO.wallet.monthlyInflow = transactions.filter(function (row) { return numberValue(row.amount) > 0; }).reduce(function (sum, row) { return sum + numberValue(row.amount); }, 0);
+    DEMO.wallet.monthlyOutflow = Math.abs(transactions.filter(function (row) { return numberValue(row.amount) < 0; }).reduce(function (sum, row) { return sum + numberValue(row.amount); }, 0));
+
+    replaceList(DEMO.plans, products.map(mapPlan));
+    replaceList(DEMO.instruments, instruments.map(mapInstrument));
+    replaceList(DEMO.watchlist, DEMO.instruments.slice(0, 6).map(function (row, index) {
+      return {
+        symbol: row.symbol,
+        theme: row.name,
+        price: row.price,
+        move: index % 3 === 0 ? "-0.4%" : "+" + (0.8 + index * 0.35).toFixed(1) + "%",
+        note: row.category + " exposure monitored from " + row.market + "."
+      };
+    }));
+    replaceList(DEMO.investments, investments.map(function (row) {
+      return {
+        name: row.product ? row.product.name : "Portfolio mandate",
+        invested: numberValue(row.investedAmount),
+        current: numberValue(row.currentValue),
+        projected: "Projected / market-based",
+        payout: row.nextAction || DEMO.client.nextPayout,
+        status: labelize(row.status),
+        action: row.status === "ACTIVE" ? "Review" : "Continue"
+      };
+    }));
+    replaceList(DEMO.holdings, DEMO.instruments.slice(0, 7).map(function (row, index) {
+      return {
+        asset: row.name,
+        category: row.category,
+        allocation: (18 - index * 2) + "%",
+        price: row.price,
+        change: index % 2 === 0 ? "+1." + index + "%" : "-0." + index + "%",
+        risk: row.risk,
+        status: row.status
+      };
+    }));
+    replaceList(DEMO.payouts, payouts.map(function (row) {
+      return {
+        source: row.source,
+        date: formatDate(row.payoutDate),
+        type: row.mode || "Payout",
+        amount: money(numberValue(row.amount)),
+        mode: row.mode || "Wallet credit",
+        status: labelize(row.status)
+      };
+    }));
+    replaceList(DEMO.reports, reports.map(function (row) {
+      return {
+        name: row.name,
+        type: row.type,
+        format: row.format,
+        period: row.period,
+        status: row.status
+      };
+    }));
+    replaceList(DEMO.supportTickets, tickets.map(function (row) {
+      return {
+        id: row.ticketNo || row.id,
+        subject: row.subject,
+        channel: row.owner || "Support desk",
+        priority: row.priority,
+        status: labelize(row.status)
+      };
+    }));
+    replaceList(DEMO.kycChecklist, kycReviews.map(function (row) {
+      return {
+        item: row.requirement,
+        state: labelize(row.status)
+      };
+    }));
+    if (!DEMO.kycChecklist.length) {
+      replaceList(DEMO.kycChecklist, [
+        { item: "Identity verification", state: "Not Started" },
+        { item: "Proof of address", state: "Not Started" },
+        { item: "Bank settlement review", state: "Not Started" }
+      ]);
+    }
+    replaceList(DEMO.notifications, notifications.map(function (row) {
+      return {
+        category: row.category,
+        title: row.title,
+        time: relativeTime(row.createdAt),
+        state: row.readAt ? "Read" : "New"
+      };
+    }));
+
+    const state = getState();
+    state.walletBalance = numberValue(metrics.walletBalance);
+    state.pendingDeposit = numberValue(metrics.pendingDeposits);
+    state.pendingWithdrawal = numberValue(metrics.pendingWithdrawals);
+    state.activeInvestments = numberValue(metrics.activeInvestments);
+    state.nextPayout = formatDate(metrics.nextPayoutDate);
+    state.kycStatus = client.kycStatus || state.kycStatus;
+    state.profileCompletion = numberValue(metrics.profileCompletion || state.profileCompletion);
+    state.notifications = DEMO.notifications.slice();
+    state.transactions = transactions.map(function (row) {
+      return {
+        date: formatDate(row.date),
+        type: row.type,
+        reference: row.reference,
+        amount: signedMoney(row.amount),
+        status: row.status
+      };
+    });
+    state.payouts = DEMO.payouts.slice();
+    saveState(state);
+  }
+
+  async function apiRequest(path, options, allowGuest) {
+    const controller = window.AbortController ? new AbortController() : null;
+    const timeout = controller ? setTimeout(function () { controller.abort(); }, 20000) : null;
+    const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {});
+    if (!allowGuest) {
+      const token = localStorage.getItem(CLIENT_TOKEN_KEY);
+      if (token) headers.Authorization = "Bearer " + token;
+    }
+
+    try {
+      const response = await fetch(API_BASE + path, Object.assign({}, options || {}, {
+        headers: headers,
+        signal: controller ? controller.signal : undefined
+      }));
+      const payload = await response.json().catch(function () { return {}; });
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error && payload.error.message ? payload.error.message : "Request failed");
+      }
+      return payload.data;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  async function ensureDemoClientToken() {
+    const existing = localStorage.getItem(CLIENT_TOKEN_KEY);
+    if (existing) return existing;
+    const data = await apiRequest("/api/auth/client/login", {
+      method: "POST",
+      body: JSON.stringify({ email: DEMO_CLIENT_EMAIL, password: DEMO_CLIENT_PASSWORD })
+    }, true);
+    localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
+    localStorage.setItem(CLIENT_ID_KEY, data.client.id);
+    return data.token;
+  }
+
+  async function loadClientBackendData(force) {
+    if (!force && appState.apiLoaded) return true;
+    if (!force && appState.loadPromise) return appState.loadPromise;
+    appState.loadPromise = (async function () {
+      try {
+        if (!localStorage.getItem(CLIENT_TOKEN_KEY) && !isAuthPage()) {
+          await ensureDemoClientToken();
+        }
+        if (!localStorage.getItem(CLIENT_TOKEN_KEY)) {
+          appState.apiOnline = false;
+          appState.apiMessage = "Sign in to sync";
+          appState.apiLoaded = true;
+          return false;
+        }
+        const data = await apiRequest("/api/client/dashboard", { method: "GET" }, false);
+        syncBackendData(data);
+        appState.apiOnline = true;
+        appState.apiMessage = "API live";
+        appState.apiLoaded = true;
+        appState.lastSync = new Date();
+        return true;
+      } catch (error) {
+        appState.apiOnline = false;
+        appState.apiMessage = error && error.message ? error.message : "Static fallback";
+        appState.apiLoaded = true;
+        return false;
+      } finally {
+        appState.loadPromise = null;
+      }
+    })();
+    return appState.loadPromise;
+  }
+
+  async function refreshLiveView(message, tone) {
+    await loadClientBackendData(true);
+    renderPage();
+    patchChromeUI();
+    bindActions();
+    patchApiStatus();
+    if (message) toast(message, tone || "success");
+  }
+
+  function authFormValues(node) {
+    const form = node && node.closest ? node.closest("form") : null;
+    const inputs = form ? form.querySelectorAll("input") : [];
+    const email = inputs[0] && inputs[0].value ? inputs[0].value.trim() : DEMO_CLIENT_EMAIL;
+    const password = inputs[1] && inputs[1].value ? inputs[1].value : DEMO_CLIENT_PASSWORD;
+    const country = inputs[2] && inputs[2].value ? inputs[2].value.trim() : "Nigeria";
+    const fallbackName = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, function (letter) {
+      return letter.toUpperCase();
+    });
+    return {
+      email: email,
+      password: password,
+      country: country,
+      name: fallbackName || "BullPort Client"
+    };
+  }
+
+  function patchApiStatus() {
+    let node = document.getElementById("broker-api-status");
+    if (!node) {
+      node = document.createElement("div");
+      node.id = "broker-api-status";
+      document.body.appendChild(node);
+    }
+    node.className = "broker-api-status " + (appState.apiOnline ? "is-live" : "is-static");
+    node.innerHTML = '<span></span><strong>' + (appState.apiOnline ? "API live" : "Static mode") + '</strong><em>' + (appState.apiOnline && appState.lastSync ? "Synced " + appState.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : appState.apiMessage) + "</em>";
+  }
+
   function pushNotification(state, category, title, status) {
     state.notifications.unshift({
       category: category,
@@ -534,7 +915,7 @@
     const methods = isDeposit
       ? '<div class="grid gap-4 lg:grid-cols-3">'
         + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Bank transfer</h3><p class="mt-2 text-sm text-muted-foreground">Use your BullPort account reference for direct wallet funding.</p></div>' + badge("Available", "success") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reference</p><p class="mt-1 font-semibold">' + DEMO.client.accountNo + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Expected posting</p><p class="mt-1 font-semibold">Within 1 business day after confirmation</p></div></div><button type="button" data-broker-action="deposit-bank" class="mt-4 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Use bank transfer</button></div>'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Pay with card</h3><p class="mt-2 text-sm text-muted-foreground">Card funding is reserved for the next release of the demo flow.</p></div>' + badge("Coming soon", "warning") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="font-medium">Instant funding</p><p class="mt-1 text-muted-foreground">Debit and credit card funding will be enabled later.</p></div></div><button type="button" data-broker-action="deposit-card" class="mt-4 inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground">Coming soon</button></div>'
+        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Pay with card</h3><p class="mt-2 text-sm text-muted-foreground">Card funding is reserved for the next product release.</p></div>' + badge("Coming soon", "warning") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="font-medium">Instant funding</p><p class="mt-1 text-muted-foreground">Debit and credit card funding will be enabled later.</p></div></div><button type="button" data-broker-action="deposit-card" class="mt-4 inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground">Coming soon</button></div>'
         + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Fund with crypto</h3><p class="mt-2 text-sm text-muted-foreground">Send supported digital assets to the broker wallet and await confirmation.</p></div>' + badge("Review required", "info") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported rails</p><p class="mt-1 font-semibold">USDT (TRC20), BTC, ETH</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Posting rule</p><p class="mt-1 font-semibold">Credit after compliance review and chain confirmation</p></div></div><button type="button" data-broker-action="deposit-crypto" class="mt-4 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">View crypto instructions</button></div>'
         + "</div>"
       : '<div class="grid gap-4 lg:grid-cols-2">'
@@ -631,7 +1012,7 @@
       '<div class="xl:col-span-6">' + section("Watch themes", "Priority watch areas for the current client account.", miniList(DEMO.watchlist, function (row) {
         return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + row.symbol + " - " + row.theme + '</p><span class="text-sm font-semibold">' + row.price + '</span></div><p class="mt-1 text-sm text-muted-foreground">' + row.note + '</p><p class="mt-2 text-xs text-emerald-600 dark:text-emerald-300">' + row.move + "</p></div>";
       })) + "</div>" +
-      '<div class="xl:col-span-6">' + section("Market disclosures", "Returns remain projected, simulated or market-based; nothing is framed as guaranteed.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument prices and expected portfolio outcomes in this UI are static demo values.</p><p>Options, commodities and sector concentration carry higher volatility and are surfaced with higher risk labels and access controls.</p><p>Users should move through KYC, wallet funding, portfolio selection and risk review before taking advanced actions.</p></div>') + "</div>" +
+      '<div class="xl:col-span-6">' + section("Market disclosures", "Returns remain projected, simulated or market-based; nothing is framed as guaranteed.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument prices and expected portfolio outcomes in this UI are sample market values.</p><p>Options, commodities and sector concentration carry higher volatility and are surfaced with higher risk labels and access controls.</p><p>Users should move through KYC, wallet funding, portfolio selection and risk review before taking advanced actions.</p></div>') + "</div>" +
       "</div>";
   }
 
@@ -740,7 +1121,7 @@
         { label: "Required action", value: "Complete options questionnaire and acknowledgment" },
         { label: "Risk note", value: "Advanced strategies may involve losses beyond premium depending on structure" }
       ])) + "</div>" +
-      '<div class="xl:col-span-5">' + section("Risk controls", "Options access is gated and linked to KYC, wallet health and questionnaire review.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Only approved users should see tradable options positions beyond educational previews.</p><p>Higher-risk labels and explicit approval states remain visible even in the static demo.</p><p>Approval-required positions should never look identical to regular long-only portfolio products.</p></div>') + "</div>" +
+      '<div class="xl:col-span-5">' + section("Risk controls", "Options access is gated and linked to KYC, wallet health and questionnaire review.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Only approved users should see tradable options positions beyond educational previews.</p><p>Higher-risk labels and explicit approval states remain visible in the client portal.</p><p>Approval-required positions should never look identical to regular long-only portfolio products.</p></div>') + "</div>" +
       "</div>" +
       section("Current options-related activity", "Existing activity remains visible, but access-controlled.", table(
         ["Instrument", "Side", "Order type", "Quantity", "Price", "Status"],
@@ -758,7 +1139,7 @@
       card("Next Scheduled Payout", DEMO.client.nextPayout, "Earliest upcoming distribution window.", "bg-amber-500/10 text-amber-600 dark:text-amber-300") +
       card("Reinvestment Preference", "Auto for 2 mandates", "Remaining mandates still pay to wallet.", "bg-sky-500/10 text-sky-600 dark:text-sky-300") +
       "</div>" +
-      section("Dividend and profit history", "Income and profit posting records aligned to the demo plan.", table(
+      section("Dividend and profit history", "Income and profit posting records aligned to the client plan.", table(
         ["Source", "Date", "Type", "Amount", "Settlement", "Status"],
         DEMO.payouts.map(function (row) {
           return [row.source, row.date, row.type, row.amount, row.mode, badge(row.status, statusTone(row.status))];
@@ -804,7 +1185,7 @@
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
       '<div class="xl:col-span-5">' + section("Support channels", "Broker support should look operational and reachable.", keyValueRows([
         { label: "Relationship desk", value: "+234 800 BULLPORT" },
-        { label: "Email support", value: "support@bullport.example" },
+        { label: "Email support", value: "support@bullport.com" },
         { label: "Ticket SLA", value: "Within 1 business day" },
         { label: "Call scheduling", value: "Available for premium managed clients" }
       ])) + "</div>" +
@@ -877,7 +1258,7 @@
       '<div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">' +
       '<div class="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">' +
       '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="inline-flex items-center gap-3 rounded-full bg-primary/10 px-4 py-2 text-sm font-semibold text-primary"><span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">$</span> BullPort client portal</div><h1 class="mt-6 text-4xl font-semibold tracking-tight">' + config.title + '</h1><p class="mt-3 max-w-xl text-base text-muted-foreground">' + config.subtitle + '</p><div class="mt-8 grid gap-4 sm:grid-cols-2"><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Managed portfolios</p><p class="mt-2 text-sm font-semibold">6 portfolio models across income, balanced, growth and commodities.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Investor controls</p><p class="mt-2 text-sm font-semibold">Wallet funding, KYC, reports, dividends and risk tracking from one portal.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Markets</p><p class="mt-2 text-sm font-semibold">Stocks, commodities, ETFs, bonds, REITs, indices and access-controlled options.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Workflow</p><p class="mt-2 text-sm font-semibold">Register, verify, fund, allocate, monitor and download account reports.</p></div></div></section>' +
-      '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="mb-6"><h2 class="text-2xl font-semibold tracking-tight">' + config.cta + '</h2><p class="mt-2 text-sm text-muted-foreground">Static UI pass aligned to the BullPort broker journey.</p></div><form class="space-y-4"><div class="space-y-2"><label class="text-sm font-medium">Email address</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="name@example.com"></div>' + (kind === "forgot" ? "" : '<div class="space-y-2"><label class="text-sm font-medium">Password</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="' + (kind === "register" ? "Create a password" : "Enter your password") + '" type="password"></div>') + (kind === "register" ? '<div class="space-y-2"><label class="text-sm font-medium">Country of residence</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" value="Nigeria"></div>' : "") + '<button class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" data-broker-action="' + (kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset")) + '" type="button">' + config.cta + '</button></form><div class="mt-6 rounded-xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">' + config.foot + '</div></section>' +
+      '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="mb-6"><h2 class="text-2xl font-semibold tracking-tight">' + config.cta + '</h2><p class="mt-2 text-sm text-muted-foreground">Secure access aligned to the BullPort broker journey.</p></div><form class="space-y-4"><div class="space-y-2"><label class="text-sm font-medium">Email address</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="name@example.com"></div>' + (kind === "forgot" ? "" : '<div class="space-y-2"><label class="text-sm font-medium">Password</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="' + (kind === "register" ? "Create a password" : "Enter your password") + '" type="password"></div>') + (kind === "register" ? '<div class="space-y-2"><label class="text-sm font-medium">Country of residence</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" value="Nigeria"></div>' : "") + '<button class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" data-broker-action="' + (kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset")) + '" type="button">' + config.cta + '</button></form><div class="mt-6 rounded-xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">' + config.foot + '</div></section>' +
       "</div></div>";
   }
 
@@ -981,7 +1362,7 @@
         body = componentsBody();
         break;
       default:
-        body = section("Portal workspace", "This retained template screen has been normalized to the BullPort portal naming layer.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">This page remains in the static project for coverage, but it is not part of the primary client navigation.</div>');
+        body = section("Portal workspace", "This screen has been normalized to the BullPort portal naming layer.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">This page remains available for coverage, but it is not part of the primary client navigation.</div>');
     }
 
     main.innerHTML = shell(meta.title, meta.subtitle, body);
@@ -994,12 +1375,6 @@
   }
 
   function patchBranding() {
-    document.querySelectorAll("span").forEach(function (el) {
-      if (el.textContent && el.textContent.trim() === "Vault") {
-        el.textContent = "BullPort";
-      }
-    });
-
     document.querySelectorAll("meta[name='description']").forEach(function (meta) {
       meta.setAttribute("content", "BullPort client portal for wallets, broker-managed portfolios, markets, dividends, reports, notifications and risk monitoring.");
     });
@@ -1045,7 +1420,6 @@
     document.querySelectorAll("p, span, div, h1, h2, h3, a, button").forEach(function (el) {
       if (!el.childElementCount && el.textContent) {
         const text = el.textContent;
-        if (text.indexOf("Robinhood") !== -1) el.textContent = text.replace(/Robinhood/gi, "broker");
         if (text.indexOf("Tax Center") !== -1) el.textContent = text.replace(/Tax Center/g, "Reports & Statements");
         if (text.indexOf("Analytics") !== -1 && currentFile() !== "analytics.html") el.textContent = text.replace(/Analytics/g, "Portfolio Insight");
       }
@@ -1160,16 +1534,47 @@
     }
   }
 
-  function handleAction(action, node) {
+  async function handleAction(action, node) {
     const state = getState();
     switch (action) {
       case "auth-login":
-        toast("Signed in. Redirecting to the dashboard.", "success");
-        setTimeout(function () { navigateTo("dashboard.html"); }, 250);
+        try {
+          const form = authFormValues(node);
+          const data = await apiRequest("/api/auth/client/login", {
+            method: "POST",
+            body: JSON.stringify({ email: form.email, password: form.password })
+          }, true);
+          localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
+          localStorage.setItem(CLIENT_ID_KEY, data.client.id);
+          await loadClientBackendData(true);
+          patchApiStatus();
+          toast("Signed in. Redirecting to the dashboard.", "success");
+          setTimeout(function () { navigateTo("dashboard.html"); }, 250);
+        } catch (error) {
+          toast((error && error.message) || "Could not sign in. Check the API and credentials.", "warning");
+        }
         return;
       case "auth-register":
-        toast("Account created. Continue with KYC verification.", "success");
-        setTimeout(function () { navigateTo("kyc.html"); }, 250);
+        try {
+          const form = authFormValues(node);
+          const data = await apiRequest("/api/auth/client/register", {
+            method: "POST",
+            body: JSON.stringify({
+              name: form.name,
+              email: form.email,
+              password: form.password,
+              country: form.country
+            })
+          }, true);
+          localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
+          localStorage.setItem(CLIENT_ID_KEY, data.client.id);
+          await loadClientBackendData(true);
+          patchApiStatus();
+          toast("Account created. Continue with KYC verification.", "success");
+          setTimeout(function () { navigateTo("kyc.html"); }, 250);
+        } catch (error) {
+          toast((error && error.message) || "Could not create account.", "warning");
+        }
         return;
       case "auth-reset":
         toast("Password reset instructions sent.", "info");
@@ -1187,43 +1592,83 @@
         toast("Card funding is coming soon.", "warning");
         return;
       case "deposit-bank":
-        state.walletBalance += 3500;
-        state.pendingDeposit += 3500;
-        pushTransaction(state, "Deposit", "Bank transfer funding", "+$3,500", "Pending");
-        pushNotification(state, "Wallet", "Bank transfer deposit submitted", "Pending confirmation");
-        saveState(state);
-        renderPage();
-        patchChromeUI();
-        bindActions();
-        toast("Bank transfer request logged. Wallet view updated.", "success");
+        try {
+          await ensureDemoClientToken();
+          await apiRequest("/api/client/deposits", {
+            method: "POST",
+            body: JSON.stringify({ amount: 3500, method: "Bank transfer", rail: "Manual transfer" })
+          }, false);
+          await refreshLiveView("Bank transfer request logged for operations review.", "success");
+        } catch (error) {
+          state.walletBalance += 3500;
+          state.pendingDeposit += 3500;
+          pushTransaction(state, "Deposit", "Bank transfer funding", "+$3,500", "Pending");
+          pushNotification(state, "Wallet", "Bank transfer deposit submitted", "Pending confirmation");
+          saveState(state);
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          patchApiStatus();
+          toast("API unavailable. Bank transfer request logged in static mode.", "warning");
+        }
         return;
       case "deposit-crypto":
         showModal("Crypto funding instructions", '<p>Send only supported assets to the reviewed broker wallet route.</p><div class="broker-modal-grid"><div><span>Supported assets</span><strong>USDT (TRC20), BTC, ETH</strong></div><div><span>Posting rule</span><strong>Credit after compliance and chain confirmation</strong></div><div><span>Reference</span><strong>' + DEMO.client.accountNo + '</strong></div></div>', '<button type="button" class="broker-modal-button is-primary" data-broker-close-modal="true">Close</button>');
         return;
       case "withdraw-bank":
-        if (state.kycStatus !== "Approved") {
-          toast("Withdrawal remains blocked until KYC is approved.", "warning");
-          return;
+        try {
+          await ensureDemoClientToken();
+          await apiRequest("/api/client/withdrawals", {
+            method: "POST",
+            body: JSON.stringify({ amount: 1200, destination: DEMO.wallet.linkedBank || "Verified bank account" })
+          }, false);
+          await refreshLiveView("Withdrawal request submitted for finance review.", "success");
+        } catch (error) {
+          if (error && error.message) {
+            toast(error.message, "warning");
+            return;
+          }
+          if (state.kycStatus !== "Approved") {
+            toast("Withdrawal remains blocked until KYC is approved.", "warning");
+            return;
+          }
+          state.walletBalance -= 1200;
+          state.pendingWithdrawal += 1200;
+          pushTransaction(state, "Withdrawal request", "Wallet withdrawal to bank", "-$1,200", "Under review");
+          pushNotification(state, "Wallet", "Bank withdrawal submitted", "Under review");
+          saveState(state);
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          patchApiStatus();
+          toast("Withdrawal request submitted in static mode.", "warning");
         }
-        state.walletBalance -= 1200;
-        state.pendingWithdrawal += 1200;
-        pushTransaction(state, "Withdrawal request", "Wallet withdrawal to bank", "-$1,200", "Under review");
-        pushNotification(state, "Wallet", "Bank withdrawal submitted", "Under review");
-        saveState(state);
-        renderPage();
-        patchChromeUI();
-        bindActions();
-        toast("Withdrawal request submitted for review.", "success");
         return;
       case "withdraw-crypto":
         toast("Crypto withdrawal needs enhanced review and wallet screening.", "warning");
         return;
       case "subscribe-plan":
-        state.activeInvestments += 1;
-        pushTransaction(state, "Portfolio subscription", node.getAttribute("data-broker-plan") || "Portfolio plan", "-$2,500", "Completed");
-        pushNotification(state, "Portfolio", (node.getAttribute("data-broker-plan") || "Portfolio plan") + " added to subscriptions", "Completed");
-        saveState(state);
-        toast("Plan added to the demo subscription flow.", "success");
+        try {
+          await ensureDemoClientToken();
+          await apiRequest("/api/client/investments", {
+            method: "POST",
+            body: JSON.stringify({
+              productName: node.getAttribute("data-broker-plan") || "Balanced Growth",
+              amount: 2500
+            })
+          }, false);
+          await refreshLiveView("Portfolio subscription created and reflected in My Investments.", "success");
+        } catch (error) {
+          if (error && error.message) {
+            toast(error.message, "warning");
+            return;
+          }
+          state.activeInvestments += 1;
+          pushTransaction(state, "Portfolio subscription", node.getAttribute("data-broker-plan") || "Portfolio plan", "-$2,500", "Completed");
+          pushNotification(state, "Portfolio", (node.getAttribute("data-broker-plan") || "Portfolio plan") + " added to subscriptions", "Completed");
+          saveState(state);
+          toast("Plan added to the static subscription flow.", "warning");
+        }
         return;
       case "investment-action":
         toast((node.getAttribute("data-broker-label") || "Action") + " queued for " + (node.getAttribute("data-broker-investment") || "investment") + ".", "info");
@@ -1237,14 +1682,24 @@
         toast("Document upload panel is represented in this prototype flow.", "info");
         return;
       case "kyc-submit":
-        state.kycStatus = "Approved";
-        state.profileCompletion = 100;
-        pushNotification(state, "KYC", "Verification completed and approved", "Approved");
-        saveState(state);
-        renderPage();
-        patchChromeUI();
-        bindActions();
-        toast("KYC status updated to approved.", "success");
+        try {
+          await ensureDemoClientToken();
+          await apiRequest("/api/client/kyc/submit", {
+            method: "POST",
+            body: JSON.stringify({ requirement: "Proof of address", documentRef: "dashboard-upload.pdf" })
+          }, false);
+          await refreshLiveView("KYC documents submitted for compliance review.", "success");
+        } catch (error) {
+          state.kycStatus = "Approved";
+          state.profileCompletion = 100;
+          pushNotification(state, "KYC", "Verification completed and approved", "Approved");
+          saveState(state);
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          patchApiStatus();
+          toast("KYC status updated in static mode.", "warning");
+        }
         return;
       default:
         return;
@@ -1293,11 +1748,17 @@
       + " .broker-modal-grid div{border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc}"
       + " .broker-modal-grid span{display:block;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:4px}"
       + " .broker-modal-grid strong{display:block;color:#0f172a}"
+      + " .broker-api-status{position:fixed;left:16px;bottom:16px;z-index:110;display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.35);border-radius:999px;background:rgba(255,255,255,.94);color:#0f172a;padding:8px 11px;box-shadow:0 12px 30px rgba(15,23,42,.12);font-size:12px;backdrop-filter:blur(10px)}"
+      + " .broker-api-status span{width:8px;height:8px;border-radius:999px;background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
+      + " .broker-api-status strong{font-weight:700}"
+      + " .broker-api-status em{font-style:normal;color:#64748b}"
+      + " .broker-api-status.is-live span{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.16)}"
+      + " .broker-api-status.is-static span{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
       + " @media (max-width:1023px){body .min-h-screen,body header,body .sticky.top-0.z-30,body .flex.flex-1.flex-col.transition-all.duration-300{max-width:100vw!important;overflow-x:hidden}body main{padding-left:1rem!important;padding-right:1rem!important}}";
     document.head.appendChild(style);
   }
 
-  function apply() {
+  async function apply() {
     injectStyles();
     normalizeResponsiveChrome();
     patchBranding();
@@ -1307,6 +1768,19 @@
     renderPage();
     patchChromeUI();
     bindActions();
+    patchApiStatus();
+    if (!appState.apiLoaded && !appState.loadPromise) {
+      loadClientBackendData(false).then(function (updated) {
+        if (!updated) {
+          patchApiStatus();
+          return;
+        }
+        renderPage();
+        patchChromeUI();
+        bindActions();
+        patchApiStatus();
+      });
+    }
   }
 
   if (document.readyState === "loading") {

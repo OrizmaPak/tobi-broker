@@ -275,8 +275,13 @@
     });
 
     document.querySelectorAll(".faq-style1__left-btn a").forEach((anchor) => {
-      anchor.href = link("pages/faqs.html");
-      anchor.textContent = "Read FAQs";
+      if (anchor.closest(".elementor-218")) {
+        anchor.href = link("pages/faqs.html");
+        anchor.textContent = "Read FAQs";
+      } else {
+        anchor.href = link("pages/login.html");
+        anchor.textContent = "Login";
+      }
     });
   }
 
@@ -918,7 +923,7 @@
     const items = filter ? data.instruments.filter(filter) : data.instruments;
     return `
       <div class="static-market-table-block" data-market-table>
-        <p class="static-market-table__note">Demo market feed for presentation only. Not live financial advice.</p>
+        <p class="static-market-table__note">Market feed is informational and not financial advice.</p>
         <div class="static-market-table">
           <table>
             <thead>
@@ -1156,7 +1161,7 @@
   function renderMarkets() {
     return pageWrap(
       "Markets",
-      "Explore demo coverage across stocks, ETFs, bonds, commodities, indices and options education from one public-facing website.",
+      "Explore market coverage across stocks, ETFs, bonds, commodities, indices and options education from one public-facing website.",
       `
         <section class="static-section">
           <div class="static-container">
@@ -1167,7 +1172,7 @@
           <div class="static-container">
             <div class="static-heading">
               <div><span class="static-kicker">Market table</span><h2>Instrument monitoring for investor discovery.</h2></div>
-              <p>This demo table uses small simulated updates only. It does not connect to any real financial API and should not be used as live pricing.</p>
+              <p>This table uses small simulated updates only. It does not connect to any real financial API and should not be used as live pricing.</p>
             </div>
             ${marketTable()}
           </div>
@@ -1298,8 +1303,8 @@
                 </div>
               </div>
               <div>
-                <h3 class="static-section-title" style="font-size:30px;margin-bottom:10px;">Demo options watchlist</h3>
-                <p class="static-lead" style="margin-bottom:18px;">These sample instruments are shown for structure and presentation only.</p>
+                <h3 class="static-section-title" style="font-size:30px;margin-bottom:10px;">Options watchlist</h3>
+                <p class="static-lead" style="margin-bottom:18px;">These instruments are informational and should be reviewed with full risk context.</p>
                 ${marketTable(filter)}
               </div>
             </div>
@@ -1323,7 +1328,7 @@
         <section class="static-section">
           <div class="static-container">
             ${feeTable()}
-            <p class="static-notice" style="margin-top:26px;">Fees shown are for demo purposes and may change based on portfolio, jurisdiction and account type.</p>
+            <p class="static-notice" style="margin-top:26px;">Fees shown are for presentation purposes and may change based on portfolio, jurisdiction and account type.</p>
           </div>
         </section>`
     );
@@ -1483,7 +1488,7 @@
         </div>
         <label>Message<textarea name="message" required></textarea></label>
         <button class="static-button" type="submit">Send Message</button>
-        <p class="static-notice static-hidden" data-form-note>Thank you. This demo form is not connected to a backend yet.</p>
+        <p class="static-notice static-hidden" data-form-note>Thank you. This form is not connected to a backend yet.</p>
       </form>`;
   }
 
@@ -1654,7 +1659,7 @@
       },
       markets: {
         title: `Markets | ${data.brand.name}`,
-        description: "Explore demo market coverage across stocks, ETFs, bonds, commodities, indices and options education."
+        description: "Explore market coverage across stocks, ETFs, bonds, commodities, indices and options education."
       },
       "stocks-etfs": {
         title: `Stocks & ETFs | ${data.brand.name}`,
@@ -1694,7 +1699,7 @@
       },
       contact: {
         title: `Contact | ${data.brand.name}`,
-        description: "Support contact details and demo contact form for onboarding, portfolios, pricing and market questions."
+        description: "Support contact details and contact form for onboarding, portfolios, pricing and market questions."
       },
       login: {
         title: `Login | ${data.brand.name}`,
@@ -1738,7 +1743,7 @@
     description.content = meta.description;
   }
 
-  function startDemoMarketFeed() {
+  function startMarketFeed() {
     const table = document.querySelector("[data-market-table]");
     if (!table) return;
 
@@ -1799,7 +1804,7 @@
     updateContactLinks();
     applySeo();
     startMarketStatusClock();
-    startDemoMarketFeed();
+    startMarketFeed();
   }
 
   window.addEventListener("beforeunload", () => {
