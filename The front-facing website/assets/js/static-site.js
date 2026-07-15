@@ -69,15 +69,17 @@
     return "medium";
   }
 
-  function iconMark() {
-    return "$";
-  }
+  const logoAssets = {
+    main: "wp-content/uploads/2025/09/logo-1.png",
+    light: "wp-content/uploads/2025/09/footer-v1-logo-1.png",
+    mobile: "wp-content/uploads/2025/08/mobile-nav-logo-1.png"
+  };
 
-  function logo(light) {
+  function logo(light, variant = "main") {
+    const src = variant === "mobile" ? logoAssets.mobile : light ? logoAssets.light : logoAssets.main;
     return `
-      <span class="app-text-logo ${light ? "app-text-logo--light" : ""}">
-        <span class="app-text-logo__mark">${escapeHtml(iconMark())}</span>
-        <span class="app-text-logo__word">${escapeHtml(data.brand.name)}</span>
+      <span class="app-brand-logo ${light ? "app-brand-logo--light" : ""}">
+        <img src="${link(src)}" alt="${escapeHtml(data.brand.name)}" loading="eager">
       </span>`;
   }
 
@@ -247,9 +249,10 @@
       ".mobile-nav__content .logo-box a"
     ];
     document.querySelectorAll(selectors.join(",")).forEach((anchor) => {
+      const isMobileLogo = Boolean(anchor.closest(".mobile-nav__content"));
       anchor.href = link("index.html");
       anchor.removeAttribute("title");
-      anchor.innerHTML = logo(Boolean(anchor.closest(".mobile-nav__content")));
+      anchor.innerHTML = logo(isMobileLogo, isMobileLogo ? "mobile" : "main");
     });
   }
 
