@@ -19,8 +19,60 @@ body {
   margin: 0;
 }
 
+body[data-page]::before,
+body[data-page]::after {
+  content: "";
+  opacity: 1;
+  pointer-events: all;
+  position: fixed;
+  transition: opacity 0.45s ease, visibility 0.45s ease;
+  visibility: visible;
+}
+
+body[data-page]::before {
+  background:
+    radial-gradient(circle at center, rgba(23, 171, 48, 0.08), transparent 32%),
+    rgba(255, 255, 255, 0.96);
+  inset: 0;
+  z-index: 99998;
+}
+
+body[data-page]::after {
+  animation: appLogoPulse 0.95s ease-in-out infinite;
+  background-image: url("../../wp-content/uploads/2025/09/logo-1.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 18px 35px rgba(0, 0, 0, 0.16));
+  height: 64px;
+  left: 50%;
+  margin-left: -112px;
+  margin-top: -32px;
+  top: 50%;
+  width: 224px;
+  z-index: 99999;
+}
+
+body[data-page].app-ready::before,
+body[data-page].app-ready::after {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 body[data-page] .loader-wrap {
   display: none !important;
+}
+
+@keyframes appLogoPulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 .static-hidden {

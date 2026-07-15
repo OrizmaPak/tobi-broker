@@ -6,6 +6,9 @@
   const base = body.dataset.base || "";
   const page = body.dataset.page || detectPage();
   const marketIntervals = [];
+  const loaderStartedAt = Date.now();
+  let appInitialized = false;
+  let loaderReleased = false;
 
   function detectPage() {
     const file = (location.pathname.split("/").pop() || "index.html").replace(".html", "");
@@ -81,6 +84,20 @@
       <span class="app-brand-logo ${light ? "app-brand-logo--light" : ""}">
         <img src="${link(src)}" alt="${escapeHtml(data.brand.name)}" loading="eager">
       </span>`;
+  }
+
+  function releasePageLoader(force = false) {
+    if (loaderReleased || !appInitialized) return;
+    if (!force && document.readyState !== "complete") return;
+
+    const minimumVisibleMs = 650;
+    const elapsed = Date.now() - loaderStartedAt;
+    const delay = force ? 0 : Math.max(0, minimumVisibleMs - elapsed);
+
+    loaderReleased = true;
+    window.setTimeout(() => {
+      body.classList.add("app-ready");
+    }, delay);
   }
 
   function currentFor(item) {
@@ -1808,6 +1825,9 @@
     applySeo();
     startMarketStatusClock();
     startMarketFeed();
+    appInitialized = true;
+    releasePageLoader();
+    window.setTimeout(() => releasePageLoader(true), 3500);
   }
 
   window.addEventListener("beforeunload", () => {
@@ -1819,4 +1839,6 @@
   } else {
     init();
   }
+
+  window.addEventListener("load", () => releasePageLoader());
 })();
