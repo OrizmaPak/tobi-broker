@@ -665,7 +665,10 @@ body[data-page] .loader-wrap {
 }
 
 .static-cta {
-  background: var(--app-green);
+  background:
+    linear-gradient(135deg, rgba(36, 177, 36, 0.14), rgba(36, 177, 36, 0.03)),
+    var(--app-dark);
+  border: 1px solid rgba(36, 177, 36, 0.26);
   border-radius: 8px;
   color: var(--app-white);
   display: grid;
@@ -683,7 +686,7 @@ body[data-page] .loader-wrap {
 }
 
 .static-cta p {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.78);
   font-size: 17px;
   line-height: 1.65;
   margin: 0;
@@ -692,7 +695,7 @@ body[data-page] .loader-wrap {
 .static-cta .static-button {
   align-self: center;
   background: var(--app-white);
-  color: var(--app-green-dark) !important;
+  color: var(--app-ink) !important;
 }
 
 .static-cta__actions {
