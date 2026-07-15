@@ -192,7 +192,7 @@
     audit: data.audit.slice(),
     decisions: {},
     apiOnline: false,
-    apiBase: localStorage.getItem("bullport_api_base") || "http://127.0.0.1:4000"
+    apiBase: localStorage.getItem("bullport_api_base") || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "https://bullport-backend-tobi.vercel.app")
   };
 
   const ADMIN_TOKEN_KEY = "bullport_admin_token";

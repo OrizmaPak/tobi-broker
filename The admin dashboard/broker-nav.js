@@ -254,7 +254,8 @@
     payouts: DEMO.payouts.slice()
   };
 
-  const API_BASE = (localStorage.getItem("bullport_api_base") || "http://127.0.0.1:4000").replace(/\/$/, "");
+  const DEFAULT_API_BASE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "https://bullport-backend-tobi.vercel.app";
+  const API_BASE = (localStorage.getItem("bullport_api_base") || DEFAULT_API_BASE).replace(/\/$/, "");
   const CLIENT_TOKEN_KEY = "bullport_client_token";
   const CLIENT_ID_KEY = "bullport_client_id";
   const DEMO_CLIENT_EMAIL = "tobi.adeyemi@example.com";
