@@ -3,7 +3,7 @@ window.APP_STATIC_DATA = {
     name: "BullPort",
     email: "support@bullport.com",
     phone: "+234 800 BULLPORT",
-    address: "Lagos, Nigeria",
+    address: "London, United Kingdom",
     supportHours: "Monday - Friday, 9:00 AM - 5:00 PM",
     tagline: "Multi-Asset Investing Built for Growth, Income and Control.",
     risk: "Market data is informational. Investing involves risk. Returns are not guaranteed.",
