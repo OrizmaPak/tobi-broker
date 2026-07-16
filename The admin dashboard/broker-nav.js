@@ -2030,6 +2030,7 @@
     const style = document.createElement("style");
     style.id = "broker-portal-styles";
     style.textContent = ""
+      + "@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;font-display:swap;src:url('assets/fonts/chakrapetch-869a9485.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}"
       + "html,body{max-width:100%;overflow-x:hidden}"
       + ".broker-axis-label{fill:currentColor;opacity:.65;font-size:11px}"
       + " main table{table-layout:auto}"
@@ -2082,7 +2083,7 @@
       + " .bp-auth-live{display:flex;align-items:center;gap:9px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.08);padding:10px 13px;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}.bp-auth-live span{height:9px;width:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 5px rgba(34,197,94,.13)}"
       + " .bp-auth-copy{max-width:580px;margin-top:46px}"
       + " .bp-auth-kicker{display:inline-flex;margin:0 0 18px;padding:8px 12px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(255,255,255,.08);color:#9cf4a9;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}"
-      + " .bp-auth-copy h1{margin:0;font-size:clamp(2.65rem,4.3vw,4.65rem);line-height:.92;font-weight:900;letter-spacing:0;color:#fff;text-wrap:balance}"
+      + " .bp-auth-copy h1{margin:0;font-family:'Chakra Petch',sans-serif;font-size:clamp(2.65rem,4.3vw,4.65rem);line-height:.92;font-weight:700;letter-spacing:0;color:#fff;text-wrap:balance}"
       + " .bp-auth-copy>p:not(.bp-auth-kicker){margin:22px 0 0;max-width:500px;color:rgba(255,255,255,.76);font-size:17px;line-height:1.7}"
       + " .bp-auth-minimal-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px}.bp-auth-minimal-list span{border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.08);padding:9px 12px;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card{border-radius:30px;background:rgba(255,255,255,.96);padding:34px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;backdrop-filter:blur(20px)}"
