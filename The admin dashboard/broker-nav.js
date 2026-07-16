@@ -1368,7 +1368,7 @@
         title: "Access your BullPort dashboard",
         subtitle: "Monitor portfolios, wallet activity, reports and risk controls from one broker portal.",
         cta: "Sign in to dashboard",
-        foot: 'New to BullPort? <a class="font-medium text-primary hover:underline" href="register.html">Create an account</a>'
+        foot: '<div class="flex flex-wrap items-center justify-between gap-3"><span>New to BullPort? <a class="font-medium text-primary hover:underline" href="register.html">Create an account</a></span><a class="font-medium text-primary hover:underline" href="forgot-password.html">Forgot password?</a></div>'
       },
       register: {
         title: "Open a broker client account",
