@@ -1400,12 +1400,12 @@
       '<div class="bp-auth-backdrop"><span></span><span></span><span></span></div>' +
       '<div class="bp-auth-shell">' +
       '<section class="bp-auth-hero" aria-label="BullPort client portal overview">' +
-      '<div class="bp-auth-topbar"><div class="bp-auth-topline"><span class="bp-auth-mark">$</span><span>BullPort</span><strong>Client Portal</strong></div></div>' +
+      '<div class="bp-auth-topbar"><div class="bp-auth-topline"><img class="bp-auth-logo" src="assets/images/bullport-logo.png" alt="BullPort"><strong>Client Portal</strong></div></div>' +
       '<div class="bp-auth-copy"><p class="bp-auth-kicker">Broker investment portal</p><h1>' + config.title + '</h1><p>' + config.subtitle + '</p></div>' +
       '<div class="bp-auth-minimal-list"><span>Managed portfolios</span><span>Wallet funding</span><span>Reports</span><span>Support</span></div>' +
       '</section>' +
       '<section class="bp-auth-card" aria-label="' + config.cta + '">' +
-      '<div class="bp-auth-card-brand"><span class="bp-auth-mark">$</span><div><strong>BullPort</strong><p>Investor access</p></div></div>' +
+      '<div class="bp-auth-card-brand"><img class="bp-auth-logo" src="assets/images/bullport-logo.png" alt="BullPort"><div><p>Investor access</p></div></div>' +
       '<div class="bp-auth-card-head"><div><span>Secure access</span><h2>' + config.cta + '</h2></div><p>' + (kind === "login" ? "Use your BullPort account credentials to continue." : "Keep your investor profile aligned from the first step.") + '</p></div>' +
       '<form class="bp-auth-form">' + authFields + '<button class="bp-auth-submit" data-broker-action="' + action + '" type="button">' + config.cta + '<span aria-hidden="true">&rarr;</span></button></form>' +
       trustStrip +
@@ -1552,9 +1552,18 @@
 
     const brandStack = document.querySelector("aside .flex.flex-col");
     if (brandStack) {
+      const brandRoot = brandStack.parentElement;
+      if (brandRoot && !brandRoot.querySelector(".bp-portal-logo")) {
+        brandRoot.innerHTML = '<img class="bp-portal-logo" src="assets/images/bullport-logo.png" alt="BullPort"><span class="bp-portal-logo-subtitle">Client Portal</span>';
+      }
       const spans = brandStack.querySelectorAll("span");
       if (spans[0]) spans[0].textContent = "BullPort";
       if (spans[1]) spans[1].textContent = "Client Portal";
+    }
+
+    const headerBrand = document.querySelector("header .hidden.sm\\:block");
+    if (headerBrand && !headerBrand.querySelector(".bp-header-logo") && /BullPort Client Portal|Dashboard workspace/i.test(headerBrand.textContent || "")) {
+      headerBrand.innerHTML = '<div class="bp-header-brand"><img class="bp-header-logo" src="assets/images/bullport-logo.png" alt="BullPort"><span>Client Portal</span></div>';
     }
   }
 
@@ -2068,6 +2077,7 @@
       + " .broker-api-status em{font-style:normal;color:#64748b}"
       + " .broker-api-status.is-live span{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.16)}"
       + " .broker-api-status.is-static span{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
+      + " .bp-portal-logo{display:block;width:142px;height:auto;object-fit:contain}.bp-portal-logo-subtitle{display:block;margin-top:2px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.16em}.bp-header-brand{display:flex;align-items:center;gap:12px}.bp-header-logo{display:block;width:128px;height:auto;object-fit:contain}.bp-header-brand span{border-left:1px solid #dbe3dd;padding-left:12px;color:#64748b;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em}"
       + " .bp-auth-page{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:#edf5ef;color:#101713;isolation:isolate}"
       + " .bp-auth-backdrop{position:absolute;inset:0;overflow:hidden;z-index:-1;background:linear-gradient(135deg,#e9f5eb 0%,#f8fafc 42%,#e5f0e8 100%)}.bp-auth-backdrop span{position:absolute;border-radius:999px;filter:blur(10px);opacity:.72}.bp-auth-backdrop span:nth-child(1){width:420px;height:420px;left:-120px;top:-90px;background:radial-gradient(circle,rgba(34,197,94,.28),transparent 68%)}.bp-auth-backdrop span:nth-child(2){width:360px;height:360px;right:-120px;bottom:-80px;background:radial-gradient(circle,rgba(15,23,42,.12),transparent 70%)}.bp-auth-backdrop span:nth-child(3){width:220px;height:220px;right:26%;top:18%;background:radial-gradient(circle,rgba(25,183,47,.18),transparent 70%)}"
       + " .bp-auth-shell{width:min(1040px,100%);display:grid;grid-template-columns:minmax(0,.95fr) minmax(390px,.75fr);gap:22px;align-items:stretch}"
@@ -2077,8 +2087,9 @@
       + " .bp-auth-hero:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(0deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(180deg,rgba(0,0,0,.8),transparent 86%);pointer-events:none}"
       + " .bp-auth-hero>*{position:relative;z-index:1}"
       + " .bp-auth-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px}"
-      + " .bp-auth-topline{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800;letter-spacing:0;color:#f8fafc}"
+      + " .bp-auth-topline{display:flex;align-items:center;gap:12px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.92);padding:10px 14px;font-size:15px;font-weight:800;letter-spacing:0;color:#101713;box-shadow:0 18px 42px rgba(0,0,0,.12);backdrop-filter:blur(12px)}"
       + " .bp-auth-topline strong{margin-left:4px;border-left:1px solid rgba(255,255,255,.22);padding-left:12px;color:rgba(255,255,255,.72);font-weight:600}"
+      + " .bp-auth-logo{display:block;width:138px;height:auto;object-fit:contain}.bp-auth-topline strong{border-left-color:rgba(16,23,19,.14);color:rgba(16,23,19,.58);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}.bp-auth-card-brand .bp-auth-logo{width:148px}"
       + " .bp-auth-mark{display:inline-flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-weight:900;box-shadow:0 0 0 8px rgba(25,183,47,.12)}"
       + " .bp-auth-live{display:flex;align-items:center;gap:9px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.08);padding:10px 13px;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}.bp-auth-live span{height:9px;width:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 5px rgba(34,197,94,.13)}"
       + " .bp-auth-copy{max-width:580px;margin-top:46px}"
@@ -2087,7 +2098,7 @@
       + " .bp-auth-copy>p:not(.bp-auth-kicker){margin:22px 0 0;max-width:500px;color:rgba(255,255,255,.76);font-size:17px;line-height:1.7}"
       + " .bp-auth-minimal-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px}.bp-auth-minimal-list span{border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.08);padding:9px 12px;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card{border-radius:30px;background:rgba(255,255,255,.96);padding:34px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;backdrop-filter:blur(20px)}"
-      + " .bp-auth-card:before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,#19b72f,#86efac,#101713)}.bp-auth-card-brand{display:flex;align-items:center;gap:12px;margin-bottom:34px}.bp-auth-card-brand .bp-auth-mark{height:40px;width:40px;box-shadow:0 0 0 7px rgba(25,183,47,.1)}.bp-auth-card-brand strong{display:block;color:#101713;font-size:16px;font-weight:900}.bp-auth-card-brand p{margin:2px 0 0;color:#647164;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}"
+      + " .bp-auth-card:before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,#19b72f,#86efac,#101713)}.bp-auth-card-brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:34px}.bp-auth-card-brand p{margin:0;color:#647164;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card-head span{display:inline-flex;margin-bottom:10px;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}.bp-auth-card-head h2{margin:0;color:#101713;font-size:30px;line-height:1.08;font-weight:850;letter-spacing:0}.bp-auth-card-head p{margin:12px 0 0;color:#647164;font-size:14px;line-height:1.6}"
       + " .bp-auth-form{display:grid;gap:15px;margin-top:28px}.bp-auth-field{display:grid;gap:8px;color:#253127;font-size:13px;font-weight:800}.bp-auth-field span{display:flex;align-items:center;justify-content:space-between}.bp-auth-field input{width:100%;height:52px;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;color:#101713;padding:0 15px;font:inherit;font-weight:650;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-field input:focus{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}"
       + " .bp-auth-submit{height:56px;border:0;border-radius:14px;background:#19b72f;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 18px 34px rgba(25,183,47,.28);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-submit:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 22px 38px rgba(25,183,47,.32)}.bp-auth-submit span{display:inline-flex;height:24px;width:24px;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:16px;line-height:1}"
