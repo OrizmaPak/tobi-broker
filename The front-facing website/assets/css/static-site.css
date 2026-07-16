@@ -55,9 +55,9 @@ body[data-page]::after {
 
 body[data-page].app-ready::before,
 body[data-page].app-ready::after {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 body[data-page] .loader-wrap {
