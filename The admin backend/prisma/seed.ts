@@ -81,15 +81,23 @@ async function seedProductsAndInstruments() {
     if (!price) await prisma.priceSnapshot.create({ data: { instrumentId: instrument.id, price: currentPrice, currency: "USD", source: "Admin managed seed", asOf: new Date() } });
   }
 
-  const allocationSymbols = ["SPY", "US10Y", "XAUUSD", "VNQ"];
-  const allocationWeights = [35, 30, 20, 15];
-  const allocationInstruments = await prisma.instrument.findMany({ where: { symbol: { in: allocationSymbols } } });
+  const allocationsByProduct: Record<string, Array<[string, number]>> = {
+    "Conservative Income": [["US10Y", 60], ["SPY", 20], ["VNQ", 20]],
+    "Balanced Growth": [["SPY", 35], ["US10Y", 25], ["VNQ", 20], ["XAUUSD", 10], ["AAPL", 10]],
+    "Commodity Opportunity": [["XAUUSD", 60], ["SPY", 15], ["US10Y", 15], ["VNQ", 10]],
+    "Dividend Income": [["VNQ", 35], ["SPY", 30], ["US10Y", 25], ["AAPL", 10]],
+    "Equity Growth": [["SPY", 45], ["AAPL", 30], ["NDX", 25]],
+    "Premium Managed": [["SPY", 25], ["US10Y", 20], ["AAPL", 15], ["XAUUSD", 15], ["VNQ", 15], ["NDX", 10]]
+  };
+  const allocationInstruments = await prisma.instrument.findMany({ where: { symbol: { in: [...new Set(Object.values(allocationsByProduct).flat().map(([symbol]) => symbol))] } } });
   const allProducts = await prisma.portfolioProduct.findMany();
   for (const product of allProducts) {
     const existing = await prisma.portfolioAllocation.count({ where: { productId: product.id, effectiveTo: null } });
     if (!existing) {
-      await prisma.portfolioAllocation.createMany({ data: allocationSymbols.map((symbol, index) => ({ productId: product.id, instrumentId: allocationInstruments.find((item) => item.symbol === symbol)!.id, targetWeight: allocationWeights[index] })) });
+      await prisma.portfolioAllocation.createMany({ data: (allocationsByProduct[product.name] || []).map(([symbol, targetWeight]) => ({ productId: product.id, instrumentId: allocationInstruments.find((item) => item.symbol === symbol)!.id, targetWeight })) });
     }
+    const fees = await prisma.feeRule.count({ where: { productId: product.id, active: true } });
+    if (!fees) await prisma.feeRule.create({ data: { productId: product.id, name: "Annual management fee", type: "MANAGEMENT", rate: product.name === "Premium Managed" ? 0.015 : 0.01, currency: "USD", appliesTo: "Average managed portfolio value" } });
   }
 }
 
