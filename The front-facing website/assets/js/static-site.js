@@ -650,12 +650,23 @@
       "about-company/index.html": "pages/about.html",
       "platform/index.html": "pages/how-it-works.html",
       "wp-login.html": "pages/login.html",
-      "register/index.html": "pages/register.html"
+      "register/index.html": "pages/register.html",
+      "login.html": "pages/login.html",
+      "register.html": "pages/register.html"
     };
 
     document.querySelectorAll("a[href]").forEach((anchor) => {
       const raw = anchor.getAttribute("href");
       if (!raw || /^(mailto:|tel:|#)/.test(raw)) return;
+      const label = (anchor.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (label === "login" || label === "sign in") {
+        anchor.setAttribute("href", `${clientPortalBase}/login.html`);
+        return;
+      }
+      if (["get started", "create account", "open account", "sign up", "start investing", "start trading"].includes(label)) {
+        anchor.setAttribute("href", `${clientPortalBase}/register.html`);
+        return;
+      }
       if (/^https?:/i.test(raw)) {
         const allowedStore = /play\.google\.com\/store|apple\.com\/app-store/i.test(raw);
         const allowedPortal = raw.startsWith(clientPortalBase);
