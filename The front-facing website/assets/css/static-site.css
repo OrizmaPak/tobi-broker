@@ -1455,6 +1455,232 @@ body.app-nav-open {
   justify-self: start;
 }
 
+.static-section--contact-video {
+  padding-bottom: 0;
+}
+
+.contact-video-panel {
+  align-items: stretch;
+  background: #1f251e;
+  border-radius: 8px;
+  box-shadow: var(--app-shadow);
+  color: var(--app-white);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  min-height: 430px;
+  overflow: hidden;
+}
+
+.contact-video-panel__media {
+  min-height: 430px;
+  overflow: hidden;
+  position: relative;
+}
+
+.contact-video-panel__media::after {
+  background: linear-gradient(180deg, rgba(31, 37, 30, 0.06), rgba(31, 37, 30, 0.58));
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+
+.contact-video-panel__media img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.contact-video-panel__play {
+  align-items: center;
+  background: var(--app-green);
+  border: 10px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  box-shadow: 0 22px 45px rgba(0, 0, 0, 0.28);
+  display: flex;
+  height: 88px;
+  justify-content: center;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 200ms ease, background 200ms ease;
+  width: 88px;
+  z-index: 2;
+}
+
+.contact-video-panel__play:hover {
+  background: var(--app-green-dark);
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.contact-video-panel__play span {
+  border-bottom: 12px solid transparent;
+  border-left: 18px solid var(--app-white);
+  border-top: 12px solid transparent;
+  display: block;
+  margin-left: 5px;
+}
+
+.contact-video-panel__badge {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  bottom: 24px;
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  left: 24px;
+  letter-spacing: 0;
+  padding: 10px 16px;
+  position: absolute;
+  text-transform: uppercase;
+  z-index: 2;
+}
+
+.contact-video-panel__content {
+  align-content: center;
+  display: grid;
+  gap: 18px;
+  padding: 48px;
+}
+
+.contact-video-panel__content h2 {
+  color: var(--app-white);
+  font-size: 42px;
+  line-height: 1.1;
+  margin: 0;
+  max-width: 520px;
+}
+
+.contact-video-panel__content p {
+  color: #c5cec3;
+  font-size: 17px;
+  line-height: 1.72;
+  margin: 0;
+  max-width: 560px;
+}
+
+.contact-video-panel__points {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.contact-video-panel__points div {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.contact-video-panel__points strong {
+  color: var(--app-green);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 14px;
+}
+
+.contact-video-panel__points span {
+  color: var(--app-white);
+  font-weight: 700;
+}
+
+.contact-video-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.contact-video-open {
+  overflow: hidden;
+}
+
+.contact-video-modal[hidden] {
+  display: none;
+}
+
+.contact-video-modal {
+  align-items: center;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100000;
+}
+
+.contact-video-modal__backdrop {
+  background: rgba(15, 23, 18, 0.72);
+  inset: 0;
+  position: absolute;
+}
+
+.contact-video-modal__panel {
+  background: var(--app-white);
+  border-radius: 8px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.32);
+  color: var(--app-ink);
+  max-width: 640px;
+  padding: 34px;
+  position: relative;
+  width: min(100%, 640px);
+  z-index: 1;
+}
+
+.contact-video-modal__close {
+  background: #edf6e8;
+  border: 1px solid #cce8c5;
+  border-radius: 999px;
+  color: var(--app-green-dark);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 12px;
+  position: absolute;
+  right: 20px;
+  text-transform: uppercase;
+  top: 20px;
+}
+
+.contact-video-modal__panel h3 {
+  color: var(--app-ink);
+  font-size: 34px;
+  line-height: 1.12;
+  margin: 12px 0 20px;
+  max-width: 520px;
+}
+
+.contact-video-modal__timeline {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.contact-video-modal__timeline div {
+  background: #f7faf6;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 15px 16px;
+}
+
+.contact-video-modal__timeline strong {
+  color: var(--app-green);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 14px;
+}
+
+.contact-video-modal__timeline p {
+  color: var(--app-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
 .static-notice {
   background: #ecf8de;
   border: 1px solid #cce8c5;
@@ -1643,6 +1869,18 @@ body.app-nav-open {
   .static-signal-strip > div:last-child {
     border-bottom: 0;
   }
+
+  .contact-video-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-video-panel__media {
+    min-height: 340px;
+  }
+
+  .contact-video-panel__content {
+    padding: 34px;
+  }
 }
 
 @media (max-width: 767px) {
@@ -1670,6 +1908,51 @@ body.app-nav-open {
 
   .static-card img {
     height: 190px;
+  }
+
+  .contact-video-panel {
+    border-radius: 8px;
+    min-height: 0;
+  }
+
+  .contact-video-panel__media {
+    min-height: 240px;
+  }
+
+  .contact-video-panel__play {
+    border-width: 8px;
+    height: 72px;
+    width: 72px;
+  }
+
+  .contact-video-panel__content {
+    padding: 24px;
+  }
+
+  .contact-video-panel__content h2 {
+    font-size: 31px;
+  }
+
+  .contact-video-panel__actions {
+    display: grid;
+  }
+
+  .contact-video-modal {
+    padding: 14px;
+  }
+
+  .contact-video-modal__panel {
+    padding: 26px;
+  }
+
+  .contact-video-modal__close {
+    position: static;
+    justify-self: start;
+    margin-bottom: 12px;
+  }
+
+  .contact-video-modal__panel h3 {
+    font-size: 28px;
   }
 
   .static-card__body,

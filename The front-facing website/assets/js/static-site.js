@@ -1696,11 +1696,58 @@
       </form>`;
   }
 
+  function contactVideoPanel() {
+    return `
+      <section class="static-section static-section--contact-video">
+        <div class="static-container">
+          <div class="contact-video-panel">
+            <div class="contact-video-panel__media">
+              <img src="${escapeHtml(asset("wp-content/uploads/2025/09/video-v1-1.jpg"))}" alt="BullPort client support walkthrough">
+              <button class="contact-video-panel__play" type="button" data-contact-video-open aria-label="View BullPort onboarding walkthrough"><span></span></button>
+              <div class="contact-video-panel__badge">Support walkthrough</div>
+            </div>
+            <div class="contact-video-panel__content">
+              <span class="static-kicker">Contact desk</span>
+              <h2>Know the next step before you speak with support.</h2>
+              <p>Use this quick overview to understand onboarding, KYC, wallet funding, portfolio access and reporting before contacting the BullPort team.</p>
+              <div class="contact-video-panel__points">
+                <div><strong>01</strong><span>Account and KYC guidance</span></div>
+                <div><strong>02</strong><span>Funding and withdrawal support</span></div>
+                <div><strong>03</strong><span>Portfolio and market questions</span></div>
+              </div>
+              <div class="contact-video-panel__actions">
+                <a class="static-button" href="${clientPortalBase}/register.html">Get Started</a>
+                <a class="static-button static-button--secondary" href="${clientPortalBase}/login.html">Login</a>
+              </div>
+            </div>
+          </div>
+          <div class="contact-video-modal" data-contact-video-modal hidden>
+            <div class="contact-video-modal__backdrop" data-contact-video-close></div>
+            <div class="contact-video-modal__panel" role="dialog" aria-modal="true" aria-labelledby="contact-video-title">
+              <button class="contact-video-modal__close" type="button" data-contact-video-close aria-label="Close walkthrough">Close</button>
+              <span class="static-kicker">Support walkthrough</span>
+              <h3 id="contact-video-title">How BullPort support helps before portal access.</h3>
+              <div class="contact-video-modal__timeline">
+                <div><strong>01</strong><p>Confirm your account path: registration, verification and portal access.</p></div>
+                <div><strong>02</strong><p>Clarify funding routes, withdrawal requirements and expected review stages.</p></div>
+                <div><strong>03</strong><p>Route portfolio, market, options and report questions to the right desk.</p></div>
+              </div>
+              <div class="contact-video-panel__actions">
+                <a class="static-button" href="${clientPortalBase}/register.html">Get Started</a>
+                <a class="static-button static-button--secondary" href="${clientPortalBase}/login.html">Login</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>`;
+  }
+
   function renderContact() {
     return pageWrap(
       "Contact",
       "Speak with support about onboarding, portfolios, markets, pricing, risk disclosures or portal readiness.",
       `
+        ${contactVideoPanel()}
         <section class="static-section">
           <div class="static-container">
             <div class="static-grid static-two-col">
@@ -1849,6 +1896,23 @@
     });
   }
 
+  function bindContactVideo() {
+    const modal = document.querySelector("[data-contact-video-modal]");
+    const open = document.querySelector("[data-contact-video-open]");
+    if (!modal || !open) return;
+    const setOpen = (value) => {
+      modal.hidden = !value;
+      document.body.classList.toggle("contact-video-open", value);
+    };
+    open.addEventListener("click", () => setOpen(true));
+    modal.querySelectorAll("[data-contact-video-close]").forEach((button) => {
+      button.addEventListener("click", () => setOpen(false));
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !modal.hidden) setOpen(false);
+    });
+  }
+
   function applySeo() {
     const seo = {
       home: {
@@ -1966,6 +2030,7 @@
     renderFooter();
     remapLegacyLinks();
     bindForms();
+    bindContactVideo();
     replaceBrandText();
     replaceLogos();
     updateContactLinks();
