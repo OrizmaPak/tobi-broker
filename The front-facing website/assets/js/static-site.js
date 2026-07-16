@@ -6,6 +6,10 @@
   const base = body.dataset.base || "";
   const page = body.dataset.page || detectPage();
   const marketIntervals = [];
+  const apiBase = ["localhost", "127.0.0.1"].includes(location.hostname)
+    ? "http://127.0.0.1:4000"
+    : "";
+  const clientPortalBase = "https://bullport-dashboard-tobi.vercel.app";
   const loaderStartedAt = Date.now();
   let appInitialized = false;
   let loaderReleased = false;
@@ -26,6 +30,8 @@
 
   function link(path) {
     if (!path || /^(https?:|mailto:|tel:|#)/.test(path)) return path || "#";
+    if (path === "pages/login.html" || path === "login.html") return `${clientPortalBase}/login.html`;
+    if (path === "pages/register.html" || path === "register.html") return `${clientPortalBase}/register.html`;
     if (base === "../") {
       if (path.startsWith("pages/")) return path.replace("pages/", "");
       return "../" + path;
@@ -51,6 +57,7 @@
   }
 
   function formatPrice(value, assetClass) {
+    if (value === null || value === undefined || value === "") return "Unavailable";
     const safe = Number(value || 0);
     const digits = safe >= 1000 ? 2 : safe >= 100 ? 2 : safe >= 10 ? 2 : 3;
     const prefix = assetClass === "Index" ? "" : "$";
@@ -61,6 +68,7 @@
   }
 
   function formatPercent(value) {
+    if (value === null || value === undefined || value === "") return "Not provided";
     const safe = Number(value || 0);
     return `${safe >= 0 ? "+" : ""}${safe.toFixed(2)}%`;
   }
@@ -70,6 +78,155 @@
     if (text.includes("low")) return "low";
     if (text.includes("high") || text.includes("custom")) return "high";
     return "medium";
+  }
+
+  function titleCase(value) {
+    return String(value || "")
+      .replaceAll("_", " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  async function publicApi(path, options = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(`${apiBase}/api/v1/public${path}`, {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(options.headers || {})
+        },
+        signal: controller.signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload?.error?.message || "Published platform data is unavailable.");
+      }
+      return payload.data;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function instrumentHref(category) {
+    const normalized = String(category || "").toLowerCase();
+    if (normalized.includes("option")) return "pages/options.html";
+    if (normalized.includes("commod")) return "pages/commodities.html";
+    if (normalized.includes("stock") || normalized.includes("etf") || normalized.includes("reit")) {
+      return "pages/stocks-etfs.html";
+    }
+    return "pages/markets.html";
+  }
+
+  function money(value, currency = "USD") {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2
+    }).format(Number(value || 0));
+  }
+
+  async function loadPublishedData() {
+    const originalInstruments = data.instruments.slice();
+    const [capabilities, portfolios, instruments, fees, disclosures] = await Promise.allSettled([
+      publicApi("/capabilities"),
+      publicApi("/portfolios"),
+      publicApi("/instruments"),
+      publicApi("/fees"),
+      publicApi("/disclosures")
+    ]);
+
+    data.capabilities = capabilities.status === "fulfilled" ? capabilities.value : {
+      cardFunding: false,
+      bankFunding: false,
+      cryptoFunding: false,
+      marketPriceMode: "unavailable"
+    };
+    data.disclosures = disclosures.status === "fulfilled" ? disclosures.value : {};
+
+    if (portfolios.status === "fulfilled" && Array.isArray(portfolios.value) && portfolios.value.length) {
+      data.portfolios = portfolios.value.map((product, index) => {
+        const existing = data.portfolios.find((item) => item.slug === product.slug)
+          || data.portfolios[index % data.portfolios.length];
+        const allocations = Array.isArray(product.allocations)
+          ? product.allocations.map((item) => ({
+            label: item.instrument?.name || item.instrument?.symbol || "Allocation",
+            value: Number(item.targetWeight || 0)
+          }))
+          : [];
+        const minimum = money(product.minimum, product.currency || "USD");
+        const low = product.projectedReturnMin === null ? null : Number(product.projectedReturnMin);
+        const high = product.projectedReturnMax === null ? null : Number(product.projectedReturnMax);
+        const projectedRange = low === null || high === null || (low === 0 && high === 0)
+          ? "Projected performance is set by the approved client mandate and is not guaranteed."
+          : `Projected ${low}% - ${high}% annually, market-based and not guaranteed.`;
+        const feeSummary = Array.isArray(product.feeRules) && product.feeRules.length
+          ? product.feeRules.map((fee) => {
+            const value = fee.rate !== null && fee.rate !== undefined
+              ? `${(Number(fee.rate) * 100).toFixed(2)}%`
+              : money(fee.flatAmount, fee.currency || "USD");
+            return `${fee.name}: ${value}`;
+          }).join("; ")
+          : existing.feeSummary;
+        return {
+          ...existing,
+          id: product.id,
+          slug: product.slug || existing.slug,
+          title: product.name.endsWith("Portfolio") ? product.name : `${product.name} Portfolio`,
+          description: product.description || existing.description,
+          riskLevel: titleCase(product.riskLevel),
+          minimumInvestment: minimum,
+          suggestedDuration: product.durationDays ? `${product.durationDays}+ days` : existing.suggestedDuration,
+          estimatedReturnRange: projectedRange,
+          feeSummary,
+          dividendProfitStructure: product.payoutRule
+            ? `${product.payoutRule} distribution policy, subject to approved terms and available earnings.`
+            : existing.dividendProfitStructure,
+          disclaimer: product.disclosure || existing.disclaimer,
+          allocation: allocations.length ? allocations : existing.allocation
+        };
+      });
+    }
+
+    if (instruments.status === "fulfilled" && Array.isArray(instruments.value) && instruments.value.length) {
+      data.instruments = instruments.value.map((item) => ({
+        id: item.id,
+        symbol: item.symbol,
+        name: item.name,
+        assetClass: item.category,
+        price: item.currentPrice === null ? null : Number(item.currentPrice),
+        changePercent: null,
+        riskLevel: titleCase(item.riskLevel),
+        chartData: item.currentPrice === null ? [] : Array(5).fill(Number(item.currentPrice)),
+        href: instrumentHref(item.category),
+        priceSource: item.priceSource || "Admin managed",
+        priceAsOf: item.priceAsOf || null,
+        currency: item.currency || "USD"
+      }));
+      data.marketDataAvailable = true;
+    } else {
+      data.instruments = originalInstruments.map((item) => ({
+        ...item,
+        price: null,
+        changePercent: null,
+        chartData: [],
+        priceSource: "Unavailable",
+        priceAsOf: null
+      }));
+      data.marketDataAvailable = false;
+    }
+
+    if (fees.status === "fulfilled" && Array.isArray(fees.value) && fees.value.length) {
+      data.fees = fees.value.map((fee) => ({
+        label: fee.name,
+        value: fee.rate !== null && fee.rate !== undefined
+          ? `${(Number(fee.rate) * 100).toFixed(2)}%`
+          : money(fee.flatAmount, fee.currency || "USD"),
+        note: `Applies to ${titleCase(fee.appliesTo)}. ${fee.productId ? "Portfolio-specific rule." : "Platform rule."}`
+      }));
+    }
   }
 
   const logoAssets = {
@@ -343,10 +500,10 @@
                 <span>Get Instant Support!</span>
               </a>
               <div class="app-template-header__social" aria-label="Social links">
-                <a href="https://www.facebook.com/" aria-label="Facebook">${icons.facebook}</a>
-                <a href="https://www.x.com/" aria-label="X">${icons.x}</a>
-                <a href="https://www.instagram.com/" aria-label="Instagram">${icons.instagram}</a>
-                <a href="https://www.youtube.com/" aria-label="YouTube">${icons.youtube}</a>
+                <a href="${link("pages/contact.html")}" aria-label="Contact BullPort on Facebook">${icons.facebook}</a>
+                <a href="${link("pages/contact.html")}" aria-label="Contact BullPort on X">${icons.x}</a>
+                <a href="${link("pages/contact.html")}" aria-label="Contact BullPort on Instagram">${icons.instagram}</a>
+                <a href="${link("pages/education.html")}" aria-label="BullPort education videos">${icons.youtube}</a>
               </div>
             </div>
             <div class="app-template-header__top-right">
@@ -434,7 +591,7 @@
           <div class="app-footer__grid">
             <div>
               <a href="${link("index.html")}" aria-label="${escapeHtml(data.brand.name)} home">${logo(true)}</a>
-              <p style="margin-top:22px;">A public-facing multi-asset investment website for portfolios, market discovery, risk education, fee visibility and future client onboarding.</p>
+              <p style="margin-top:22px;">Explore managed portfolios, multi-asset markets, risk education, clear fees and secure client onboarding.</p>
               <p class="app-footer__risk">${escapeHtml(data.brand.risk)}</p>
             </div>
             <div>
@@ -456,7 +613,7 @@
           </div>
           <div class="app-footer__bottom">
             <span>&copy; 2026 ${escapeHtml(data.brand.name)}. All Rights Reserved.</span>
-            <span>Static frontend only. Regulatory and jurisdiction-specific disclosures should be verified before launch.</span>
+            <span>Regulatory and jurisdiction-specific disclosures apply. Review all product terms before investing.</span>
           </div>
         </div>
       </footer>`;
@@ -498,7 +655,17 @@
 
     document.querySelectorAll("a[href]").forEach((anchor) => {
       const raw = anchor.getAttribute("href");
-      if (!raw || /^(https?:|mailto:|tel:|#)/.test(raw)) return;
+      if (!raw || /^(mailto:|tel:|#)/.test(raw)) return;
+      if (/^https?:/i.test(raw)) {
+        const allowedStore = /play\.google\.com\/store|apple\.com\/app-store/i.test(raw);
+        const allowedPortal = raw.startsWith(clientPortalBase);
+        if (!allowedStore && !allowedPortal) {
+          anchor.setAttribute("href", link(/youtube/i.test(raw) ? "pages/education.html" : "pages/contact.html"));
+          anchor.removeAttribute("target");
+          anchor.removeAttribute("rel");
+        }
+        return;
+      }
       const clean = raw.replace(/^\.\//, "");
       if (legacyMap[clean]) anchor.setAttribute("href", link(legacyMap[clean]));
     });
@@ -652,7 +819,7 @@
 
     const panels = [
       {
-        text: "Review onboarding, KYC, wallet funding, reporting and statements in one future client flow.",
+        text: "Review onboarding, KYC, wallet funding, reporting and statements in one secure client flow.",
         bullets: ["Secure account access", "Portfolio reporting visibility", "Investor education and risk disclosures", "Wallet funding readiness"]
       },
       {
@@ -671,8 +838,8 @@
     });
 
     const userCards = [
-      { title: "Client Portal", text: "Prepared for mobile account review.", buttons: [["Get Started", "pages/register.html"], ["Login", "pages/login.html"]] },
-      { title: "Portfolio Desk", text: "Prepared for desktop review and reporting.", buttons: [["Portfolios", "pages/portfolios.html"], ["Fees", "pages/pricing-fees.html"]] },
+      { title: "Client Portal", text: "Secure mobile account review.", buttons: [["Get Started", "pages/register.html"], ["Login", "pages/login.html"]] },
+      { title: "Portfolio Desk", text: "Desktop portfolio review and reporting.", buttons: [["Portfolios", "pages/portfolios.html"], ["Fees", "pages/pricing-fees.html"]] },
       { title: "Web Access", text: "Review markets and portfolio materials directly online.", buttons: [["How It Works", "pages/how-it-works.html"]] }
     ];
 
@@ -722,12 +889,14 @@
         if (title) title.textContent = item.riskLevel;
         if (name) name.textContent = "Risk Profile";
         if (value) value.textContent = formatPercent(item.changePercent);
-        if (label) label.textContent = item.changePercent >= 0 ? "Move Up" : "Move Down";
+        if (label) label.textContent = item.changePercent === null || item.changePercent === undefined
+          ? "Snapshot Only"
+          : item.changePercent >= 0 ? "Move Up" : "Move Down";
       }
 
       const changeBox = card.querySelector(".single-market-style1__content-btn1 h4");
       if (changeBox) {
-        changeBox.innerHTML = `<a href="${link(item.href)}"><i class="icon-top-right"></i>Move</a>${escapeHtml(formatPercent(item.changePercent))}`;
+        changeBox.innerHTML = `<a href="${link(item.href)}"><i class="icon-top-right"></i>View</a>${escapeHtml(formatPercent(item.changePercent))}`;
       }
       setIconButton(card.querySelector(".single-market-style1__content-btn2 a"), item.href, "View Details");
     });
@@ -735,9 +904,9 @@
 
   function updateProcessTemplate() {
     const steps = [
-      { first: "Create", second: "Account", text: "Start the onboarding flow.", overlay: "Create your public profile, then move to secure account setup when the portal is connected.", href: "pages/register.html" },
+      { first: "Create", second: "Account", text: "Start secure onboarding.", overlay: "Create your client account, verify your email and continue through identity and suitability checks.", href: "pages/register.html" },
       { first: "Complete", second: "KYC", text: "Verify identity and suitability.", overlay: "KYC helps support investor protection, suitability review and compliant onboarding.", href: "pages/how-it-works.html" },
-      { first: "Fund", second: "Wallet", text: "Prepare secure deposits.", overlay: "Funding and withdrawals should happen inside authenticated client workflows after launch.", href: "pages/how-it-works.html" },
+      { first: "Fund", second: "Wallet", text: "Submit a secure deposit.", overlay: "Bank and crypto funding requests are reviewed and credited through the authenticated client portal.", href: "pages/how-it-works.html" },
       { first: "Choose", second: "Portfolio", text: "Review allocation and risk.", overlay: "Compare portfolios, markets, fees and disclosures before making an investment decision.", href: "pages/portfolios.html" }
     ];
 
@@ -872,9 +1041,9 @@
     replaceTextNodes([
       ["Trade Over 50+ Currency Pairs.", "Track stocks, ETFs, bonds, commodities, indices and options education."],
       ["View All Pairs", "View All Markets"],
-      ["How itâ€™s Work", "How It Works"],
+      ["How it's Work", "How It Works"],
       ["Trade in Just a Few Clicks", "Invest in Just a Few Steps"],
-      ["Donâ€™t Just Watch, Act Now.", "Review risk, then move with intent."],
+      ["Don't Just Watch, Act Now.", "Review risk, then move with intent."],
       ["Start Earning", "Create Account"],
       ["Margin Calculator", "Margin Calculator"],
       ["Technical Indicators", "Technical Indicators"],
@@ -888,7 +1057,7 @@
       ["Overall Earnings Generated.", "Illustrative platform assets reviewed."],
       ["Trade global currency pairs.", "Review diversified market categories for investor discovery."],
       ["Top 5 Currency Pairs to Trade This Month.", "Understanding Investment Risk"],
-      ["Read Faqâ€™s", "Read FAQs"],
+      ["Read Faq's", "Read FAQs"],
       ["Forex Trading", "Market Discovery"],
       ["Inside Forex Trading", "Inside Market Coverage"]
     ]);
@@ -921,7 +1090,11 @@
   }
 
   function instrumentRow(item) {
-    const positive = Number(item.changePercent) >= 0;
+    const hasChange = item.changePercent !== null && item.changePercent !== undefined;
+    const positive = hasChange && Number(item.changePercent) >= 0;
+    const sourceTime = item.priceAsOf
+      ? new Date(item.priceAsOf).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+      : "No snapshot published";
     return `
       <tr data-market-symbol="${escapeHtml(item.symbol)}">
         <td>
@@ -932,9 +1105,9 @@
         </td>
         <td>${escapeHtml(item.assetClass)}</td>
         <td data-market-price>${escapeHtml(formatPrice(item.price, item.assetClass))}</td>
-        <td data-market-change class="${positive ? "change-up" : "change-down"}">${escapeHtml(formatPercent(item.changePercent))}</td>
+        <td data-market-change class="${hasChange ? (positive ? "change-up" : "change-down") : ""}">${escapeHtml(formatPercent(item.changePercent))}</td>
         <td><span class="static-badge static-badge--risk static-badge--${riskClass(item.riskLevel)}">${escapeHtml(item.riskLevel)}</span></td>
-        <td data-market-chart>${sparkline(item.chartData, positive)}</td>
+        <td data-market-chart><small>${escapeHtml(item.priceSource || "Admin managed")}<br>${escapeHtml(sourceTime)}</small></td>
         <td><a class="static-link" href="${link(item.href)}">View Details</a></td>
       </tr>`;
   }
@@ -943,7 +1116,7 @@
     const items = filter ? data.instruments.filter(filter) : data.instruments;
     return `
       <div class="static-market-table-block" data-market-table>
-        <p class="static-market-table__note">Market feed is informational and not financial advice.</p>
+        <p class="static-market-table__note">${data.marketDataAvailable ? "Prices are admin-managed snapshots, not a live exchange feed." : "Market prices are temporarily unavailable."} Market information is not financial advice.</p>
         <div class="static-market-table">
           <table>
             <thead>
@@ -951,9 +1124,9 @@
                 <th>Instrument</th>
                 <th>Asset Class</th>
                 <th>Last Price</th>
-                <th>24h Change</th>
+                <th>Published Change</th>
                 <th>Risk Level</th>
-                <th>Mini Chart</th>
+                <th>Price Source</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -1427,7 +1600,7 @@
   function renderHowItWorks() {
     return pageWrap(
       "How It Works",
-      "A public explanation of future account creation, KYC, wallet funding, portfolio selection and reporting.",
+      "Create an account, complete KYC, fund your wallet, select an eligible portfolio and review reporting.",
       `
         <section class="static-section">
           <div class="static-container">${stepsHtml()}</div>
@@ -1443,7 +1616,7 @@
   function renderRisk() {
     return pageWrap(
       "Risk Disclosure",
-      "Clear public-facing disclosure for portfolios, instruments, education content and future onboarding.",
+      "Clear public-facing disclosure for portfolios, instruments, education content and client onboarding.",
       `
         <section class="static-section">
           <div class="static-container">
@@ -1481,7 +1654,7 @@
   function renderAbout() {
     return pageWrap(
       "About",
-      "A multi-asset investment website prepared for managed portfolios, market discovery and future client onboarding.",
+      "A multi-asset investment platform for managed portfolios, market discovery and secure client onboarding.",
       `
         <section class="static-section">
           <div class="static-container">
@@ -1497,7 +1670,7 @@
 
   function contactForm() {
     return `
-      <form class="static-form static-contact-form" data-static-form data-reset="true">
+      <form class="static-form static-contact-form" data-static-form data-form-type="contact" data-reset="true">
         <div class="static-form__grid">
           <label>Name<input name="name" required></label>
           <label>Email<input type="email" name="email" required></label>
@@ -1508,7 +1681,7 @@
         </div>
         <label>Message<textarea name="message" required></textarea></label>
         <button class="static-button" type="submit">Send Message</button>
-        <p class="static-notice static-hidden" data-form-note>Thank you. This form is not connected to a backend yet.</p>
+        <p class="static-notice static-hidden" data-form-note aria-live="polite"></p>
       </form>`;
   }
 
@@ -1541,18 +1714,18 @@
     const isPrivacy = kind === "privacy";
     return pageWrap(
       isPrivacy ? "Privacy Policy" : "Terms of Use",
-      isPrivacy ? "Public website privacy language prepared for later legal review." : "Website terms prepared for later legal review.",
+      isPrivacy ? "How BullPort handles public website and client onboarding information." : "Terms governing access to BullPort website and client services.",
       `
         <section class="static-section">
           <div class="static-container static-legal">
             <h2>Informational website</h2>
-            <p>This static website explains platform concepts, portfolios, instruments, pricing and education. It does not create a client relationship by itself.</p>
+            <p>This website explains platform concepts, published portfolios, instruments, pricing and education. A client relationship begins only after account approval and acceptance of the applicable terms.</p>
             <h2>No guarantee</h2>
             <p>${escapeHtml(data.brand.risk)}</p>
             <h2>Portal separation</h2>
-            <p>Funding, withdrawals, KYC, account statements and investment activity should be completed only inside authenticated portal workflows after launch.</p>
+            <p>Funding, withdrawals, KYC, account statements and investment activity are completed only inside authenticated client portal workflows.</p>
             <h2>Review required</h2>
-            <p>Legal, regulatory, privacy and jurisdiction-specific language should be verified before public launch.</p>
+            <p>Product availability, disclosures and regulatory requirements vary by jurisdiction and client eligibility.</p>
           </div>
         </section>`
     );
@@ -1562,29 +1735,9 @@
     const isLogin = kind === "login";
     const title = isLogin ? "Login" : "Get Started";
     const text = isLogin
-      ? "Client portal access for future portfolio review, reporting and account activity."
-      : "Registration placeholder for account creation, KYC and suitability review.";
-    const fields = isLogin
-      ? `
-        <label>Email<input type="email" name="email" required></label>
-        <label>Password<input type="password" name="password" required></label>`
-      : `
-        <div class="static-form__grid">
-          <label>Full Name<input name="name" required></label>
-          <label>Email<input type="email" name="email" required></label>
-        </div>
-        <div class="static-form__grid">
-          <label>Phone (optional)<input name="phone"></label>
-          <label>Primary Interest
-            <select name="interest">
-              <option>Managed Portfolios</option>
-              <option>Stocks & ETFs</option>
-              <option>Commodities</option>
-              <option>Options Access</option>
-            </select>
-          </label>
-        </div>
-        <label>Password<input type="password" name="password" required></label>`;
+      ? "Continue securely to your BullPort client account."
+      : "Create your BullPort account and continue through KYC and suitability review.";
+    const destination = isLogin ? `${clientPortalBase}/login.html` : `${clientPortalBase}/register.html`;
 
     return pageWrap(
       title,
@@ -1592,11 +1745,11 @@
       `
         <section class="static-section">
           <div class="static-container">
-            <form class="static-form" data-static-form data-reset="${isLogin ? "false" : "true"}" style="max-width:560px;margin:auto;">
-              ${fields}
-              <button class="static-button" type="submit">${escapeHtml(title)}</button>
-              <p class="static-notice static-hidden" data-form-note>${isLogin ? "Secure authentication is not connected yet. This is a static placeholder." : "Account creation is a static placeholder. Backend onboarding is not connected yet."}</p>
-            </form>
+            <div class="static-form" style="max-width:560px;margin:auto;text-align:center;">
+              <h2>${isLogin ? "Access your client portal" : "Begin client onboarding"}</h2>
+              <p>${isLogin ? "Review your wallet, investments, reports and account activity through the secure portal." : "Set up your account, verify your email and submit the required identity information."}</p>
+              <p><a class="static-button" href="${destination}">${escapeHtml(title)}</a></p>
+            </div>
           </div>
         </section>`
     );
@@ -1605,7 +1758,7 @@
   function renderNotFound() {
     return pageWrap(
       "Page Not Found",
-      "The requested page is not available in the static front-facing site.",
+      "The requested page is not available on the BullPort website.",
       `
         <section class="static-section">
           <div class="static-container">
@@ -1654,15 +1807,33 @@
 
   function bindForms() {
     document.querySelectorAll("[data-static-form]").forEach((form) => {
-      form.addEventListener("submit", (event) => {
+      form.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (!form.checkValidity()) {
           form.reportValidity();
           return;
         }
         const note = form.querySelector("[data-form-note]");
-        if (note) note.classList.remove("static-hidden");
-        if (form.dataset.reset === "true") form.reset();
+        const submit = form.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = true;
+        try {
+          if (form.dataset.formType === "contact") {
+            const fields = Object.fromEntries(new FormData(form).entries());
+            const result = await publicApi("/contact", { method: "POST", body: JSON.stringify(fields) });
+            if (note) note.textContent = `Your message was received. Reference: ${result.reference}.`;
+          } else if (note) {
+            note.textContent = "Your request was received.";
+          }
+          if (note) note.classList.remove("static-hidden");
+          if (form.dataset.reset === "true") form.reset();
+        } catch (error) {
+          if (note) {
+            note.textContent = error instanceof Error ? error.message : "The request could not be submitted.";
+            note.classList.remove("static-hidden");
+          }
+        } finally {
+          if (submit) submit.disabled = false;
+        }
       });
     });
   }
@@ -1723,11 +1894,11 @@
       },
       login: {
         title: `Login | ${data.brand.name}`,
-        description: "Static placeholder login page for future client portal access."
+        description: "Secure BullPort client portal access for portfolio, wallet, reporting and account activity."
       },
       register: {
         title: `Get Started | ${data.brand.name}`,
-        description: "Static placeholder registration page for future account creation and KYC onboarding."
+        description: "Create a BullPort account and continue through email verification, KYC and suitability onboarding."
       }
     };
 
@@ -1766,42 +1937,7 @@
   function startMarketFeed() {
     const table = document.querySelector("[data-market-table]");
     if (!table) return;
-
-    const symbolMap = new Map(data.instruments.map((item) => [item.symbol, item]));
-    const updateRows = () => {
-      table.querySelectorAll("tbody tr[data-market-symbol]").forEach((row) => {
-        const symbol = row.getAttribute("data-market-symbol");
-        const item = symbolMap.get(symbol);
-        if (!item) return;
-
-        const priceShift = item.price * ((Math.random() * 0.0036) - 0.0018);
-        const nextPrice = Math.max(0.01, item.price + priceShift);
-        const changeShift = (Math.random() * 0.5) - 0.25;
-        const nextChange = Math.max(-9.99, Math.min(9.99, item.changePercent + changeShift));
-        const nextSeries = item.chartData.slice(-4);
-        nextSeries.push(Number(nextPrice.toFixed(2)));
-
-        item.price = Number(nextPrice.toFixed(3));
-        item.changePercent = Number(nextChange.toFixed(2));
-        item.chartData = nextSeries;
-
-        const priceNode = row.querySelector("[data-market-price]");
-        const changeNode = row.querySelector("[data-market-change]");
-        const chartNode = row.querySelector("[data-market-chart]");
-        const positive = item.changePercent >= 0;
-
-        if (priceNode) priceNode.textContent = formatPrice(item.price, item.assetClass);
-        if (changeNode) {
-          changeNode.textContent = formatPercent(item.changePercent);
-          changeNode.classList.toggle("change-up", positive);
-          changeNode.classList.toggle("change-down", !positive);
-        }
-        if (chartNode) chartNode.innerHTML = sparkline(item.chartData, positive);
-      });
-    };
-
-    updateRows();
-    marketIntervals.push(window.setInterval(updateRows, 7000));
+    table.dataset.marketMode = data.capabilities?.marketPriceMode || "admin-managed";
   }
 
   function enhanceHome() {
@@ -1834,10 +1970,17 @@
     marketIntervals.forEach((interval) => window.clearInterval(interval));
   });
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
+  async function boot() {
+    await loadPublishedData().catch(() => {
+      data.marketDataAvailable = false;
+    });
     init();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
   }
 
   window.addEventListener("load", () => releasePageLoader());

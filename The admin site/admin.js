@@ -6,8 +6,11 @@
     "kyc.html": ["KYC Queue", "Identity, address, liveness, bank, and compliance checks awaiting staff decisions."],
     "deposits.html": ["Deposits", "Bank and crypto funding requests awaiting confirmation and reconciliation."],
     "withdrawals.html": ["Withdrawals", "Withdrawal requests requiring balance, KYC, destination, and risk review."],
+    "approvals.html": ["Approvals", "Maker-checker decisions for deposits, withdrawals, product publication, and distributions."],
     "portfolio-products.html": ["Portfolio Products", "Broker-managed portfolio products, risk labels, visibility, minimums, and payout rules."],
     "client-investments.html": ["Client Investments", "Active subscriptions, mandate status, top-ups, exits, and reinvestment instructions."],
+    "orders.html": ["Trading Orders", "Internal order-desk requests, approvals, fills, settlement, and client positions."],
+    "options.html": ["Options Access", "Suitability applications, approval levels, restrictions, and options access decisions."],
     "payouts.html": ["Payouts", "Dividend and profit posting, reinvestment handling, schedules, and settlement state."],
     "instruments.html": ["Markets & Instruments", "Supported instruments and trading availability across asset classes."],
     "risk.html": ["Risk & Compliance", "Suitability, concentration, options access, restrictions, and compliance alerts."],
@@ -26,10 +29,10 @@
 
   const navGroups = [
     ["Operations", [["Overview", "index.html", "grid"], ["Queues", "queues.html", "list"], ["Clients", "clients.html", "users"], ["KYC Queue", "kyc.html", "shield"]]],
-    ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Payouts", "payouts.html", "coins"]]],
-    ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Markets & Instruments", "instruments.html", "trend"], ["Risk & Compliance", "risk.html", "alert"]]],
+    ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
+    ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Markets & Instruments", "instruments.html", "trend"], ["Risk & Compliance", "risk.html", "alert"]]],
     ["Comms & Records", [["Reports", "reports.html", "file"], ["Notifications", "notifications.html", "bell"], ["Support Tickets", "support.html", "help"]]],
-    ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["IA Draft", "admin-info-architecture.html", "map"]]]
+    ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
   ];
 
   const data = {
@@ -91,6 +94,15 @@
       ["PAY-883", "Balanced Growth", "$740", "Pending selection", "12 Jul 2026", "Scheduled"],
       ["PAY-884", "Conservative Income", "$210", "Wallet credit", "02 Jul 2026", "Ready"]
     ],
+    approvals: [],
+    orders: [],
+    positions: [],
+    options: [],
+    riskAlerts: [],
+    notifications: [],
+    adminUsers: [],
+    settingsRows: [],
+    tasks: [],
     instruments: [
       ["AAPL", "Apple Inc.", "Stock", "NASDAQ", "Moderate", "Tradable"],
       ["GLD", "SPDR Gold Shares", "Commodity ETF", "NYSE Arca", "Moderate", "Tradable"],
@@ -192,12 +204,14 @@
     audit: data.audit.slice(),
     decisions: {},
     apiOnline: false,
-    apiBase: localStorage.getItem("bullport_api_base") || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "https://bullport-backend-tobi.vercel.app")
+    apiBase: localStorage.getItem("bullport_api_base") || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : ""),
+    admin: null,
+    apiMessage: "Checking secure session",
+    pendingLogin: null,
+    mfaSetup: null,
+    pendingApproval: null,
+    pendingRecord: null
   };
-
-  const ADMIN_TOKEN_KEY = "bullport_admin_token";
-  const DEMO_ADMIN_EMAIL = "admin@bullport.local";
-  const DEMO_ADMIN_PASSWORD = "AdminPass123!";
 
   const liveRefs = {};
 
@@ -228,68 +242,123 @@
     return String(value || "").toLowerCase().split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function safeData(value) {
+    if (typeof value === "string") return escapeHtml(value);
+    if (Array.isArray(value)) return value.map(safeData);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, safeData(item)]));
+    }
+    return value;
+  }
+
   function unwrap(result) {
     if (!result || result.ok === false) return null;
     return result.data || null;
   }
 
-  async function api(path, options) {
-    const headers = { "Content-Type": "application/json" };
-    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
-    if (token) headers.Authorization = "Bearer " + token;
-    const response = await fetch(appState.apiBase + path, {
-      ...options,
-      headers: { ...headers, ...(options && options.headers ? options.headers : {}) }
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
-      throw new Error(payload.error?.message || "API request failed");
-    }
-    return payload.data;
+  function cookieValue(name) {
+    const pair = document.cookie.split("; ").find((item) => item.indexOf(name + "=") === 0);
+    return pair ? decodeURIComponent(pair.slice(name.length + 1)) : "";
   }
 
-  async function ensureAdminToken() {
-    if (localStorage.getItem(ADMIN_TOKEN_KEY)) return true;
-    try {
-      const data = await api("/api/auth/admin/login", {
-        method: "POST",
-        body: JSON.stringify({ email: DEMO_ADMIN_EMAIL, password: DEMO_ADMIN_PASSWORD })
-      });
-      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-      return true;
-    } catch {
-      return false;
+  async function api(path, options, retried) {
+    const requestOptions = options || {};
+    const { skipRefresh: _skipRefresh, ...fetchOptions } = requestOptions;
+    const headers = { "Content-Type": "application/json" };
+    const method = String(requestOptions.method || "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      const csrf = cookieValue("bp_csrf");
+      if (csrf) headers["x-csrf-token"] = csrf;
     }
+    const response = await fetch(appState.apiBase + path, {
+      ...fetchOptions,
+      credentials: "include",
+      headers: { ...headers, ...(requestOptions.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 401 && !options?.skipRefresh && !retried && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/admin/login") {
+      try {
+        await api("/api/v1/auth/refresh", { method: "POST", body: "{}", skipRefresh: true }, true);
+        return api(path, options, true);
+      } catch {}
+    }
+    if (!response.ok || payload.ok === false) {
+      const error = new Error(payload.error?.message || "API request failed");
+      error.code = payload.error?.code || "REQUEST_FAILED";
+      error.status = response.status;
+      error.fields = payload.error?.fields || null;
+      throw error;
+    }
+    return safeData(payload.data);
   }
 
   async function tryApi(path) {
     try {
       return await api(path);
-    } catch {
+    } catch (error) {
+      appState.apiMessage = error?.message || "A role-restricted dataset could not be loaded.";
       return null;
     }
   }
 
   async function loadBackendData() {
-    await ensureAdminToken();
-    const overview = await tryApi("/api/admin/overview");
+    const requestedRecordId = new URLSearchParams(location.search).get("id");
+    const overview = await tryApi("/api/v1/admin/overview");
     if (!overview) {
       appState.apiOnline = false;
-      return;
+      throw new Error("The operational API could not be loaded for this admin session.");
     }
 
     appState.apiOnline = true;
-    const [clients, kyc, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs] = await Promise.all([
-      tryApi("/api/clients"),
-      tryApi("/api/kyc/reviews"),
-      tryApi("/api/money/deposits"),
-      tryApi("/api/money/withdrawals"),
-      tryApi("/api/portfolio-products"),
-      tryApi("/api/client-investments"),
-      tryApi("/api/payouts"),
-      tryApi("/api/instruments"),
-      tryApi("/api/support/tickets"),
-      tryApi("/api/admin/audit-logs")
+    data.clients = [];
+    data.kyc = [];
+    data.deposits = [];
+    data.withdrawals = [];
+    data.products = [];
+    data.investments = [];
+    data.payouts = [];
+    data.instruments = [];
+    data.tickets = [];
+    data.approvals = [];
+    data.orders = [];
+    data.positions = [];
+    data.options = [];
+    data.riskAlerts = [];
+    data.reports = [];
+    data.notifications = [];
+    data.adminUsers = [];
+    data.settingsRows = [];
+    data.tasks = [];
+    const [clients, kyc, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
+      tryApi("/api/v1/admin/clients?limit=100"),
+      tryApi("/api/v1/admin/kyc?limit=100"),
+      tryApi("/api/v1/admin/money/deposits?limit=100"),
+      tryApi("/api/v1/admin/money/withdrawals?limit=100"),
+      tryApi("/api/v1/admin/portfolio-products"),
+      tryApi("/api/v1/admin/investments?limit=100"),
+      tryApi("/api/v1/admin/distributions"),
+      tryApi("/api/v1/admin/instruments"),
+      tryApi("/api/v1/admin/support/tickets?limit=100"),
+      tryApi("/api/v1/admin/audit-logs?limit=100"),
+      tryApi("/api/v1/admin/approvals?status=PENDING"),
+      tryApi("/api/v1/admin/orders"),
+      tryApi("/api/v1/admin/positions"),
+      tryApi("/api/v1/admin/options/applications"),
+      tryApi("/api/v1/admin/risk/alerts"),
+      tryApi("/api/v1/admin/reports"),
+      tryApi("/api/v1/admin/notifications"),
+      tryApi("/api/v1/admin/admin-users"),
+      tryApi("/api/v1/admin/settings"),
+      tryApi("/api/v1/admin/tasks")
     ]);
 
     data.metrics = [
@@ -313,11 +382,11 @@
         const investmentValue = Array.isArray(client.investments)
           ? client.investments.reduce((sum, item) => sum + Number(item.currentValue || 0), 0)
           : Number(client.wallet?.balance || 0);
-        const kycStatus = Array.isArray(client.kycReviews) && client.kycReviews[0] ? label(client.kycReviews[0].status) : "Not started";
-        return [client.accountNumber, client.name, client.tier, formatMoney(investmentValue), kycStatus, label(client.riskLevel), label(client.status)];
+        const kycStatus = Array.isArray(client.kycCases) && client.kycCases[0] ? label(client.kycCases[0].status) : "Not started";
+        return [client.accountNumber, client.name, client.tier, formatMoney(investmentValue), kycStatus, label(client.riskLevel), label(client.status), client.id];
       });
 
-      const profileClient = clients.find((client) => client.accountNumber === "BP-447215") || clients[0];
+      const profileClient = clients.find((client) => client.id === requestedRecordId) || clients[0];
       if (profileClient) {
         liveRefs.clientId = profileClient.id;
         data.clientProfile = {
@@ -328,7 +397,7 @@
           tier: profileClient.tier,
           wallet: formatMoney(profileClient.wallet?.balance || 0),
           portfolioValue: formatMoney(Array.isArray(profileClient.investments) ? profileClient.investments.reduce((sum, item) => sum + Number(item.currentValue || 0), 0) : 0),
-          kyc: Array.isArray(profileClient.kycReviews) && profileClient.kycReviews[0] ? label(profileClient.kycReviews[0].status) : "Not started",
+          kyc: Array.isArray(profileClient.kycCases) && profileClient.kycCases[0] ? label(profileClient.kycCases[0].status) : "Not started",
           risk: label(profileClient.riskLevel),
           status: label(profileClient.status),
           restrictions: ["Backend-connected profile. Restrictions will be derived from KYC, wallet, and risk rules."],
@@ -340,27 +409,27 @@
     }
 
     if (Array.isArray(kyc)) {
-      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", row.requirement, row.reviewer || "Compliance", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status)]);
-      const first = kyc[0];
+      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", row.level + " identity verification", row.assignedReviewer || "Unassigned", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status), row.id]);
+      const first = kyc.find((row) => row.id === requestedRecordId) || kyc[0];
       if (first) {
         liveRefs.kycReviewId = first.id;
         data.kycReview = {
           id: first.id,
           account: first.client?.accountNumber || "-",
           client: first.client?.name || "-",
-          requirement: first.requirement,
-          document: first.documentRef || "Document pending",
-          uploaded: first.createdAt ? new Date(first.createdAt).toLocaleString() : "-",
+          requirement: first.level + " identity verification",
+          document: first.documents?.[0]?.fileName || "Document pending",
+          uploaded: first.submittedAt ? new Date(first.submittedAt).toLocaleString() : "-",
           blocked: "Withdrawals and large funding until approved",
-          recommendation: first.decisionNote || "Review document details before final decision.",
-          checks: [["Current status", label(first.status)], ["Reviewer", first.reviewer || "Compliance"], ["Client risk", label(first.client?.riskLevel)], ["Account status", label(first.client?.status)]]
+          recommendation: first.decisions?.[0]?.note || "Review document details before final decision.",
+          checks: [["Current status", label(first.status)], ["Reviewer", first.assignedReviewer || "Unassigned"], ["Client risk", label(first.client?.riskLevel)], ["Account status", label(first.client?.status)]]
         };
       }
     }
 
     if (Array.isArray(deposits)) {
-      data.deposits = deposits.map((row) => [row.reference, row.client?.name || "-", row.method, formatMoney(row.amount), row.rail, label(row.status)]);
-      const first = deposits[0];
+      data.deposits = deposits.map((row) => [row.reference, row.client?.name || "-", row.method, formatMoney(row.amount), row.rail, label(row.status), row.id]);
+      const first = deposits.find((row) => row.id === requestedRecordId) || deposits[0];
       if (first) {
         liveRefs.depositId = first.id;
         data.depositReview = {
@@ -379,8 +448,8 @@
     }
 
     if (Array.isArray(withdrawals)) {
-      data.withdrawals = withdrawals.map((row) => [row.reference, row.client?.name || "-", formatMoney(row.amount), row.destination, label(row.client?.status), label(row.status)]);
-      const first = withdrawals[0];
+      data.withdrawals = withdrawals.map((row) => [row.reference, row.client?.name || "-", formatMoney(row.amount), row.destination, label(row.client?.status), label(row.status), row.id]);
+      const first = withdrawals.find((row) => row.id === requestedRecordId) || withdrawals[0];
       if (first) {
         liveRefs.withdrawalId = first.id;
         data.withdrawalReview = {
@@ -398,8 +467,8 @@
     }
 
     if (Array.isArray(products)) {
-      data.products = products.map((row) => [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status)]);
-      const premium = products.find((row) => row.name === "Premium Managed") || products[0];
+      data.products = products.map((row) => [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status), row.id]);
+      const premium = products.find((row) => row.id === requestedRecordId) || products[0];
       if (premium) {
         liveRefs.productId = premium.id;
         data.productDetail = {
@@ -420,7 +489,7 @@
     }
 
     if (Array.isArray(payouts)) {
-      data.payouts = payouts.map((row) => [row.reference, row.source, formatMoney(row.amount), row.mode, row.payoutDate ? new Date(row.payoutDate).toLocaleDateString() : "-", label(row.status)]);
+      data.payouts = payouts.map((row) => [row.reference, row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
     }
 
     if (Array.isArray(instruments)) {
@@ -428,8 +497,8 @@
     }
 
     if (Array.isArray(tickets)) {
-      data.tickets = tickets.map((row) => [row.ticketNo, row.subject, row.client?.name || "-", row.owner || "Unassigned", label(row.status)]);
-      const first = tickets[0];
+      data.tickets = tickets.map((row) => [row.ticketNo, row.subject, row.client?.name || "-", row.owner || "Unassigned", label(row.status), row.id]);
+      const first = tickets.find((row) => row.id === requestedRecordId) || tickets[0];
       if (first) {
         liveRefs.ticketId = first.id;
         data.supportDetail = {
@@ -448,8 +517,32 @@
       }
     }
 
+    if (Array.isArray(approvals)) {
+      data.approvals = approvals.map((row) => ({
+        id: row.id,
+        action: label(row.actionType),
+        entity: row.entityType,
+        entityId: row.entityId,
+        maker: row.initiatedBy?.name || "Unknown admin",
+        makerRole: label(row.initiatedBy?.role),
+        createdAt: row.createdAt ? new Date(row.createdAt).toLocaleString() : "-",
+        expiresAt: row.expiresAt ? new Date(row.expiresAt).toLocaleString() : "-",
+        status: label(row.status)
+      }));
+    }
+
+    if (Array.isArray(orders)) data.orders = orders;
+    if (Array.isArray(positions)) data.positions = positions;
+    if (Array.isArray(optionsApplications)) data.options = optionsApplications;
+    if (Array.isArray(riskAlerts)) data.riskAlerts = riskAlerts;
+    if (Array.isArray(reports)) data.reports = reports.map((row) => [row.name, label(row.type), row.format, row.period, label(row.status), row.id]);
+    if (Array.isArray(notifications)) data.notifications = notifications;
+    if (Array.isArray(adminUsers)) data.adminUsers = adminUsers;
+    if (Array.isArray(settingsRows)) data.settingsRows = settingsRows;
+    if (Array.isArray(tasks)) data.tasks = tasks;
+
     data.queues = [
-      ...(Array.isArray(kyc) ? kyc.slice(0, 3).map((row) => ({ title: row.requirement, owner: row.reviewer || "Compliance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : []),
+      ...(Array.isArray(kyc) ? kyc.slice(0, 3).map((row) => ({ title: row.level + " identity verification", owner: row.assignedReviewer || "Unassigned", client: row.client?.name || "-", age: "Live queue", state: label(row.status) })) : []),
       ...(Array.isArray(deposits) ? deposits.slice(0, 2).map((row) => ({ title: "Deposit " + row.reference, owner: "Finance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : []),
       ...(Array.isArray(withdrawals) ? withdrawals.slice(0, 2).map((row) => ({ title: "Withdrawal " + row.reference, owner: "Finance", client: row.client?.name || "-", age: "Backend", state: label(row.status) })) : [])
     ];
@@ -565,11 +658,11 @@
   }
 
   function reviewPanel(title, subtitle, actions) {
-    return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><div class="decision-state" data-decision-state>No decision saved in this prototype session.</div><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
+    return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><div class="decision-state" data-decision-state>No decision submitted in this session.</div><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
   }
 
   function auditPanel() {
-    return section("Live audit trail", "Prototype-only log of admin actions. These map to future backend audit events.", timeline(appState.audit.slice(0, 6)));
+    return section("Live audit trail", "Append-only operational events loaded from the backend audit record.", timeline(appState.audit.slice(0, 6)));
   }
 
   function overview() {
@@ -587,10 +680,10 @@
 
   function queuesPage() {
     return '<div class="grid metrics">' + [
-      metric("Compliance queue", "9", "KYC, risk, options and exceptions.", "Review"),
-      metric("Finance queue", "17", "Deposits, withdrawals and payouts.", "Pending"),
-      metric("Portfolio desk", "6", "Product edits and mandate actions.", "Open"),
-      metric("Support escalations", "5", "Ticket issues requiring manager input.", "Escalated")
+      metric("Compliance queue", String(data.kyc.length + data.options.filter((row) => row.status === "PENDING").length), "KYC, risk, options and exceptions.", "Review"),
+      metric("Finance queue", String(data.deposits.filter((row) => !/credited|rejected/i.test(row[5])).length + data.withdrawals.filter((row) => !/settled|rejected|cancelled/i.test(row[5])).length), "Deposits and withdrawals requiring action.", "Pending"),
+      metric("Pending approvals", String(data.approvals.length), "Maker-checker requests requiring a second admin.", "Open"),
+      metric("Open tasks", String(data.tasks.filter((row) => row.status !== "COMPLETED").length), "Assigned operational follow-ups.", "Open")
     ].join("") + "</div>" + section("Unified operations queue", "All pending work across teams, sorted by operational priority.", filters("Search queue, client, owner...") + queueList(data.queues), modalButton("Assign selected", "assign-task", "primary"));
   }
 
@@ -600,37 +693,53 @@
 
   function clientsPage() {
     return '<div class="grid metrics">' + [
-      metric("Total clients", "1,248", "Active investor records.", "Active"),
-      metric("Restricted accounts", "14", "Funding, withdrawal or trading limits.", "Hold"),
-      metric("Premium managed", "83", "High-touch mandates.", "Active"),
-      metric("Pending onboarding", "31", "Registration and KYC in progress.", "Pending")
-    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", filterableTable("Search account, client, tier...", ["Account", "Client", "Tier", "Portfolio value", "KYC", "Risk", "Status", "Action"], data.clients.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), row[5], badge(row[6]), linkButton("Open", "client-detail.html")])), modalButton("Create client note", "client-note", "primary"));
+      metric("Total clients", String(data.clients.length), "Loaded investor records.", "Active"),
+      metric("Restricted accounts", String(data.clients.filter((row) => /restricted|suspended|hold/i.test(row[6])).length), "Funding, withdrawal or trading limits.", "Hold"),
+      metric("Premium managed", String(data.clients.filter((row) => /premium/i.test(row[2])).length), "High-touch mandates.", "Active"),
+      metric("Pending onboarding", String(data.clients.filter((row) => /pending|not started|draft|submitted|review/i.test(row[4] + row[6])).length), "Registration and KYC in progress.", "Pending")
+    ].join("") + "</div>" + section("Client directory", "Searchable operational view of client accounts and account state.", filterableTable("Search account, client, tier...", ["Account", "Client", "Tier", "Portfolio value", "KYC", "Risk", "Status", "Action"], data.clients.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), row[5], badge(row[6]), linkButton("Open", "client-detail.html?id=" + encodeURIComponent(row[7]))])), modalButton("Create client note", "client-note", "primary"));
   }
 
   function kycPage() {
     return '<div class="grid two">' +
-      section("KYC decision queue", "Document reviews awaiting compliance action.", filterableTable("Search account, client, requirement...", ["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html")])), modalButton("Approve selected", "bulk-kyc", "primary")) +
+      section("KYC decision queue", "Document reviews awaiting compliance action.", filterableTable("Search account, client, requirement...", ["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html?id=" + encodeURIComponent(row[6]))])), modalButton("Approve selected", "bulk-kyc", "primary")) +
       section("Review detail sample", "The detail panel the admin will use before approving or rejecting verification.", details([["Client", "Tobi Adeyemi"], ["Requirement", "Proof of address"], ["Uploaded", "Utility bill - June 2026"], ["Decision", "Review before approval"], ["Blocked actions", "Withdrawals and large crypto funding"], ["Audit note", "Address matches bank city but needs date confirmation"]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html", "primary") + modalButton("Request resubmission", "bulk-kyc") + "</div>") +
       "</div>";
   }
 
   function depositsPage() {
-    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", filterableTable("Search reference, client, rail...", ["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html")])), modalButton("Confirm selected", "bulk-deposit", "primary")) +
+    return section("Deposit confirmation queue", "Finance operations can confirm, flag, or escalate wallet funding requests.", filterableTable("Search reference, client, rail...", ["Reference", "Client", "Method", "Amount", "Rail", "Status", "Action"], data.deposits.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "deposit-review.html?id=" + encodeURIComponent(row[6]))])), modalButton("Confirm selected", "bulk-deposit", "primary")) +
       section("Reconciliation checklist", "Controls to keep funding behavior aligned with real settlement workflow.", details([["Reference check", "Required"], ["Source name match", "Required"], ["Crypto confirmations", "Required for crypto"], ["Large funding review", "Compliance threshold applies"]]));
   }
 
   function withdrawalsPage() {
-    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", filterableTable("Search request, client, destination...", ["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "withdrawal-review.html")])), modalButton("Approve selected", "bulk-withdrawal", "primary")) +
+    return section("Withdrawal review queue", "Approve only after cleared balance, KYC, destination, and risk checks pass.", filterableTable("Search request, client, destination...", ["Request", "Client", "Amount", "Destination", "Eligibility", "Status", "Action"], data.withdrawals.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "withdrawal-review.html?id=" + encodeURIComponent(row[6]))])), modalButton("Approve selected", "bulk-withdrawal", "primary")) +
       section("Approval controls", "Withdrawal decisions should be auditable and role-gated.", details([["KYC dependency", "Full approval required"], ["Destination check", "Verified bank or screened wallet"], ["Risk review", "Enhanced review for crypto and high value"], ["Audit", "Decision, staff user and timestamp"]]));
   }
 
+  function approvalsPage() {
+    const rows = data.approvals.map((row) => [row.action, row.entity, row.entityId, row.maker + " (" + row.makerRole + ")", row.createdAt, row.expiresAt, badge(row.status), '<div class="action-row"><button class="btn primary" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="approve">Approve</button><button class="btn" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="reject">Reject</button></div>']);
+    return section("Pending maker-checker requests", "The initiating admin cannot decide their own request. Role boundaries are enforced again by the API.", filterableTable("Search action, maker, entity...", ["Action", "Entity", "Record ID", "Initiated by", "Created", "Expires", "Status", "Decision"], rows)) + section("Decision controls", "Approval is the second operational signature. Deposit credits, withdrawal release, publication, and distribution posting occur atomically only after this step.", details([["Separation of duties", "Maker cannot be checker"], ["Financial mutation", "Atomic and idempotent"], ["Failed decision", "No ledger change"], ["Audit", "Admin, role, note, request ID, and timestamp"]]));
+  }
+
   function productsPage() {
-    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html")])), modalButton("New product", "product", "primary")) +
+    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html?id=" + encodeURIComponent(row[5]))])), modalButton("New product", "product", "primary")) +
       section("Product publishing rules", "Published products can appear in the client dashboard and selected public-site areas.", details([["Projected returns", "Must be labelled projected or market-based"], ["Options", "Never default access"], ["Risk labels", "Required"], ["Visibility", "Draft, review, published, hidden"]]));
   }
 
   function investmentsPage() {
     return section("Client investment mandates", "Monitor subscribed portfolios, value, requested actions, and mandate state.", filterableTable("Search client, portfolio, action...", ["Client", "Portfolio", "Invested", "Current value", "Next action", "Status"], data.investments.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5])])), modalButton("Create allocation note", "allocation-note", "primary"));
+  }
+
+  function ordersPage() {
+    const rows = data.orders.map((row) => [row.reference, row.client?.name || "-", row.instrument?.symbol || "-", label(row.side), label(row.type), String(row.quantity), row.limitPrice ? formatMoney(row.limitPrice) : "Market", badge(label(row.status)), row.status === "APPROVED" ? '<button class="btn primary" type="button" data-action="record-decision" data-record-kind="order" data-record-id="' + row.id + '" data-record-quantity="' + row.quantity + '" data-record-price="' + (row.instrument?.currentPrice || row.limitPrice || "") + '" data-record-decision="fill">Record fill</button>' : '<div class="action-row"><button class="btn primary" type="button" data-action="record-decision" data-record-kind="order" data-record-id="' + row.id + '" data-record-decision="approve">Approve</button><button class="btn" type="button" data-action="record-decision" data-record-kind="order" data-record-id="' + row.id + '" data-record-decision="reject">Reject</button></div>']);
+    const positionRows = data.positions.map((row) => [row.client?.name || "-", row.instrument?.symbol || "-", String(row.quantity), formatMoney(row.averageCost), formatMoney(row.marketValue), formatMoney(row.realizedPnl), formatMoney(row.unrealizedPnl)]);
+    return section("Internal order desk", "Client orders remain requests until the authorized portfolio desk approves or rejects them.", filterableTable("Search reference, client, symbol...", ["Reference", "Client", "Instrument", "Side", "Type", "Quantity", "Limit", "Status", "Decision"], rows)) + section("Client positions", "Positions and profit/loss updated transactionally from recorded fills.", table(["Client", "Instrument", "Quantity", "Average cost", "Market value", "Realized P/L", "Unrealized P/L"], positionRows));
+  }
+
+  function optionsPage() {
+    const rows = data.options.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", row.experienceLevel || "Not provided", row.score ?? "-", row.requestedLevel || "Standard", badge(label(row.status)), row.decisionNote || "Awaiting review", '<div class="action-row"><button class="btn primary" type="button" data-action="record-decision" data-record-kind="options" data-record-id="' + row.id + '" data-record-decision="approve">Approve</button><button class="btn" type="button" data-action="record-decision" data-record-kind="options" data-record-id="' + row.id + '" data-record-decision="restrict">Restrict</button></div>']);
+    return section("Options suitability applications", "Options remain high risk and inaccessible until compliance records a suitability decision.", filterableTable("Search client, level, status...", ["Account", "Client", "Experience", "Score", "Requested level", "Status", "Decision note", "Action"], rows)) + section("Access policy", "Client-facing options controls must match these backend decisions.", details([["Default access", "Not applied"], ["Required", "Approved KYC, disclosures, and suitability"], ["Risk", "High; capital loss and time-decay warnings"], ["Admin authority", "Compliance or super admin"]]));
   }
 
   function payoutsPage() {
@@ -642,41 +751,34 @@
   }
 
   function riskPage() {
+    const open = data.riskAlerts.filter((row) => ["OPEN", "IN_REVIEW"].includes(row.status));
+    const critical = open.filter((row) => ["HIGH", "CRITICAL"].includes(row.severity));
     return '<div class="grid metrics">' + [
-      metric("High-risk accounts", "22", "Concentration, suitability or options alerts.", "High"),
-      metric("Options requests", "8", "Awaiting compliance decision.", "Review"),
-      metric("Restricted accounts", "14", "Operational limitations active.", "Restricted"),
-      metric("Risk exceptions", "5", "Require manager sign-off.", "Escalated")
-    ].join("") + "</div>" +
-      section("Risk and compliance alerts", "Client-facing restrictions and internal exceptions that need action.", queueList([
-        { title: "Commodity exposure above range", owner: "Compliance", client: "Tobi Adeyemi", age: "3 hr", state: "Review" },
-        { title: "Options suitability incomplete", owner: "Compliance", client: "Ife Martins", age: "1 day", state: "Restricted" },
-        { title: "Withdrawal pattern review", owner: "Finance", client: "Nosa Bello", age: "2 hr", state: "Hold" }
-      ]));
+      metric("Open alerts", String(open.length), "Current risk and compliance exceptions.", "Review"),
+      metric("High or critical", String(critical.length), "Require prioritized staff review.", "High"),
+      metric("Options requests", String(data.options.filter((row) => row.status === "PENDING").length), "Awaiting suitability decision.", "Review"),
+      metric("Resolved alerts", String(data.riskAlerts.filter((row) => row.status === "RESOLVED").length), "Closed with an audit resolution.", "Resolved")
+    ].join("") + "</div>" + section("Risk and compliance alerts", "Client restrictions and internal exceptions loaded from active risk rules.", queueList(data.riskAlerts.map((row) => ({ title: row.title, owner: row.category, client: row.client?.name || row.entityType || "Platform", age: row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-", state: label(row.status) }))));
   }
 
   function reportsPage() {
-    return section("Reports and exports", "Statements, audit logs, exports, and operational records.", filterableTable("Search report, type, period...", ["Report", "Type", "Format", "Period", "Status", "Action"], data.reports.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), modalButton("Download", "report-download")])), modalButton("Generate report", "report", "primary"));
+    return section("Reports and exports", "Statements, audit logs, exports, and operational records.", filterableTable("Search report, type, period...", ["Report", "Type", "Format", "Period", "Status", "Action"], data.reports.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), '<button class="btn" type="button" data-action="report-download" data-report-id="' + row[5] + '">Download</button>'])), modalButton("Generate report", "report", "primary"));
   }
 
   function notificationsPage() {
     return section("Notification composer", "Send account, KYC, funding, investment, payout, support, and risk messages.", details([["Audience", "Single client, segment or all active clients"], ["Templates", "KYC, deposit, withdrawal, payout, risk, support"], ["Delivery", "Dashboard notification now, email later"], ["Approval", "Compliance approval for risk-sensitive notices"]]) + '<div class="action-row" style="margin-top:14px">' + modalButton("Create notice", "notification", "primary") + modalButton("Preview template", "notification-preview") + "</div>") +
-      section("Recent notification activity", "Messages currently represented in the client portal notification feed.", queueList([
-        { title: "Proof of address received", owner: "Compliance", client: "Tobi Adeyemi", age: "20 min", state: "In review" },
-        { title: "Bank transfer deposit submitted", owner: "Finance", client: "Amara Okafor", age: "2 hr", state: "Pending" },
-        { title: "Dividend Income payout posted", owner: "Finance", client: "Nosa Bello", age: "2 days", state: "Posted" }
-      ]));
+      section("Recent notification activity", "Authoritative in-app messages and their delivery state.", queueList(data.notifications.slice(0, 50).map((row) => ({ title: row.title, owner: row.category, client: row.client?.name || "Platform audience", age: row.createdAt ? new Date(row.createdAt).toLocaleString() : "-", state: row.readAt ? "Read" : "Sent" }))));
   }
 
   function supportPage() {
-    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", filterableTable("Search ticket, client, owner...", ["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), linkButton("Open", "support-ticket-detail.html")])), modalButton("Assign ticket", "assign-ticket", "primary"));
+    return section("Support ticket queue", "Assign, escalate, resolve, and document client support cases.", filterableTable("Search ticket, client, owner...", ["Ticket", "Subject", "Client", "Owner", "Status", "Action"], data.tickets.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), linkButton("Open", "support-ticket-detail.html?id=" + encodeURIComponent(row[5]))])), modalButton("Assign ticket", "assign-ticket", "primary"));
   }
 
   function clientDetailPage() {
     const c = data.clientProfile;
     return '<div class="grid metrics">' + [
       metric("Wallet balance", c.wallet, "Available operating balance.", "Active"),
-      metric("Portfolio value", c.portfolioValue, "Current simulated portfolio value.", "Active"),
+      metric("Portfolio value", c.portfolioValue, "Current recorded portfolio value.", "Active"),
       metric("KYC status", c.kyc, "Controls withdrawal and funding limits.", c.kyc),
       metric("Risk profile", c.risk, "Used for suitability and product access.", "Info")
     ].join("") + "</div>" +
@@ -723,9 +825,9 @@
     const p = data.productDetail;
     return '<div class="grid two">' +
       section("Product controls", "Control how this managed portfolio appears to eligible clients.", details([["Product", p.name], ["Risk", badge(p.risk)], ["Minimum", p.minimum], ["Payout", p.payout], ["Visibility", badge(p.visibility)], ["Audience", p.audience]]) + "<h3>Publishing rules</h3>" + checklist(p.rules)) +
-      reviewPanel("Publishing action", "Changes here should later require versioned product terms and manager approval.", decisionButton("Save changes", "primary", "Product changes saved", "saveProduct") + decisionButton("Send to review", "", "Product sent to review", "reviewProduct") + decisionButton("Hide product", "danger", "Product hidden", "hideProduct")) +
+      reviewPanel("Publishing action", "Product visibility changes and publication requests are recorded in the backend audit trail.", decisionButton("Move to draft", "primary", "Product moved to draft", "saveProduct") + decisionButton("Request publication", "", "Publication approval requested", "reviewProduct") + decisionButton("Hide product", "danger", "Product hidden", "hideProduct")) +
       "</div>" +
-      section("Client impact preview", "Shows how the product will be framed before backend-managed publishing is added.", table(["Field", "Client-facing value", "Admin note"], [
+      section("Client impact preview", "Shows how the current published product terms are framed for eligible clients.", table(["Field", "Client-facing value", "Admin note"], [
         ["Strategy", "Premium managed allocation across eligible instruments", "Must stay neutral and non-guaranteed"],
         ["Return wording", "Projected and market-based only", "Never guaranteed"],
         ["Eligibility", "Completed KYC and portfolio desk approval", "Required"],
@@ -742,21 +844,11 @@
   }
 
   function rolesPage() {
-    return section("Admin roles", "Role boundaries for the future backend permission model.", table(["Role", "Primary permissions", "Restrictions", "Status"], [
-      ["Super Admin", "Full access, roles, settings, overrides", "None", badge("Active")],
-      ["Compliance Officer", "KYC, risk, options suitability, restrictions", "No payout posting", badge("Active")],
-      ["Finance Operations", "Deposits, withdrawals, fees, payouts", "No role management", badge("Active")],
-      ["Portfolio Manager", "Portfolio products, allocations, mandate notes", "No money movement approval", badge("Active")],
-      ["Support Agent", "Tickets and client communication", "No financial approvals", badge("Active")],
-      ["Read-only Auditor", "Reports and audit trail", "No write access", badge("Active")]
-    ]), modalButton("Invite admin", "admin-user", "primary"));
+    return section("Admin users and roles", "Active staff identities and enforced role boundaries.", table(["Admin", "Email", "Role", "MFA", "Last login", "Status"], data.adminUsers.map((row) => [row.name, row.email, label(row.role), row.mfa?.enabledAt ? "Enabled" : "Enrollment required", row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : "Never", badge(row.isActive ? "Active" : "Inactive")])), modalButton("Invite admin", "admin-user", "primary"));
   }
 
   function settingsPage() {
-    return '<div class="grid two">' +
-      section("Approval rules", "Operational settings that should later become backend-controlled.", details([["Withdrawal review limit", "$1,000+"], ["Large deposit threshold", "$10,000+"], ["Crypto funding", "Compliance review required"], ["Options access", "Suitability approval required"]])) +
-      section("Platform defaults", "Shared settings that affect the client dashboard and admin workflows.", details([["Base currency", "USD"], ["Report cadence", "Monthly"], ["KYC required for withdrawal", "Yes"], ["Notification approval", "Required for risk notices"]])) +
-      "</div>";
+    return section("Platform settings", "Shared backend-controlled capability, accounting, approval, and risk configuration.", table(["Key", "Value", "Description", "Updated", "Action"], data.settingsRows.map((row) => [row.key, '<code>' + JSON.stringify(row.value) + '</code>', row.description || "-", row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-", '<button class="btn" type="button" data-action="setting-edit" data-setting-key="' + row.key + '">Edit</button>'])));
   }
 
   function bodyFor(file) {
@@ -766,8 +858,11 @@
       case "kyc.html": return kycPage();
       case "deposits.html": return depositsPage();
       case "withdrawals.html": return withdrawalsPage();
+      case "approvals.html": return approvalsPage();
       case "portfolio-products.html": return productsPage();
       case "client-investments.html": return investmentsPage();
+      case "orders.html": return ordersPage();
+      case "options.html": return optionsPage();
       case "payouts.html": return payoutsPage();
       case "instruments.html": return instrumentsPage();
       case "risk.html": return riskPage();
@@ -798,13 +893,72 @@
     return '<div class="mobile-tabs"><a href="index.html">Overview</a><a href="queues.html">Queues</a><a href="clients.html">Clients</a><a href="kyc.html">KYC</a><a href="deposits.html">Deposits</a><a href="withdrawals.html">Withdrawals</a><a href="portfolio-products.html">Products</a><a href="risk.html">Risk</a></div>';
   }
 
+  function renderSessionLoading() {
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><p class="auth-status">Checking your secure admin session...</p></section></main>';
+  }
+
+  function renderAdminLogin(message, requireMfa) {
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><div class="auth-heading"><p class="eyebrow">Restricted access</p><h1>Sign in to operations</h1><p>Use your assigned admin account. Access is role-controlled, session-audited, and protected by MFA.</p></div>' + (message ? '<p class="auth-error">' + escapeHtml(message) + '</p>' : '') + '<form class="auth-form" data-admin-login-form><label>Email address<input name="email" type="email" autocomplete="username" required value="' + escapeHtml(appState.pendingLogin?.email || "") + '"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label>' + (requireMfa ? '<label>Authenticator or recovery code<input name="mfaCode" autocomplete="one-time-code" required></label>' : '') + '<button class="btn primary" type="submit">Sign in securely</button></form></section></main>';
+    const form = document.querySelector("[data-admin-login-form]");
+    form?.addEventListener("submit", submitAdminLogin);
+  }
+
+  function renderMfaSetup() {
+    const setup = appState.mfaSetup;
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card is-wide"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">MFA enrollment required</p></div></div><div class="auth-heading"><p class="eyebrow">One-time setup</p><h1>Protect this admin account</h1><p>Add the secret to a TOTP authenticator, store the recovery codes offline, then enter the current six-digit code.</p></div><div class="mfa-secret"><span>Authenticator secret</span><strong>' + setup.secret + '</strong></div><div class="recovery-grid">' + setup.recoveryCodes.map((code) => '<code>' + code + '</code>').join("") + '</div><form class="auth-form" data-mfa-confirm-form><label>Current six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button class="btn primary" type="submit">Enable MFA and continue</button></form></section></main>';
+    document.querySelector("[data-mfa-confirm-form]")?.addEventListener("submit", confirmMfaSetup);
+  }
+
+  async function submitAdminLogin(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const credentials = {
+      email: form.elements.email.value.trim(),
+      password: form.elements.password.value,
+      ...(form.elements.mfaCode ? { mfaCode: form.elements.mfaCode.value.trim() } : {})
+    };
+    appState.pendingLogin = { email: credentials.email };
+    try {
+      const result = await api("/api/v1/auth/admin/login", { method: "POST", body: JSON.stringify(credentials), skipRefresh: true });
+      if (result.mfaSetupRequired) {
+        appState.mfaSetup = result;
+        renderMfaSetup();
+        return;
+      }
+      appState.admin = result.admin;
+      appState.pendingLogin = null;
+      await loadBackendData();
+      render();
+    } catch (error) {
+      renderAdminLogin(error.message || "Sign in failed.", error.code === "MFA_REQUIRED" || Boolean(credentials.mfaCode));
+    }
+  }
+
+  async function confirmMfaSetup(event) {
+    event.preventDefault();
+    try {
+      const result = await api("/api/v1/auth/admin/mfa/confirm", { method: "POST", body: JSON.stringify({ setupToken: appState.mfaSetup.setupToken, code: event.currentTarget.elements.code.value.trim() }), skipRefresh: true });
+      appState.admin = result.admin;
+      appState.mfaSetup = null;
+      appState.pendingLogin = null;
+      await loadBackendData();
+      render();
+    } catch (error) {
+      const node = document.querySelector(".auth-error") || document.createElement("p");
+      node.className = "auth-error";
+      node.textContent = error.message || "The authenticator code was not accepted.";
+      document.querySelector(".auth-heading")?.after(node);
+    }
+  }
+
   function render() {
     const file = currentFile();
     if (file === "admin-info-architecture.html") return;
     const meta = pages[file] || pages["index.html"];
     document.title = meta[0] + " | BullPort Admin";
-    const apiState = appState.apiOnline ? '<span class="api-status live">API Live</span>' : '<span class="api-status fallback">Static fallback</span>';
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toast" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><div class="avatar">OA</div></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
+    const apiState = appState.apiOnline ? '<span class="api-status live">API connected</span>' : '<span class="api-status fallback">API unavailable</span>';
+    const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><button class="avatar" type="button" data-action="admin-logout" title="Sign out" aria-label="Sign out">' + initials + '</button></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
     bindFilters();
   }
@@ -814,7 +968,7 @@
     if (!root) return;
     const node = document.createElement("div");
     node.className = "toast";
-    node.textContent = message || "Prototype action captured.";
+    node.textContent = message || "Action could not be completed.";
     root.appendChild(node);
     requestAnimationFrame(() => node.classList.add("is-visible"));
     setTimeout(() => {
@@ -831,24 +985,38 @@
         const action = node.getAttribute("data-action");
         if (action === "goto-queues") location.href = "queues.html";
         else if (action === "goto-clients") location.href = "clients.html";
+        else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
+        else if (action === "admin-logout") {
+          try { await api("/api/v1/auth/admin/logout", { method: "POST", body: "{}" }); } catch {}
+          appState.admin = null;
+          appState.apiOnline = false;
+          renderAdminLogin("You have signed out.", false);
+        }
+        else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
+        else if (action === "approval-confirm") submitApprovalDecision();
+        else if (action === "record-decision") openRecordDecision(node.dataset);
+        else if (action === "record-confirm") submitRecordDecision();
+        else if (action === "report-download") downloadAdminReport(node.dataset.reportId);
+        else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
+        else if (action === "setting-save") submitSetting(node.dataset.settingKey);
         else if (action === "open-modal") openModal(node.dataset.modal || "task");
         else if (action === "decision") {
-          node.classList.add("is-confirmed");
-          const apiAction = node.dataset.apiAction || "prototypeDecision";
+          const apiAction = node.dataset.apiAction || "unsupportedDecision";
           const result = node.dataset.result || node.textContent.trim();
           const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
           try {
             await executeBackendAction(apiAction);
+            node.classList.add("is-confirmed");
             if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
-            addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
+            addAudit("Now", appState.admin?.name || "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
             toast(result + ". Backend action completed.");
           } catch (error) {
-            if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " stored locally</span>";
-            addAudit("Now", "Admin", (actionLabels[apiAction] || result) + " captured locally", pageContext());
-            toast((error && error.message ? error.message : "Backend unavailable") + ". Stored locally for prototype continuity.");
+            node.classList.remove("is-confirmed");
+            if (stateNode) stateNode.innerHTML = badge("Not completed") + '<span>' + (error?.message || "Backend action failed") + "</span>";
+            toast(error?.message || "Backend action failed.");
           }
         }
-        else toast(node.textContent.trim() + " captured for the admin prototype.");
+        else toast("This control is not available for the current record or role.");
       });
     });
     document.querySelectorAll("[data-close-modal]").forEach((node) => {
@@ -866,20 +1034,26 @@
   async function executeBackendAction(apiAction) {
     const note = document.querySelector(".review-panel textarea")?.value || "Updated from BullPort admin UI.";
     const routes = {
-      approveKyc: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/approve", { note }],
-      rejectKyc: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/reject", { note }],
-      requestKycResubmission: ["/api/kyc/reviews/" + liveRefs.kycReviewId + "/request-resubmission", { note }],
-      creditDeposit: ["/api/money/deposits/" + liveRefs.depositId + "/credit", { note }],
-      flagDeposit: ["/api/money/deposits/" + liveRefs.depositId + "/flag", { note }],
-      approveWithdrawal: ["/api/money/withdrawals/" + liveRefs.withdrawalId + "/approve", { note }],
-      holdWithdrawal: ["/api/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
-      resolveSupport: ["/api/support/tickets/" + liveRefs.ticketId + "/resolve", {}],
-      escalateSupport: ["/api/support/tickets/" + liveRefs.ticketId + "/assign", { owner: "Compliance", priority: "High" }],
-      sendSupportReply: ["/api/support/tickets/" + liveRefs.ticketId + "/assign", { owner: "Support", priority: "Normal" }]
+      approveKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "APPROVED", note }],
+      rejectKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "REJECTED", note }],
+      requestKycResubmission: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "RESUBMISSION_REQUIRED", note }],
+      creditDeposit: ["/api/v1/admin/money/deposits/" + liveRefs.depositId + "/request-approval", { note }],
+      flagDeposit: ["/api/v1/admin/money/deposits/" + liveRefs.depositId + "/flag", { note }],
+      requestDepositProof: ["/api/v1/admin/money/deposits/" + liveRefs.depositId + "/request-proof", { note }],
+      approveWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-approval", { note }],
+      holdWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
+      requestWithdrawalInfo: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-information", { note }],
+      saveProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "DRAFT", note }],
+      reviewProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/request-publication", { note }],
+      hideProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "HIDDEN", note }],
+      resolveSupport: ["/api/v1/admin/support/tickets/" + liveRefs.ticketId + "/resolve", { resolution: note }],
+      escalateSupport: ["/api/v1/admin/support/tickets/" + liveRefs.ticketId + "/assign", { owner: "Compliance", priority: "High" }],
+      sendSupportReply: ["/api/v1/admin/support/tickets/" + liveRefs.ticketId + "/messages", { body: note }]
     };
     const route = routes[apiAction];
     if (!route || route[0].indexOf("undefined") !== -1) throw new Error("No backend route is available for this action yet");
-    await api(route[0], { method: "POST", body: JSON.stringify(route[1]) });
+    const method = ["saveProduct", "hideProduct"].includes(apiAction) ? "PATCH" : "POST";
+    await api(route[0], { method, body: JSON.stringify(route[1]) });
     await loadBackendData();
   }
 
@@ -919,11 +1093,110 @@
     return copy[type] || copy.task;
   }
 
+  function openApprovalDecision(id, decision) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    appState.pendingApproval = { id, decision };
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Maker-checker decision</p><h2>' + (decision === "approve" ? "Approve request" : "Reject request") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p>This decision is final for the current approval request and will be recorded in the audit trail.</p><label>Decision note<textarea name="approvalNote" placeholder="Explain the evidence and reason for this decision."></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn ' + (decision === "approve" ? "primary" : "danger") + '" type="button" data-action="approval-confirm">' + (decision === "approve" ? "Approve" : "Reject") + '</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitApprovalDecision() {
+    const pending = appState.pendingApproval;
+    const note = document.querySelector('[name="approvalNote"]')?.value.trim() || "";
+    if (!pending || note.length < 5) { toast("Enter a clear decision note of at least five characters."); return; }
+    try {
+      await api("/api/v1/admin/approvals/" + pending.id + "/" + pending.decision, { method: "POST", body: JSON.stringify({ note }) });
+      appState.pendingApproval = null;
+      closeModal();
+      await loadBackendData();
+      render();
+      toast("Approval request " + (pending.decision === "approve" ? "approved" : "rejected") + ".");
+    } catch (error) {
+      toast(error?.message || "The approval decision could not be completed.");
+    }
+  }
+
+  function openRecordDecision(record) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    appState.pendingRecord = { kind: record.recordKind, id: record.recordId, decision: record.recordDecision, quantity: record.recordQuantity, price: record.recordPrice };
+    const fillFields = record.recordDecision === "fill" ? '<label>Execution price<input name="recordPrice" type="number" min="0.00000001" step="0.00000001" value="' + (record.recordPrice || "") + '"></label><label>Executed quantity<input name="recordQuantity" type="number" min="0.00000001" step="0.00000001" value="' + (record.recordQuantity || "") + '"></label><label>Fee<input name="recordFee" type="number" min="0" step="0.01" value="0"></label>' : "";
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Operational decision</p><h2>' + label(record.recordDecision) + ' ' + label(record.recordKind) + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + fillFields + '<label>Decision note<textarea name="recordNote" placeholder="Record the reason and supporting evidence."></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="record-confirm">Submit decision</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitRecordDecision() {
+    const record = appState.pendingRecord;
+    const note = document.querySelector('[name="recordNote"]')?.value.trim() || "";
+    if (!record || note.length < 5) { toast("Enter a decision note of at least five characters."); return; }
+    try {
+      if (record.kind === "order") {
+        if (record.decision === "fill") {
+          await api("/api/v1/admin/orders/" + record.id + "/fill", { method: "POST", body: JSON.stringify({ price: Number(document.querySelector('[name="recordPrice"]').value), quantity: Number(document.querySelector('[name="recordQuantity"]').value), fee: Number(document.querySelector('[name="recordFee"]').value), note }) });
+        } else {
+          await api("/api/v1/admin/orders/" + record.id + "/" + record.decision, { method: "POST", body: JSON.stringify(record.decision === "reject" ? { reason: note } : { note }) });
+        }
+      } else if (record.kind === "options") {
+        await api("/api/v1/admin/options/applications/" + record.id + "/decision", { method: "POST", body: JSON.stringify({ status: record.decision === "approve" ? "APPROVED" : "RESTRICTED", note }) });
+      }
+      appState.pendingRecord = null;
+      closeModal();
+      await loadBackendData();
+      render();
+      toast("Operational decision completed.");
+    } catch (error) {
+      toast(error?.message || "The decision could not be completed.");
+    }
+  }
+
+  async function downloadAdminReport(id) {
+    if (!id) { toast("This report does not have a downloadable record."); return; }
+    try {
+      const response = await fetch(appState.apiBase + "/api/v1/admin/reports/" + encodeURIComponent(id) + "/download", { credentials: "include" });
+      if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error?.message || "Report download failed"); }
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "bullport-admin-report.csv";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      toast("Report download started.");
+    } catch (error) {
+      toast(error?.message || "The report could not be downloaded.");
+    }
+  }
+
+  function openSettingEditor(key) {
+    const root = document.querySelector("[data-modal-root]");
+    const setting = data.settingsRows.find((row) => row.key === key);
+    if (!root || !setting) return;
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Platform setting</p><h2>' + setting.key + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><label>JSON value<textarea name="settingValue">' + escapeHtml(JSON.stringify(setting.value, null, 2)) + '</textarea></label><label>Description<textarea name="settingDescription">' + escapeHtml(setting.description || "") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="setting-save" data-setting-key="' + setting.key + '">Save setting</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitSetting(key) {
+    try {
+      const root = document.querySelector("[data-modal-root]");
+      const raw = root?.querySelector("[name=settingValue]")?.value || "";
+      const description = root?.querySelector("[name=settingDescription]")?.value.trim() || undefined;
+      let value;
+      try { value = JSON.parse(raw); } catch { throw new Error("Setting value must be valid JSON."); }
+      await api("/api/v1/admin/settings/" + encodeURIComponent(key), { method: "PUT", body: JSON.stringify({ value, description }) });
+      await loadBackendData();
+      closeModal();
+      render();
+      toast("Platform setting updated.");
+    } catch (error) {
+      toast(error?.message || "The setting could not be updated.");
+    }
+  }
+
   function openModal(type) {
     const root = document.querySelector("[data-modal-root]");
     if (!root) return;
     const modal = modalContent(type);
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Backend action: ' + modal[1] + '</p><h2>' + modal[0] + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + modal[2].map((row) => '<label>' + row[0] + '<input value="' + row[1] + '" /></label>').join("") + '<label>Internal note<textarea>Prepared for backend endpoint ' + modal[1] + '.</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-submit-modal="' + modal[1] + '">Save prototype action</button></div></section></div>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Operational action</p><h2>' + modal[0] + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + modal[2].map((row, index) => '<label>' + row[0] + '<input name="field' + index + '" data-field-label="' + row[0] + '" value="' + row[1] + '" /></label>').join("") + '<label>Internal note<textarea name="internalNote">Record the reason and any relevant evidence for this operation.</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-submit-modal="' + modal[1] + '">Submit action</button></div></section></div>';
     bindActions();
   }
 
@@ -934,25 +1207,44 @@
 
   async function submitModal(apiAction) {
     try {
+      const modal = document.querySelector(".modal");
+      const values = Array.from(modal?.querySelectorAll("input[data-field-label]") || []).map((input) => input.value.trim());
+      const note = modal?.querySelector("textarea[name=internalNote]")?.value.trim() || "Submitted through the BullPort admin console.";
       if (apiAction === "createClientNote" && liveRefs.clientId) {
-        await api("/api/clients/" + liveRefs.clientId + "/notes", {
+        await api("/api/v1/admin/clients/" + liveRefs.clientId + "/notes", {
           method: "POST",
-          body: JSON.stringify({ category: "Admin note", body: "Created from BullPort admin UI.", createdBy: "Admin" })
+          body: JSON.stringify({ category: values[1] || "Admin note", body: values[2] || note })
         });
       } else if (apiAction === "assignSupportTicket" && liveRefs.ticketId) {
-        await api("/api/support/tickets/" + liveRefs.ticketId + "/assign", {
+        await api("/api/v1/admin/support/tickets/" + liveRefs.ticketId + "/assign", {
           method: "POST",
-          body: JSON.stringify({ owner: "Finance", priority: "High" })
+          body: JSON.stringify({ owner: values[1] || "Finance", priority: /urgent/i.test(values[2]) ? "Urgent" : /high/i.test(values[2]) ? "High" : "Normal" })
         });
+      } else if (["createAdminTask", "assignQueueTask"].includes(apiAction)) {
+        await api("/api/v1/admin/tasks", { method: "POST", body: JSON.stringify({ title: values[0] || "Operational follow-up", description: note, category: pageContext(), priority: values.some((value) => /high|urgent/i.test(value)) ? "High" : "Normal" }) });
+      } else if (apiAction === "createPortfolioProduct") {
+        const risk = /high/i.test(values[1]) ? "HIGH" : /low/i.test(values[1]) ? "LOW" : /custom/i.test(values[1]) ? "CUSTOM" : "MODERATE";
+        await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), currency: "USD", payoutRule: "Quarterly", disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
+      } else if (apiAction === "upsertInstrument") {
+        await api("/api/v1/admin/instruments", { method: "POST", body: JSON.stringify({ symbol: values[0], name: values[0] + " instrument", category: values[1] || "Stock", market: "Global", currency: "USD", riskLevel: "MODERATE", tradable: /tradable/i.test(values[2]), investable: true, status: "ACTIVE" }) });
+      } else if (["generateReport", "exportCurrentView"].includes(apiAction)) {
+        await api("/api/v1/admin/reports", { method: "POST", body: JSON.stringify({ name: values[0] || pageContext() + " export", type: /audit/i.test(pageContext()) ? "AUDIT" : /kyc/i.test(pageContext()) ? "KYC" : /deposit/i.test(pageContext()) ? "DEPOSITS" : /withdraw/i.test(pageContext()) ? "WITHDRAWALS" : /investment/i.test(pageContext()) ? "INVESTMENTS" : "CLIENTS", format: /pdf/i.test(values[2]) ? "PDF" : "CSV", period: values[1] || "Current view", filters: {} }) });
+      } else if (apiAction === "createNotification") {
+        await api("/api/v1/admin/notifications", { method: "POST", body: JSON.stringify({ audience: /pending kyc/i.test(values[0]) ? "PENDING_KYC" : "ALL", title: values[1] || "BullPort account update", body: note, category: "Account", actionUrl: "notifications.html", email: true }) });
+      } else if (apiAction === "inviteAdminUser") {
+        const email = values[0];
+        const role = /finance/i.test(values[1]) ? "FINANCE" : /compliance/i.test(values[1]) ? "COMPLIANCE" : /portfolio/i.test(values[1]) ? "PORTFOLIO_MANAGER" : /support/i.test(values[1]) ? "SUPPORT" : /audit/i.test(values[1]) ? "AUDITOR" : "SUPPORT";
+        const result = await api("/api/v1/admin/admin-users", { method: "POST", body: JSON.stringify({ name: email.split("@")[0].replace(/[._-]/g, " "), email, role }) });
+        toast("Admin created. Temporary password: " + result.temporaryPassword);
+      } else {
+        throw new Error("This action needs a complete operational record before it can be submitted.");
       }
       await loadBackendData();
-      addAudit("Now", "Admin", "Submitted " + apiAction, pageContext());
+      addAudit("Now", appState.admin?.name || "Admin", "Submitted " + apiAction, pageContext());
       closeModal();
       toast(apiAction + " saved to backend.");
     } catch (error) {
-      addAudit("Now", "Admin", "Submitted " + apiAction + " locally", pageContext());
-      closeModal();
-      toast((error && error.message ? error.message : "Backend unavailable") + ". Stored locally.");
+      toast(error?.message || "The operation could not be completed.");
     }
   }
 
@@ -1001,10 +1293,16 @@
   }
 
   async function boot() {
-    render();
-    loadBackendData().then(() => {
+    renderSessionLoading();
+    try {
+      appState.admin = await api("/api/v1/auth/admin/me", { skipRefresh: false });
+      await loadBackendData();
       render();
-    });
+    } catch (error) {
+      appState.admin = null;
+      appState.apiOnline = false;
+      renderAdminLogin(error?.status === 401 ? "" : (error?.message || "The admin service is unavailable."), false);
+    }
   }
 
   if (document.readyState === "loading") {

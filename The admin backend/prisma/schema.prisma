@@ -3,8 +3,15 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+enum ActorType {
+  CLIENT
+  ADMIN
+  SYSTEM
 }
 
 enum AdminRole {
@@ -25,23 +32,34 @@ enum ClientStatus {
 
 enum KycStatus {
   NOT_STARTED
+  DRAFT
+  SUBMITTED
   PENDING
   IN_REVIEW
   APPROVED
   REJECTED
   RESUBMISSION_REQUIRED
+  EXPIRED
 }
 
 enum MoneyStatus {
   PENDING
+  REQUESTED
   IN_REVIEW
+  UNDER_REVIEW
+  AWAITING_APPROVAL
   APPROVED
   CONFIRMED
+  PROCESSING
+  PAID
   CREDITED
   FLAGGED
   HELD
   REJECTED
   BLOCKED
+  CANCELLED
+  REVERSED
+  FAILED
 }
 
 enum RiskLevel {
@@ -54,16 +72,20 @@ enum RiskLevel {
 enum ProductStatus {
   DRAFT
   REVIEW
+  PENDING_APPROVAL
   PUBLISHED
   HIDDEN
+  ARCHIVED
 }
 
 enum InvestmentStatus {
   PENDING
+  FUNDED
   ACTIVE
   REVIEW
   EXIT_REQUESTED
   CLOSED
+  CANCELLED
 }
 
 enum TicketStatus {
@@ -72,41 +94,296 @@ enum TicketStatus {
   AWAITING_CLIENT
   ESCALATED
   RESOLVED
+  CLOSED
+}
+
+enum TokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  MFA_RECOVERY
+}
+
+enum LedgerAccountKind {
+  CLIENT_CASH
+  CLIENT_INVESTMENT
+  CLIENT_HOLD
+  PLATFORM_CLEARING
+  PLATFORM_FEES
+  PLATFORM_REVENUE
+}
+
+enum LedgerEntrySide {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerTransactionType {
+  OPENING_BALANCE
+  DEPOSIT
+  WITHDRAWAL
+  INVESTMENT_SUBSCRIPTION
+  INVESTMENT_EXIT
+  TRADE
+  DIVIDEND
+  PROFIT
+  FEE
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum LedgerTransactionStatus {
+  PENDING
+  POSTED
+  REVERSED
+  FAILED
+}
+
+enum HoldStatus {
+  ACTIVE
+  RELEASED
+  CAPTURED
+  EXPIRED
+}
+
+enum BeneficiaryType {
+  BANK
+  CRYPTO
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP
+  STOP_LIMIT
+}
+
+enum OrderStatus {
+  PENDING_REVIEW
+  APPROVED
+  PARTIALLY_FILLED
+  FILLED
+  SETTLED
+  CANCELLED
+  REJECTED
+  FAILED
+}
+
+enum OptionType {
+  CALL
+  PUT
+}
+
+enum OptionsAccessStatus {
+  NOT_APPLIED
+  PENDING
+  APPROVED
+  RESTRICTED
+  SUSPENDED
+  REJECTED
+}
+
+enum DistributionType {
+  DIVIDEND
+  PROFIT
+  INTEREST
+}
+
+enum DistributionStatus {
+  DRAFT
+  CALCULATED
+  PENDING_APPROVAL
+  APPROVED
+  POSTED
+  REVERSED
+  FAILED
+}
+
+enum DistributionMode {
+  WALLET
+  REINVEST
+}
+
+enum DeliveryChannel {
+  IN_APP
+  EMAIL
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum RiskAlertStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
 
 model AdminUser {
-  id           String     @id @default(cuid())
-  name         String
-  email        String     @unique
-  passwordHash String
-  role         AdminRole
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  auditLogs    AuditLog[]
+  id                  String            @id @default(cuid())
+  name                String
+  email               String            @unique
+  passwordHash        String
+  role                AdminRole
+  isActive            Boolean           @default(true)
+  failedLoginAttempts Int               @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  mfa                 AdminMfa?
+  sessions            AuthSession[]
+  auditLogs           AuditLog[]
+  initiatedApprovals  ApprovalRequest[] @relation("ApprovalInitiator")
+  decidedApprovals    ApprovalRequest[] @relation("ApprovalDecider")
+  assignedTasks       AdminTask[]       @relation("AdminTaskAssignee")
+}
+
+model AdminMfa {
+  id                 String    @id @default(cuid())
+  adminId            String    @unique
+  secretEncrypted    String
+  recoveryCodeHashes Json
+  enabledAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  admin              AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model AuthSession {
+  id               String     @id @default(cuid())
+  actorType        ActorType
+  clientId         String?
+  adminId          String?
+  refreshTokenHash String     @unique
+  csrfTokenHash    String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  lastUsedAt       DateTime   @default(now())
+  revokedAt        DateTime?
+  rotatedFromId    String?
+  createdAt        DateTime   @default(now())
+  client           Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  admin            AdminUser? @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, revokedAt])
+  @@index([adminId, revokedAt])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id        String       @id @default(cuid())
+  actorType ActorType
+  actorId   String
+  purpose   TokenPurpose
+  tokenHash String       @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  @@index([actorType, actorId, purpose])
+}
+
+model LoginAttempt {
+  id        String    @id @default(cuid())
+  email     String
+  actorType ActorType
+  ipAddress String?
+  succeeded Boolean
+  createdAt DateTime  @default(now())
+
+  @@index([email, actorType, createdAt])
+  @@index([ipAddress, createdAt])
 }
 
 model Client {
-  id            String             @id @default(cuid())
-  accountNumber String             @unique
-  name          String
-  email         String             @unique
-  passwordHash  String?
-  phone         String?
-  status        ClientStatus       @default(PENDING)
-  riskLevel     RiskLevel          @default(MODERATE)
-  tier          String             @default("Standard")
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  kycReviews    KycReview[]
-  wallet        WalletAccount?
-  deposits      Deposit[]
-  withdrawals   Withdrawal[]
-  investments   ClientInvestment[]
-  payouts       Payout[]
-  tickets       SupportTicket[]
-  notes         ClientNote[]
-  notifications Notification[]
+  id                  String               @id @default(cuid())
+  accountNumber       String               @unique
+  name                String
+  email               String               @unique
+  passwordHash        String?
+  phone               String?
+  status              ClientStatus         @default(PENDING)
+  riskLevel           RiskLevel            @default(MODERATE)
+  tier                String               @default("Standard")
+  country             String?
+  addressLine1        String?
+  addressLine2        String?
+  city                String?
+  state               String?
+  postalCode          String?
+  taxResidence        String?
+  taxId               String?
+  baseCurrency        String               @default("USD")
+  emailVerifiedAt     DateTime?
+  phoneVerifiedAt     DateTime?
+  preferences         Json?
+  riskQuestionnaire   Json?
+  suitabilityScore    Int?
+  failedLoginAttempts Int                  @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  sessions            AuthSession[]
+  kycReviews          KycReview[]
+  kycCases            KycCase[]
+  wallet              WalletAccount?
+  deposits            Deposit[]
+  withdrawals         Withdrawal[]
+  beneficiaries       Beneficiary[]
+  paymentMethods      PaymentMethod[]
+  ledgerTransactions  LedgerTransaction[]
+  investments         ClientInvestment[]
+  payouts             Payout[]
+  distributionItems   DistributionItem[]
+  watchlist           WatchlistItem[]
+  orders              Order[]
+  positions           Position[]
+  optionsApplications OptionsApplication[]
+  riskAlerts          RiskAlert[]
+  tickets             SupportTicket[]
+  notes               ClientNote[]
+  notifications       Notification[]
+  reports             ReportExport[]
 }
 
 model ClientNote {
@@ -132,16 +409,80 @@ model KycReview {
   client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
+model KycCase {
+  id                String        @id @default(cuid())
+  clientId          String
+  status            KycStatus     @default(DRAFT)
+  level             String        @default("Standard")
+  submittedAt       DateTime?
+  approvedAt        DateTime?
+  expiresAt         DateTime?
+  assignedReviewer  String?
+  riskQuestionnaire Json?
+  suitabilityScore  Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  documents         KycDocument[]
+  checks            KycCheck[]
+  decisions         KycDecision[]
+
+  @@index([clientId, status])
+}
+
+model KycDocument {
+  id            String             @id @default(cuid())
+  caseId        String
+  type          String
+  storageKey    String
+  fileName      String
+  mimeType      String
+  size          Int
+  checksum      String?
+  status        VerificationStatus @default(PENDING)
+  rejectionNote String?
+  uploadedAt    DateTime           @default(now())
+  reviewedAt    DateTime?
+  kycCase       KycCase            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, type])
+}
+
+model KycCheck {
+  id        String             @id @default(cuid())
+  caseId    String
+  name      String
+  status    VerificationStatus @default(PENDING)
+  result    Json?
+  checkedBy String?
+  checkedAt DateTime?
+  createdAt DateTime           @default(now())
+  kycCase   KycCase            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+model KycDecision {
+  id         String    @id @default(cuid())
+  caseId     String
+  status     KycStatus
+  reviewerId String
+  note       String
+  createdAt  DateTime  @default(now())
+  kycCase    KycCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
 model WalletAccount {
-  id        String              @id @default(cuid())
-  clientId  String              @unique
-  currency  String              @default("USD")
-  balance   Decimal             @db.Decimal(18, 2)
-  available Decimal             @db.Decimal(18, 2)
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
-  client    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  ledger    WalletTransaction[]
+  id             String              @id @default(cuid())
+  clientId       String              @unique
+  currency       String              @default("USD")
+  balance        Decimal             @db.Decimal(18, 2)
+  available      Decimal             @db.Decimal(18, 2)
+  held           Decimal             @default(0) @db.Decimal(18, 2)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ledger         WalletTransaction[]
+  ledgerAccounts LedgerAccount[]
+  holds          WalletHold[]
 }
 
 model WalletTransaction {
@@ -156,127 +497,769 @@ model WalletTransaction {
   wallet    WalletAccount @relation(fields: [walletId], references: [id], onDelete: Cascade)
 }
 
+model LedgerAccount {
+  id        String            @id @default(cuid())
+  walletId  String?
+  code      String            @unique
+  name      String
+  kind      LedgerAccountKind
+  currency  String
+  balance   Decimal           @default(0) @db.Decimal(24, 8)
+  available Decimal           @default(0) @db.Decimal(24, 8)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  wallet    WalletAccount?    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  entries   LedgerEntry[]
+  holds     WalletHold[]
+
+  @@unique([walletId, kind, currency])
+  @@index([currency, kind])
+}
+
+model LedgerTransaction {
+  id                    String                  @id @default(cuid())
+  reference             String                  @unique
+  clientId              String?
+  type                  LedgerTransactionType
+  status                LedgerTransactionStatus @default(PENDING)
+  currency              String
+  description           String
+  idempotencyKey        String?                 @unique
+  externalReference     String?
+  initiatedBy           String?
+  approvedBy            String?
+  metadata              Json?
+  postedAt              DateTime?
+  reversedTransactionId String?
+  createdAt             DateTime                @default(now())
+  client                Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  entries               LedgerEntry[]
+
+  @@index([clientId, createdAt])
+  @@index([status, createdAt])
+}
+
+model LedgerEntry {
+  id            String            @id @default(cuid())
+  transactionId String
+  accountId     String
+  side          LedgerEntrySide
+  amount        Decimal           @db.Decimal(24, 8)
+  currency      String
+  memo          String?
+  createdAt     DateTime          @default(now())
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account       LedgerAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([accountId, createdAt])
+}
+
+model WalletHold {
+  id              String        @id @default(cuid())
+  walletId        String
+  ledgerAccountId String
+  reference       String        @unique
+  amount          Decimal       @db.Decimal(24, 8)
+  currency        String
+  reason          String
+  status          HoldStatus    @default(ACTIVE)
+  expiresAt       DateTime?
+  releasedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  wallet          WalletAccount @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  ledgerAccount   LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, status])
+}
+
+model Beneficiary {
+  id                  String             @id @default(cuid())
+  clientId            String
+  type                BeneficiaryType
+  label               String
+  currency            String
+  bankName            String?
+  accountName         String?
+  accountNumberMasked String?
+  accountToken        String?
+  cryptoNetwork       String?
+  walletAddressMasked String?
+  walletAddressToken  String?
+  status              VerificationStatus @default(PENDING)
+  verifiedAt          DateTime?
+  cooldownUntil       DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  client              Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+}
+
+model PaymentMethod {
+  id        String             @id @default(cuid())
+  clientId  String
+  type      BeneficiaryType
+  label     String
+  currency  String
+  details   Json
+  status    VerificationStatus @default(PENDING)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  client    Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
 model Deposit {
-  id         String      @id @default(cuid())
-  reference  String      @unique
-  clientId   String
-  method     String
-  rail       String
-  amount     Decimal     @db.Decimal(18, 2)
-  received   Decimal?    @db.Decimal(18, 2)
-  status     MoneyStatus @default(PENDING)
-  reviewNote String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  reference           String      @unique
+  clientId            String
+  method              String
+  rail                String
+  currency            String      @default("USD")
+  amount              Decimal     @db.Decimal(18, 2)
+  received            Decimal?    @db.Decimal(18, 2)
+  status              MoneyStatus @default(PENDING)
+  reviewNote          String?
+  evidenceFileId      String?
+  transactionHash     String?
+  externalReference   String?
+  approvalRequestId   String?
+  ledgerTransactionId String?
+  submittedAt         DateTime    @default(now())
+  approvedAt          DateTime?
+  creditedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
 }
 
 model Withdrawal {
-  id          String      @id @default(cuid())
-  reference   String      @unique
-  clientId    String
-  destination String
-  amount      Decimal     @db.Decimal(18, 2)
-  status      MoneyStatus @default(PENDING)
-  reviewNote  String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  reference           String      @unique
+  clientId            String
+  beneficiaryId       String?
+  destination         String
+  currency            String      @default("USD")
+  amount              Decimal     @db.Decimal(18, 2)
+  fee                 Decimal     @default(0) @db.Decimal(18, 2)
+  netAmount           Decimal?    @db.Decimal(18, 2)
+  status              MoneyStatus @default(PENDING)
+  reviewNote          String?
+  holdReference       String?
+  approvalRequestId   String?
+  ledgerTransactionId String?
+  externalReference   String?
+  requestedAt         DateTime    @default(now())
+  approvedAt          DateTime?
+  paidAt              DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+}
+
+model ApprovalRequest {
+  id                 String         @id @default(cuid())
+  actionType         String
+  entityType         String
+  entityId           String
+  payload            Json?
+  payloadHash        String
+  status             ApprovalStatus @default(PENDING)
+  initiatedByAdminId String
+  approvedByAdminId  String?
+  decisionNote       String?
+  expiresAt          DateTime?
+  decidedAt          DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  initiatedBy        AdminUser      @relation("ApprovalInitiator", fields: [initiatedByAdminId], references: [id], onDelete: Restrict)
+  approvedBy         AdminUser?     @relation("ApprovalDecider", fields: [approvedByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, status])
+  @@index([status, createdAt])
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  key            String
+  actorId        String
+  route          String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([key, actorId, route])
+  @@index([expiresAt])
 }
 
 model PortfolioProduct {
-  id          String             @id @default(cuid())
-  name        String             @unique
-  riskLevel   RiskLevel
-  minimum     Decimal            @db.Decimal(18, 2)
-  payoutRule  String
-  status      ProductStatus      @default(DRAFT)
-  description String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  investments ClientInvestment[]
+  id                 String                    @id @default(cuid())
+  name               String                    @unique
+  slug               String?                   @unique
+  riskLevel          RiskLevel
+  minimum            Decimal                   @db.Decimal(18, 2)
+  currency           String                    @default("USD")
+  payoutRule         String
+  durationDays       Int?
+  projectedReturnMin Decimal?                  @db.Decimal(8, 4)
+  projectedReturnMax Decimal?                  @db.Decimal(8, 4)
+  disclosure         String?
+  eligibility        Json?
+  version            Int                       @default(1)
+  status             ProductStatus             @default(DRAFT)
+  description        String?
+  publishedAt        DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  investments        ClientInvestment[]
+  versions           PortfolioProductVersion[]
+  allocations        PortfolioAllocation[]
+  feeRules           FeeRule[]
+  distributions      DistributionBatch[]
+  riskAlerts         RiskAlert[]
+}
+
+model PortfolioProductVersion {
+  id          String           @id @default(cuid())
+  productId   String
+  version     Int
+  terms       Json
+  status      ProductStatus    @default(DRAFT)
+  createdBy   String
+  approvedBy  String?
+  createdAt   DateTime         @default(now())
+  publishedAt DateTime?
+  product     PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, version])
+}
+
+model PortfolioAllocation {
+  id            String           @id @default(cuid())
+  productId     String
+  instrumentId  String
+  targetWeight  Decimal          @db.Decimal(8, 4)
+  minimumWeight Decimal?         @db.Decimal(8, 4)
+  maximumWeight Decimal?         @db.Decimal(8, 4)
+  effectiveFrom DateTime         @default(now())
+  effectiveTo   DateTime?
+  product       PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  instrument    Instrument       @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, instrumentId, effectiveFrom])
+}
+
+model FeeRule {
+  id         String            @id @default(cuid())
+  productId  String?
+  name       String
+  type       String
+  rate       Decimal?          @db.Decimal(8, 6)
+  flatAmount Decimal?          @db.Decimal(18, 2)
+  currency   String            @default("USD")
+  appliesTo  String
+  active     Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  product    PortfolioProduct? @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model ClientInvestment {
-  id             String           @id @default(cuid())
-  clientId       String
-  productId      String
-  investedAmount Decimal          @db.Decimal(18, 2)
-  currentValue   Decimal          @db.Decimal(18, 2)
-  status         InvestmentStatus @default(PENDING)
-  nextAction     String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  client         Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  product        PortfolioProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id                   String                  @id @default(cuid())
+  clientId             String
+  productId            String
+  productVersionId     String?
+  investedAmount       Decimal                 @db.Decimal(18, 2)
+  currentValue         Decimal                 @db.Decimal(18, 2)
+  units                Decimal                 @default(0) @db.Decimal(24, 8)
+  currency             String                  @default("USD")
+  status               InvestmentStatus        @default(PENDING)
+  reinvestPreference   DistributionMode        @default(WALLET)
+  projectedReturnLabel String?
+  nextAction           String?
+  startDate            DateTime                @default(now())
+  maturityDate         DateTime?
+  closedAt             DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  client               Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product              PortfolioProduct        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  transactions         InvestmentTransaction[]
+  valuations           InvestmentValuation[]
+  holdings             InvestmentHolding[]
+  distributionItems    DistributionItem[]
+
+  @@index([clientId, status])
 }
 
-model Payout {
-  id         String      @id @default(cuid())
-  reference  String      @unique
-  clientId   String
-  source     String
-  amount     Decimal     @db.Decimal(18, 2)
-  mode       String
-  status     MoneyStatus @default(PENDING)
-  payoutDate DateTime
-  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+model InvestmentTransaction {
+  id                  String           @id @default(cuid())
+  investmentId        String
+  reference           String           @unique
+  type                String
+  amount              Decimal          @db.Decimal(18, 2)
+  units               Decimal          @default(0) @db.Decimal(24, 8)
+  unitPrice           Decimal          @default(1) @db.Decimal(24, 8)
+  ledgerTransactionId String?
+  createdAt           DateTime         @default(now())
+  investment          ClientInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+}
+
+model InvestmentValuation {
+  id           String           @id @default(cuid())
+  investmentId String
+  value        Decimal          @db.Decimal(18, 2)
+  unitPrice    Decimal          @db.Decimal(24, 8)
+  source       String
+  asOf         DateTime
+  createdAt    DateTime         @default(now())
+  investment   ClientInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@unique([investmentId, asOf])
+}
+
+model InvestmentHolding {
+  id           String           @id @default(cuid())
+  investmentId String
+  instrumentId String
+  quantity     Decimal          @db.Decimal(24, 8)
+  averageCost  Decimal          @db.Decimal(24, 8)
+  currentPrice Decimal          @db.Decimal(24, 8)
+  marketValue  Decimal          @db.Decimal(18, 2)
+  asOf         DateTime
+  investment   ClientInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  instrument   Instrument       @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+
+  @@unique([investmentId, instrumentId])
 }
 
 model Instrument {
-  id        String    @id @default(cuid())
-  symbol    String    @unique
-  name      String
-  category  String
-  market    String
-  riskLevel RiskLevel
-  status    String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                  String                @id @default(cuid())
+  symbol              String                @unique
+  name                String
+  category            String
+  market              String
+  currency            String                @default("USD")
+  currentPrice        Decimal?              @db.Decimal(24, 8)
+  priceAsOf           DateTime?
+  priceSource         String?
+  riskLevel           RiskLevel
+  dividendEligible    Boolean               @default(false)
+  tradable            Boolean               @default(false)
+  investable          Boolean               @default(true)
+  status              String
+  suspendedReason     String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  prices              PriceSnapshot[]
+  allocations         PortfolioAllocation[]
+  holdings            InvestmentHolding[]
+  watchlistedBy       WatchlistItem[]
+  orders              Order[]
+  positions           Position[]
+  optionContracts     OptionContract[]      @relation("OptionUnderlying")
+  distributionBatches DistributionBatch[]
+  riskAlerts          RiskAlert[]
+}
+
+model PriceSnapshot {
+  id           String     @id @default(cuid())
+  instrumentId String
+  price        Decimal    @db.Decimal(24, 8)
+  bid          Decimal?   @db.Decimal(24, 8)
+  ask          Decimal?   @db.Decimal(24, 8)
+  currency     String
+  source       String
+  asOf         DateTime
+  createdAt    DateTime   @default(now())
+  instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+
+  @@index([instrumentId, asOf])
+}
+
+model WatchlistItem {
+  id           String     @id @default(cuid())
+  clientId     String
+  instrumentId String
+  notes        String?
+  createdAt    DateTime   @default(now())
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, instrumentId])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  reference       String      @unique
+  clientId        String
+  instrumentId    String
+  side            OrderSide
+  type            OrderType
+  quantity        Decimal     @db.Decimal(24, 8)
+  limitPrice      Decimal?    @db.Decimal(24, 8)
+  stopPrice       Decimal?    @db.Decimal(24, 8)
+  currency        String
+  estimatedAmount Decimal?    @db.Decimal(18, 2)
+  holdReference   String?
+  status          OrderStatus @default(PENDING_REVIEW)
+  rejectionReason String?
+  approvedBy      String?
+  submittedAt     DateTime    @default(now())
+  approvedAt      DateTime?
+  settledAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  client          Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  instrument      Instrument  @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+  fills           TradeFill[]
+
+  @@index([clientId, status])
+  @@index([status, submittedAt])
+}
+
+model TradeFill {
+  id                String   @id @default(cuid())
+  orderId           String
+  quantity          Decimal  @db.Decimal(24, 8)
+  price             Decimal  @db.Decimal(24, 8)
+  fee               Decimal  @default(0) @db.Decimal(18, 2)
+  externalReference String?
+  executedAt        DateTime
+  createdAt         DateTime @default(now())
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Position {
+  id            String     @id @default(cuid())
+  clientId      String
+  instrumentId  String
+  quantity      Decimal    @db.Decimal(24, 8)
+  averageCost   Decimal    @db.Decimal(24, 8)
+  marketValue   Decimal    @default(0) @db.Decimal(18, 2)
+  realizedPnl   Decimal    @default(0) @db.Decimal(18, 2)
+  unrealizedPnl Decimal    @default(0) @db.Decimal(18, 2)
+  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime   @default(now())
+  client        Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  instrument    Instrument @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+
+  @@unique([clientId, instrumentId])
+}
+
+model OptionContract {
+  id                     String     @id @default(cuid())
+  symbol                 String     @unique
+  underlyingInstrumentId String
+  type                   OptionType
+  strike                 Decimal    @db.Decimal(24, 8)
+  expiry                 DateTime
+  premium                Decimal    @db.Decimal(24, 8)
+  multiplier             Int        @default(100)
+  status                 String     @default("ACTIVE")
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  underlying             Instrument @relation("OptionUnderlying", fields: [underlyingInstrumentId], references: [id], onDelete: Restrict)
+}
+
+model OptionsApplication {
+  id                   String              @id @default(cuid())
+  clientId             String
+  status               OptionsAccessStatus @default(NOT_APPLIED)
+  questionnaire        Json?
+  score                Int?
+  disclosureAcceptedAt DateTime?
+  reviewerId           String?
+  decisionNote         String?
+  decidedAt            DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  client               Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+}
+
+model DistributionBatch {
+  id                  String             @id @default(cuid())
+  reference           String             @unique
+  productId           String?
+  instrumentId        String?
+  type                DistributionType
+  periodStart         DateTime
+  periodEnd           DateTime
+  currency            String
+  grossAmount         Decimal            @db.Decimal(18, 2)
+  feeAmount           Decimal            @default(0) @db.Decimal(18, 2)
+  netAmount           Decimal            @db.Decimal(18, 2)
+  status              DistributionStatus @default(DRAFT)
+  calculationSnapshot Json?
+  createdBy           String
+  approvedBy          String?
+  approvedAt          DateTime?
+  postedAt            DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  product             PortfolioProduct?  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  instrument          Instrument?        @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+  items               DistributionItem[]
+
+  @@index([status, createdAt])
+}
+
+model DistributionItem {
+  id                  String             @id @default(cuid())
+  batchId             String
+  clientId            String
+  investmentId        String?
+  grossAmount         Decimal            @db.Decimal(18, 2)
+  feeAmount           Decimal            @default(0) @db.Decimal(18, 2)
+  netAmount           Decimal            @db.Decimal(18, 2)
+  mode                DistributionMode   @default(WALLET)
+  status              DistributionStatus @default(CALCULATED)
+  ledgerTransactionId String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  batch               DistributionBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  client              Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  investment          ClientInvestment?  @relation(fields: [investmentId], references: [id], onDelete: SetNull)
+  payout              Payout?
+
+  @@unique([batchId, clientId, investmentId])
+}
+
+model Payout {
+  id                 String            @id @default(cuid())
+  reference          String            @unique
+  clientId           String
+  distributionItemId String?           @unique
+  source             String
+  amount             Decimal           @db.Decimal(18, 2)
+  mode               String
+  status             MoneyStatus       @default(PENDING)
+  payoutDate         DateTime
+  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  distributionItem   DistributionItem? @relation(fields: [distributionItemId], references: [id], onDelete: SetNull)
+}
+
+model RiskRule {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  category    String
+  description String
+  severity    Severity
+  conditions  Json
+  action      Json
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RiskAlert {
+  id           String            @id @default(cuid())
+  clientId     String?
+  productId    String?
+  instrumentId String?
+  category     String
+  severity     Severity
+  title        String
+  details      Json?
+  status       RiskAlertStatus   @default(OPEN)
+  assignedTo   String?
+  resolvedBy   String?
+  resolution   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  client       Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  product      PortfolioProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  instrument   Instrument?       @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  @@index([status, severity, createdAt])
 }
 
 model SupportTicket {
-  id        String       @id @default(cuid())
-  ticketNo  String       @unique
-  clientId  String
-  subject   String
-  owner     String?
-  status    TicketStatus @default(OPEN)
-  priority  String       @default("Normal")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  client    Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id          String           @id @default(cuid())
+  ticketNo    String           @unique
+  clientId    String
+  subject     String
+  category    String           @default("General")
+  description String?
+  owner       String?
+  status      TicketStatus     @default(OPEN)
+  priority    String           @default("Normal")
+  closedAt    DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages    SupportMessage[]
+}
+
+model SupportMessage {
+  id         String        @id @default(cuid())
+  ticketId   String
+  authorType ActorType
+  authorId   String
+  body       String
+  createdAt  DateTime      @default(now())
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
 }
 
 model Notification {
-  id        String    @id @default(cuid())
-  clientId  String?
-  title     String
-  body      String
-  category  String
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-  client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  id         String                 @id @default(cuid())
+  clientId   String?
+  title      String
+  body       String
+  category   String
+  actionUrl  String?
+  readAt     DateTime?
+  createdAt  DateTime               @default(now())
+  client     Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  deliveries NotificationDelivery[]
+
+  @@index([clientId, readAt, createdAt])
+}
+
+model NotificationDelivery {
+  id             String          @id @default(cuid())
+  notificationId String
+  channel        DeliveryChannel
+  recipient      String
+  status         DeliveryStatus  @default(PENDING)
+  providerId     String?
+  attempts       Int             @default(0)
+  lastError      String?
+  sentAt         DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  notification   Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
+
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  type          String
+  payload       Json
+  status        JobStatus @default(PENDING)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
 }
 
 model ReportExport {
-  id        String   @id @default(cuid())
-  name      String
-  type      String
-  format    String
-  period    String
-  status    String
-  createdAt DateTime @default(now())
+  id          String    @id @default(cuid())
+  clientId    String?
+  name        String
+  type        String
+  format      String
+  period      String
+  status      String
+  filters     Json?
+  storageKey  String?
+  fileUrl     String?
+  requestedBy String?
+  completedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+  client      Client?   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+model StoredFile {
+  id         String    @id @default(cuid())
+  ownerType  String
+  ownerId    String
+  category   String
+  storageKey String    @unique
+  fileName   String
+  mimeType   String
+  size       Int
+  checksum   String?
+  url        String?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([ownerType, ownerId, category])
+}
+
+model AdminTask {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  category     String
+  priority     String     @default("Normal")
+  status       String     @default("OPEN")
+  assignedToId String?
+  entityType   String?
+  entityId     String?
+  dueAt        DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  assignedTo   AdminUser? @relation("AdminTaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  isSecret    Boolean  @default(false)
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ExchangeRateSnapshot {
+  id            String   @id @default(cuid())
+  baseCurrency  String
+  quoteCurrency String
+  rate          Decimal  @db.Decimal(24, 10)
+  source        String
+  asOf          DateTime
+  createdBy     String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@unique([baseCurrency, quoteCurrency, asOf])
+  @@index([baseCurrency, quoteCurrency, asOf])
 }
 
 model AuditLog {
   id         String     @id @default(cuid())
   actorId    String?
+  actorType  ActorType  @default(SYSTEM)
   actorName  String
   action     String
   entityType String
   entityId   String?
+  requestId  String?
+  ipAddress  String?
+  userAgent  String?
+  reason     String?
+  before     Json?
+  after      Json?
   metadata   Json?
   createdAt  DateTime   @default(now())
   actor      AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([requestId])
 }

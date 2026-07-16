@@ -1,0 +1,30 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: The admin backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@127.0.0.1:5432/test?schema=Tobi
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+      ADMIN_MFA_REQUIRED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: The admin backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

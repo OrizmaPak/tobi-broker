@@ -9,9 +9,11 @@ import { kycRouter } from "./kyc.routes";
 import { moneyRouter } from "./money.routes";
 import { portfolioRouter } from "./portfolio.routes";
 import { supportRouter } from "./support.routes";
+import { v1Router } from "./v1";
 
 export const apiRouter = Router();
 
+apiRouter.use("/v1", v1Router);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/client", clientPortalRouter);
 apiRouter.use("/admin", requireAdmin, adminRouter);

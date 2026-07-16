@@ -1,0 +1,61 @@
+export const openApiDocument = {
+  openapi: "3.1.0",
+  info: { title: "BullPort Broker API", version: "1.0.0", description: "Operational beta API for BullPort public, client, and broker-admin applications." },
+  servers: [{ url: "/api/v1" }],
+  tags: ["Auth", "Public", "Client", "Admin", "Files", "Jobs"].map((name) => ({ name })),
+  components: {
+    securitySchemes: {
+      cookieSession: { type: "apiKey", in: "cookie", name: "bp_access" },
+      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+      csrf: { type: "apiKey", in: "header", name: "x-csrf-token" }
+    },
+    schemas: {
+      Success: { type: "object", required: ["ok", "data", "requestId"], properties: { ok: { const: true }, data: {}, meta: {}, requestId: { type: "string" } } },
+      Error: { type: "object", required: ["ok", "error", "requestId"], properties: { ok: { const: false }, error: { type: "object", required: ["code", "message"], properties: { code: { type: "string" }, message: { type: "string" }, fields: { type: "object" } } }, requestId: { type: "string" } } }
+    }
+  },
+  paths: {
+    "/auth/client/register": { post: { tags: ["Auth"], summary: "Register a client" } },
+    "/auth/client/login": { post: { tags: ["Auth"], summary: "Create a client session" } },
+    "/auth/client/verify-email": { post: { tags: ["Auth"], summary: "Verify a client email" } },
+    "/auth/client/change-password": { post: { tags: ["Auth"], summary: "Change a client password and revoke other sessions", security: [{ cookieSession: [], csrf: [] }] } },
+    "/auth/admin/login": { post: { tags: ["Auth"], summary: "Create or continue an MFA-protected admin session" } },
+    "/auth/admin/change-password": { post: { tags: ["Auth"], summary: "Change an admin password and revoke other sessions", security: [{ cookieSession: [], csrf: [] }] } },
+    "/auth/forgot-password": { post: { tags: ["Auth"], summary: "Request password recovery" } },
+    "/auth/reset-password": { post: { tags: ["Auth"], summary: "Complete password recovery" } },
+    "/auth/refresh": { post: { tags: ["Auth"], summary: "Rotate a refresh session" } },
+    "/public/capabilities": { get: { tags: ["Public"], summary: "Read enabled platform capabilities" } },
+    "/public/portfolios": { get: { tags: ["Public"], summary: "List published portfolio products" } },
+    "/public/instruments": { get: { tags: ["Public"], summary: "List public investable instruments" } },
+    "/public/fees": { get: { tags: ["Public"], summary: "List active public fee rules" } },
+    "/public/disclosures": { get: { tags: ["Public"], summary: "Read platform disclosures" } },
+    "/public/contact": { post: { tags: ["Public"], summary: "Submit a public support inquiry" } },
+    "/client/dashboard": { get: { tags: ["Client"], summary: "Load the complete client snapshot", security: [{ cookieSession: [] }] } },
+    "/client/profile": { get: { tags: ["Client"], summary: "Read client profile", security: [{ cookieSession: [] }] }, put: { tags: ["Client"], summary: "Update client profile", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/kyc": { get: { tags: ["Client"], summary: "List client KYC cases", security: [{ cookieSession: [] }] } },
+    "/client/wallet": { get: { tags: ["Client"], summary: "Read wallet and ledger activity", security: [{ cookieSession: [] }] } },
+    "/client/deposits": { post: { tags: ["Client"], summary: "Submit an idempotent deposit review request", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/withdrawals": { post: { tags: ["Client"], summary: "Reserve funds and submit a withdrawal", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/investments": { post: { tags: ["Client"], summary: "Subscribe to a portfolio", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/watchlist": { get: { tags: ["Client"], summary: "List saved instruments", security: [{ cookieSession: [] }] }, post: { tags: ["Client"], summary: "Save an instrument", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/orders": { post: { tags: ["Client"], summary: "Submit an internal order-desk request", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/options": { get: { tags: ["Client"], summary: "Read options eligibility", security: [{ cookieSession: [] }] } },
+    "/client/options/apply": { post: { tags: ["Client"], summary: "Submit an options suitability application", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/reports": { get: { tags: ["Client"], summary: "List client reports", security: [{ cookieSession: [] }] }, post: { tags: ["Client"], summary: "Request a client report", security: [{ cookieSession: [], csrf: [] }] } },
+    "/client/support/tickets": { get: { tags: ["Client"], summary: "List support tickets", security: [{ cookieSession: [] }] }, post: { tags: ["Client"], summary: "Open a support ticket", security: [{ cookieSession: [], csrf: [] }] } },
+    "/admin/overview": { get: { tags: ["Admin"], summary: "Load operational metrics", security: [{ cookieSession: [] }] } },
+    "/admin/queues": { get: { tags: ["Admin"], summary: "Load operational queues", security: [{ cookieSession: [] }] } },
+    "/admin/clients": { get: { tags: ["Admin"], summary: "List broker clients", security: [{ cookieSession: [] }] } },
+    "/admin/kyc": { get: { tags: ["Admin"], summary: "List KYC cases", security: [{ cookieSession: [] }] } },
+    "/admin/portfolio-products": { get: { tags: ["Admin"], summary: "List portfolio products", security: [{ cookieSession: [] }] }, post: { tags: ["Admin"], summary: "Create a portfolio product", security: [{ cookieSession: [], csrf: [] }] } },
+    "/admin/instruments": { get: { tags: ["Admin"], summary: "List instruments and price snapshots", security: [{ cookieSession: [] }] }, post: { tags: ["Admin"], summary: "Create an instrument", security: [{ cookieSession: [], csrf: [] }] } },
+    "/admin/exchange-rates": { get: { tags: ["Admin"], summary: "List admin-managed exchange-rate snapshots", security: [{ cookieSession: [] }] }, post: { tags: ["Admin"], summary: "Post an exchange-rate snapshot", security: [{ cookieSession: [], csrf: [] }] } },
+    "/admin/orders": { get: { tags: ["Admin"], summary: "List internal order requests", security: [{ cookieSession: [] }] } },
+    "/admin/distributions": { get: { tags: ["Admin"], summary: "List distribution batches", security: [{ cookieSession: [] }] } },
+    "/admin/risk/alerts": { get: { tags: ["Admin"], summary: "List risk alerts", security: [{ cookieSession: [] }] } },
+    "/admin/audit-logs": { get: { tags: ["Admin"], summary: "List append-only audit records", security: [{ cookieSession: [] }] } },
+    "/admin/approvals/{id}/approve": { post: { tags: ["Admin"], summary: "Complete maker-checker approval", security: [{ cookieSession: [], csrf: [] }] } },
+    "/files": { post: { tags: ["Files"], summary: "Upload a private file", security: [{ cookieSession: [], csrf: [] }] } },
+    "/jobs/reconcile": { get: { tags: ["Jobs"], summary: "Reconcile ledger account caches" } }
+  }
+};

@@ -92,7 +92,7 @@ window.APP_STATIC_DATA = {
     {
       eyebrow: "Client Onboarding",
       title: "Start with Education, Clear Fees and Suitability-First Access.",
-      text: "Compare portfolios, disclosures, pricing and investor guides before moving into future account registration and portal workflows.",
+      text: "Compare portfolios, disclosures, pricing and investor guides before continuing into secure account registration and client portal workflows.",
       cta: "Create Account",
       href: "pages/register.html"
     }
@@ -536,7 +536,7 @@ window.APP_STATIC_DATA = {
   faqs: [
     {
       question: "How do I create an account?",
-      answer: "Use Get Started to enter the placeholder registration flow for account creation, KYC and suitability review."
+      answer: "Use Get Started to create an account, verify your email and continue through KYC and suitability review in the secure client portal."
     },
     {
       question: "Why is KYC required?",
@@ -544,7 +544,7 @@ window.APP_STATIC_DATA = {
     },
     {
       question: "How will wallet funding work?",
-      answer: "The public website is prepared for a future funding workflow. Live deposits and withdrawals should happen only inside the secure client portal."
+      answer: "Bank and crypto deposit requests are submitted inside the secure client portal and credited after compliance and finance approval. Card funding is unavailable until a processor is configured."
     },
     {
       question: "How do I choose a portfolio?",
@@ -556,7 +556,7 @@ window.APP_STATIC_DATA = {
     },
     {
       question: "How do withdrawals work?",
-      answer: "Withdrawals are a future portal feature and should be handled only after authentication, KYC and payment method validation."
+      answer: "Withdrawals are requested inside the secure client portal after authentication, approved KYC and beneficiary validation."
     },
     {
       question: "What fees should I expect?",
@@ -617,14 +617,14 @@ window.APP_STATIC_DATA = {
       text: "Public website content is educational and informational. It is not personal financial, tax or legal advice."
     },
     {
-      title: "Regulatory / Compliance Placeholder",
+      title: "Regulatory and Compliance Review",
       text: "Jurisdiction-specific licensing, marketing approvals and regulatory disclosures should be verified before public launch."
     }
   ],
   howItWorks: [
     {
       title: "Create Account",
-      text: "Start with the placeholder registration flow for onboarding and suitability review."
+      text: "Start secure registration, identity verification and suitability review."
     },
     {
       title: "Complete KYC",
@@ -632,7 +632,7 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "Fund Wallet",
-      text: "Prepare the future client wallet for secure deposits and withdrawals."
+      text: "Use the client wallet for reviewed bank or crypto deposits and approved withdrawals."
     },
     {
       title: "Choose Portfolio or Instrument",
@@ -640,7 +640,7 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "Monitor Performance",
-      text: "Track reporting, allocation drift, income events and market movement through future portal tools."
+      text: "Track reporting, allocation, income events and published market snapshots in the client portal."
     },
     {
       title: "Receive or Reinvest",
@@ -658,15 +658,15 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "Risk-aware onboarding",
-      text: "Suitability, KYC and disclosure-first positioning before any future client portal flow."
+      text: "Suitability, KYC and disclosure-first controls before restricted account actions become available."
     },
     {
       title: "Portfolio reporting structure",
-      text: "Content prepared for dividends, profit posting, fee visibility and future statement workflows."
+      text: "Review dividends, profit postings, fee visibility and account statements through the client portal."
     },
     {
       title: "Instrument monitoring",
-      text: "Market tables and category pages for investor discovery without connecting to a live API."
+      text: "Market tables use published, time-stamped price snapshots from BullPort's authoritative API."
     },
     {
       title: "Support readiness",

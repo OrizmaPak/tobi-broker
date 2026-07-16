@@ -254,18 +254,15 @@
     payouts: DEMO.payouts.slice()
   };
 
-  const DEFAULT_API_BASE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "https://bullport-backend-tobi.vercel.app";
+  const DEFAULT_API_BASE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "";
   const API_BASE = (localStorage.getItem("bullport_api_base") || DEFAULT_API_BASE).replace(/\/$/, "");
-  const CLIENT_TOKEN_KEY = "bullport_client_token";
-  const CLIENT_ID_KEY = "bullport_client_id";
-  const DEMO_CLIENT_EMAIL = "tobi.adeyemi@example.com";
-  const DEMO_CLIENT_PASSWORD = "ClientPass123!";
   const appState = {
     apiOnline: false,
-    apiMessage: "Static fallback",
+    apiMessage: "Checking secure session",
     apiLoaded: false,
     loadPromise: null,
-    lastSync: null
+    lastSync: null,
+    data: null
   };
 
   const NAV_GROUPS = [
@@ -454,6 +451,27 @@
       .join(" ");
   }
 
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function safeData(value) {
+    if (typeof value === "string") return escapeHtml(value);
+    if (Array.isArray(value)) return value.map(safeData);
+    if (value && typeof value === "object") {
+      return Object.keys(value).reduce(function (result, key) {
+        result[key] = safeData(value[key]);
+        return result;
+      }, {});
+    }
+    return value;
+  }
+
   function numberValue(value) {
     const next = Number(value);
     return Number.isFinite(next) ? next : 0;
@@ -481,15 +499,6 @@
     const hours = Math.round(minutes / 60);
     if (hours < 24) return hours + " hr ago";
     return formatDate(value);
-  }
-
-  function derivedPrice(row, index) {
-    const seed = String(row.symbol || row.name || "").split("").reduce(function (sum, char) {
-      return sum + char.charCodeAt(0);
-    }, 0);
-    if (String(row.category).toLowerCase().indexOf("bond") !== -1) return (96 + (index * 0.42)).toFixed(2);
-    if (String(row.category).toLowerCase().indexOf("commod") !== -1) return (2300 + seed).toLocaleString("en-US", { maximumFractionDigits: 0 });
-    return (42 + (seed % 180) + (index * 1.35)).toLocaleString("en-US", { maximumFractionDigits: 2 });
   }
 
   function productAssets(name) {
@@ -528,29 +537,31 @@
     };
   }
 
-  function mapInstrument(row, index) {
+  function mapInstrument(row) {
     const category = row.category || "Market";
     const risk = labelize(row.riskLevel || "Moderate");
-    const status = row.status || "Watch";
-    const tradable = /tradable/i.test(status) ? "Yes" : (/access/i.test(status) ? "Approval required" : "No");
-    const investable = /investable|tradable/i.test(status) ? "Yes" : (/access/i.test(status) ? "Gated" : "Watch only");
+    const status = labelize(row.status || "Watch");
     return {
+      id: row.id,
       symbol: row.symbol,
       name: row.name,
       category: category,
       market: row.market || "Global",
-      currency: "USD",
-      price: "$" + derivedPrice(row, index),
+      currency: row.currency || "USD",
+      price: row.currentPrice == null ? "Unavailable" : money(numberValue(row.currentPrice)),
+      priceSource: row.priceSource || "Admin managed",
+      priceAsOf: row.priceAsOf || null,
       risk: risk,
-      dividend: /stocks|etfs|bonds|reits/i.test(category) ? "Eligible" : "No",
-      tradable: tradable,
-      investable: investable,
+      dividend: row.dividendEligible ? "Eligible" : "No",
+      tradable: row.tradable ? "Yes" : "No",
+      investable: row.investable ? "Yes" : "No",
       status: status
     };
   }
 
   function syncBackendData(data) {
     if (!data || !data.client) return;
+    appState.data = data;
     const metrics = data.metrics || {};
     const client = data.client || {};
     const wallet = data.wallet || {};
@@ -559,10 +570,14 @@
     const investments = cloneList(data.investments);
     const instruments = cloneList(data.instruments);
     const payouts = cloneList(data.payouts);
+    const distributions = cloneList(data.distributions);
     const notifications = cloneList(data.notifications);
     const reports = cloneList(data.reports);
     const tickets = cloneList(data.supportTickets);
     const kycReviews = cloneList(data.kycReviews);
+    const watchlist = cloneList(data.watchlist);
+    const orders = cloneList(data.orders);
+    const riskAlerts = cloneList(data.riskAlerts);
 
     DEMO.client.name = client.name || DEMO.client.name;
     DEMO.client.email = client.email || DEMO.client.email;
@@ -571,6 +586,9 @@
     DEMO.client.tier = client.tier || DEMO.client.tier;
     DEMO.client.riskProfile = client.riskLevel || DEMO.client.riskProfile;
     DEMO.client.kycStatus = client.kycStatus || DEMO.client.kycStatus;
+    DEMO.client.country = client.country || DEMO.client.country;
+    DEMO.client.lastLogin = client.lastLoginAt ? formatDate(client.lastLoginAt) : "Not recorded";
+    DEMO.client.emailVerified = Boolean(client.emailVerified);
     DEMO.client.walletBalance = numberValue(metrics.walletBalance);
     DEMO.client.totalPortfolioValue = numberValue(metrics.totalPortfolioValue);
     DEMO.client.activeInvestments = numberValue(metrics.activeInvestments);
@@ -590,17 +608,21 @@
 
     replaceList(DEMO.plans, products.map(mapPlan));
     replaceList(DEMO.instruments, instruments.map(mapInstrument));
-    replaceList(DEMO.watchlist, DEMO.instruments.slice(0, 6).map(function (row, index) {
+    replaceList(DEMO.watchlist, watchlist.map(function (saved) {
+      const row = mapInstrument(saved.instrument || saved);
       return {
+        id: saved.id,
+        instrumentId: row.id,
         symbol: row.symbol,
         theme: row.name,
         price: row.price,
-        move: index % 3 === 0 ? "-0.4%" : "+" + (0.8 + index * 0.35).toFixed(1) + "%",
-        note: row.category + " exposure monitored from " + row.market + "."
+        move: "Snapshot",
+        note: row.priceAsOf ? row.priceSource + " at " + formatDate(row.priceAsOf) : "No market snapshot is currently published."
       };
     }));
     replaceList(DEMO.investments, investments.map(function (row) {
       return {
+        id: row.id,
         name: row.product ? row.product.name : "Portfolio mandate",
         invested: numberValue(row.investedAmount),
         current: numberValue(row.currentValue),
@@ -610,17 +632,38 @@
         action: row.status === "ACTIVE" ? "Review" : "Continue"
       };
     }));
-    replaceList(DEMO.holdings, DEMO.instruments.slice(0, 7).map(function (row, index) {
+    const actualHoldings = investments.reduce(function (rows, investment) {
+      return rows.concat((investment.holdings || []).map(function (holding) {
+        const instrument = mapInstrument(holding.instrument || {});
+        return {
+          asset: instrument.name || "Holding",
+          category: instrument.category || "Portfolio asset",
+          allocation: numberValue(investment.currentValue) > 0
+            ? ((numberValue(holding.marketValue) / numberValue(investment.currentValue)) * 100).toFixed(2) + "%"
+            : "Not calculated",
+          price: holding.currentPrice == null ? instrument.price : money(numberValue(holding.currentPrice)),
+          change: "Snapshot",
+          risk: instrument.risk,
+          status: instrument.status
+        };
+      }));
+    }, []);
+    replaceList(DEMO.holdings, actualHoldings);
+    replaceList(DEMO.orderActivity, orders.map(function (row) {
       return {
-        asset: row.name,
-        category: row.category,
-        allocation: (18 - index * 2) + "%",
-        price: row.price,
-        change: index % 2 === 0 ? "+1." + index + "%" : "-0." + index + "%",
-        risk: row.risk,
-        status: row.status
+        id: row.id,
+        instrument: row.instrument ? row.instrument.symbol : "Instrument",
+        side: labelize(row.side),
+        type: labelize(row.type),
+        quantity: String(row.quantity),
+        price: row.limitPrice == null ? "Market snapshot" : money(numberValue(row.limitPrice)),
+        status: labelize(row.status)
       };
     }));
+    DEMO.client.optionsStatus = labelize((data.options && data.options.status) || "NOT_APPLIED");
+    DEMO.risk.score = client.suitabilityScore == null ? "Not assessed" : String(client.suitabilityScore);
+    DEMO.risk.concentration = actualHoldings.length ? "Holdings monitored" : "Not calculated";
+    appState.riskAlerts = riskAlerts;
     replaceList(DEMO.payouts, payouts.map(function (row) {
       return {
         source: row.source,
@@ -631,8 +674,21 @@
         status: labelize(row.status)
       };
     }));
+    if (distributions.length) {
+      replaceList(DEMO.payouts, distributions.map(function (row) {
+        return {
+          source: row.investment && row.investment.product ? row.investment.product.name : (row.batch ? labelize(row.batch.type) : "Distribution"),
+          date: formatDate(row.createdAt),
+          type: row.batch ? labelize(row.batch.type) : "Distribution",
+          amount: money(numberValue(row.netAmount)),
+          mode: labelize(row.mode || "WALLET"),
+          status: labelize(row.status)
+        };
+      }));
+    }
     replaceList(DEMO.reports, reports.map(function (row) {
       return {
+        id: row.id,
         name: row.name,
         type: row.type,
         format: row.format,
@@ -643,6 +699,7 @@
     replaceList(DEMO.supportTickets, tickets.map(function (row) {
       return {
         id: row.ticketNo || row.id,
+        recordId: row.id,
         subject: row.subject,
         channel: row.owner || "Support desk",
         priority: row.priority,
@@ -664,6 +721,7 @@
     }
     replaceList(DEMO.notifications, notifications.map(function (row) {
       return {
+        id: row.id,
         category: row.category,
         title: row.title,
         time: relativeTime(row.createdAt),
@@ -691,42 +749,93 @@
     });
     state.payouts = DEMO.payouts.slice();
     saveState(state);
+
+    if (data.profile) {
+      const profile = data.profile;
+      DEMO.client.name = profile.name || DEMO.client.name;
+      DEMO.client.email = profile.email || DEMO.client.email;
+      DEMO.client.phone = profile.phone || "Not recorded";
+      DEMO.client.country = profile.country || "Not recorded";
+      DEMO.client.lastLogin = profile.lastLoginAt ? formatDate(profile.lastLoginAt) : "Not recorded";
+      DEMO.client.emailVerified = Boolean(profile.emailVerifiedAt);
+      appState.profile = profile;
+      appState.preferences = profile.preferences || {};
+    }
   }
 
-  async function apiRequest(path, options, allowGuest) {
+  function cookieValue(name) {
+    const pair = document.cookie.split("; ").find(function (item) { return item.indexOf(name + "=") === 0; });
+    return pair ? decodeURIComponent(pair.slice(name.length + 1)) : "";
+  }
+
+  function requestKey(prefix) {
+    if (window.crypto && window.crypto.randomUUID) return prefix + "-" + window.crypto.randomUUID();
+    return prefix + "-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  }
+
+  async function apiRequest(path, options, allowGuest, retried) {
     const controller = window.AbortController ? new AbortController() : null;
-    const timeout = controller ? setTimeout(function () { controller.abort(); }, 20000) : null;
+    const timeout = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
     const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {});
-    if (!allowGuest) {
-      const token = localStorage.getItem(CLIENT_TOKEN_KEY);
-      if (token) headers.Authorization = "Bearer " + token;
+    const method = String((options && options.method) || "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      const csrf = cookieValue("bp_csrf");
+      if (csrf) headers["x-csrf-token"] = csrf;
     }
 
     try {
       const response = await fetch(API_BASE + path, Object.assign({}, options || {}, {
         headers: headers,
+        credentials: "include",
         signal: controller ? controller.signal : undefined
       }));
       const payload = await response.json().catch(function () { return {}; });
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.error && payload.error.message ? payload.error.message : "Request failed");
+      if (response.status === 401 && !allowGuest && !retried && path !== "/api/v1/auth/refresh") {
+        await apiRequest("/api/v1/auth/refresh", { method: "POST", body: "{}" }, true, true);
+        return apiRequest(path, options, allowGuest, true);
       }
-      return payload.data;
+      if (!response.ok || payload.ok === false) {
+        const error = new Error(payload.error && payload.error.message ? payload.error.message : "Request failed");
+        error.code = payload.error && payload.error.code ? payload.error.code : "REQUEST_FAILED";
+        error.status = response.status;
+        error.fields = payload.error && payload.error.fields ? payload.error.fields : null;
+        throw error;
+      }
+      return safeData(payload.data);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
   }
 
-  async function ensureDemoClientToken() {
-    const existing = localStorage.getItem(CLIENT_TOKEN_KEY);
-    if (existing) return existing;
-    const data = await apiRequest("/api/auth/client/login", {
-      method: "POST",
-      body: JSON.stringify({ email: DEMO_CLIENT_EMAIL, password: DEMO_CLIENT_PASSWORD })
-    }, true);
-    localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
-    localStorage.setItem(CLIENT_ID_KEY, data.client.id);
-    return data.token;
+  async function pageSpecificData(data) {
+    const cur = currentFile();
+    const assignments = [];
+    function load(path, key, transform) {
+      assignments.push(apiRequest(path, { method: "GET" }, false).then(function (value) {
+        data[key] = transform ? transform(value) : value;
+      }));
+    }
+    if (["investment-plans.html"].includes(cur)) load("/api/v1/client/portfolios", "products");
+    if (["active-investments.html", "portfolio.html", "analytics.html"].includes(cur)) load("/api/v1/client/investments", "investments");
+    if (["portfolio.html", "analytics.html", "market.html", "screener.html", "movers.html", "earnings.html", "trading.html"].includes(cur)) load("/api/v1/client/instruments", "instruments");
+    if (cur === "watchlist.html") {
+      load("/api/v1/client/instruments", "instruments");
+      load("/api/v1/client/watchlist", "watchlist");
+    }
+    if (cur === "orders.html" || cur === "trading.html") load("/api/v1/client/orders", "orders");
+    if (cur === "options-access.html") load("/api/v1/client/options", "options");
+    if (cur === "dividends.html") load("/api/v1/client/distributions", "distributions");
+    if (cur === "risk.html") load("/api/v1/client/risk", "riskAlerts", function (value) { return value.alerts || value; });
+    if (cur === "reports.html") load("/api/v1/client/reports", "reports");
+    if (cur === "notifications.html") load("/api/v1/client/notifications", "notifications");
+    if (cur === "support.html") load("/api/v1/client/support/tickets", "supportTickets");
+    if (cur === "profile.html" || cur === "settings.html") load("/api/v1/client/profile", "profile");
+    if (cur === "settings.html") load("/api/v1/auth/client/sessions", "sessions");
+    if (cur === "kyc.html") load("/api/v1/client/kyc", "kycReviews", function (rows) {
+      return rows.map(function (row) { return { requirement: row.level + " identity verification", status: row.status, updatedAt: row.updatedAt, documents: row.documents || [] }; });
+    });
+    await Promise.all(assignments);
+    return data;
   }
 
   async function loadClientBackendData(force) {
@@ -734,16 +843,13 @@
     if (!force && appState.loadPromise) return appState.loadPromise;
     appState.loadPromise = (async function () {
       try {
-        if (!localStorage.getItem(CLIENT_TOKEN_KEY) && !isAuthPage()) {
-          await ensureDemoClientToken();
-        }
-        if (!localStorage.getItem(CLIENT_TOKEN_KEY)) {
-          appState.apiOnline = false;
-          appState.apiMessage = "Sign in to sync";
+        if (isAuthPage()) {
+          appState.apiMessage = "Sign in required";
           appState.apiLoaded = true;
           return false;
         }
-        const data = await apiRequest("/api/client/dashboard", { method: "GET" }, false);
+        const data = await apiRequest("/api/v1/client/dashboard", { method: "GET" }, false);
+        await pageSpecificData(data);
         syncBackendData(data);
         appState.apiOnline = true;
         appState.apiMessage = "API live";
@@ -752,8 +858,12 @@
         return true;
       } catch (error) {
         appState.apiOnline = false;
-        appState.apiMessage = error && error.message ? error.message : "Static fallback";
+        appState.apiMessage = error && error.message ? error.message : "API unavailable";
         appState.apiLoaded = true;
+        if (error && error.status === 401 && !isAuthPage()) {
+          sessionStorage.setItem("bullport_return_to", currentFile());
+          setTimeout(function () { navigateTo("login.html"); }, 150);
+        }
         return false;
       } finally {
         appState.loadPromise = null;
@@ -773,10 +883,13 @@
 
   function authFormValues(node) {
     const form = node && node.closest ? node.closest("form") : null;
-    const inputs = form ? form.querySelectorAll("input") : [];
-    const email = inputs[0] && inputs[0].value ? inputs[0].value.trim() : DEMO_CLIENT_EMAIL;
-    const password = inputs[1] && inputs[1].value ? inputs[1].value : DEMO_CLIENT_PASSWORD;
-    const country = inputs[2] && inputs[2].value ? inputs[2].value.trim() : "Nigeria";
+    const emailNode = form ? form.querySelector('[name="email"]') : null;
+    const passwordNode = form ? form.querySelector('[name="password"]') : null;
+    const countryNode = form ? form.querySelector('[name="country"]') : null;
+    const nameNode = form ? form.querySelector('[name="name"]') : null;
+    const email = emailNode ? emailNode.value.trim() : "";
+    const password = passwordNode ? passwordNode.value : "";
+    const country = countryNode ? countryNode.value.trim() : "";
     const fallbackName = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, function (letter) {
       return letter.toUpperCase();
     });
@@ -784,7 +897,7 @@
       email: email,
       password: password,
       country: country,
-      name: fallbackName || "BullPort Client"
+      name: nameNode && nameNode.value.trim() ? nameNode.value.trim() : fallbackName
     };
   }
 
@@ -796,7 +909,7 @@
       document.body.appendChild(node);
     }
     node.className = "broker-api-status " + (appState.apiOnline ? "is-live" : "is-static");
-    node.innerHTML = '<span></span><strong>' + (appState.apiOnline ? "API live" : "Static mode") + '</strong><em>' + (appState.apiOnline && appState.lastSync ? "Synced " + appState.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : appState.apiMessage) + "</em>";
+    node.innerHTML = '<span></span><strong>' + (appState.apiOnline ? "Connected" : "Not connected") + '</strong><em>' + (appState.apiOnline && appState.lastSync ? "Synced " + appState.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : appState.apiMessage) + "</em>";
   }
 
   function pushNotification(state, category, title, status) {
@@ -924,7 +1037,7 @@
         + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Withdraw to crypto</h3><p class="mt-2 text-sm text-muted-foreground">Transfer approved balances to a reviewed wallet destination.</p></div>' + badge("Enhanced review", "warning") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Eligibility</p><p class="mt-1 font-semibold">Available after full KYC and wallet screening</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported assets</p><p class="mt-1 font-semibold">USDT, BTC and ETH withdrawals</p></div></div><button type="button" data-broker-action="withdraw-crypto" class="mt-4 inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Review crypto withdrawal</button></div>'
         + "</div>";
     const formCard = isDeposit
-      ? section("Deposit request details", "A clean static form surface for bank or crypto funding requests.", keyValueRows([
+      ? section("Deposit request details", "Bank and crypto funding requests remain pending until evidence review and approval.", keyValueRows([
           { label: "Preferred route", value: "Bank transfer or approved crypto funding" },
           { label: "Suggested deposit size", value: "$2,500 to $10,000" },
           { label: "Account reference", value: DEMO.client.accountNo },
@@ -951,7 +1064,7 @@
         { label: "Withdrawal hold policy", value: "24-hour verification hold for new devices" },
         { label: "Destination bank", value: DEMO.wallet.linkedBank }
       ])) + "</div>" +
-      '<div class="xl:col-span-5">' + section("Workflow note", "This screen remains UI-only, but the content now reflects the intended broker journey.", '<div class="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">' + (isDeposit ? "Deposits should move from pending submission to confirmed wallet credit, then become available for portfolio subscriptions or trading." : "Withdrawals should only be available from cleared wallet balance and should respect KYC, linked bank and verification controls.") + "</div>") + "</div>" +
+      '<div class="xl:col-span-5">' + section("Settlement workflow", "Every money movement follows the same visible review and posting controls.", '<div class="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">' + (isDeposit ? "Deposits move from submitted evidence to confirmed wallet credit before becoming available for portfolio subscriptions or trading." : "Withdrawals use cleared wallet balance and remain reserved while KYC, beneficiary, risk, and approval checks complete.") + "</div>") + "</div>" +
       "</div>" +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
       '<div class="xl:col-span-7">' + formCard + "</div>" +
@@ -983,7 +1096,7 @@
       section("Subscribed portfolio positions", "Track invested capital, current value and the next action on each mandate.", table(
         ["Portfolio", "Invested", "Current value", "Projected", "Next payout", "Status", "Action"],
         DEMO.investments.map(function (row) {
-          return [row.name, money(row.invested), money(row.current), row.projected, row.payout, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="investment-action" data-broker-investment="' + row.name + '" data-broker-label="' + row.action + '" class="font-semibold text-primary">' + row.action + "</button>"];
+          return [row.name, money(row.invested), money(row.current), row.projected, row.payout, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="investment-action" data-broker-investment-id="' + (row.id || "") + '" data-broker-investment="' + row.name + '" data-broker-label="' + row.action + '" class="font-semibold text-primary">' + row.action + "</button>"];
         })
       ));
   }
@@ -992,37 +1105,44 @@
     return '' +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
       '<div class="xl:col-span-5">' + section("Allocation summary", "Current concentration across the underlying portfolio mix.", bars(DEMO.allocation, "value", 32)) + "</div>" +
-      '<div class="xl:col-span-7">' + section("Underlying holdings", "Instrument composition for the current broker-managed allocation.", table(
+      '<div class="xl:col-span-7">' + section("Underlying holdings", "Instrument composition for the current broker-managed allocation.", DEMO.holdings.length ? table(
         ["Asset", "Category", "Allocation", "Price", "Change", "Risk", "Status"],
         DEMO.holdings.map(function (row) {
           return [row.asset, row.category, row.allocation, row.price, row.change, badge(row.risk, riskTone(row.risk)), badge(row.status, statusTone(row.status))];
         })
-      )) + "</div>" +
+      ) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No underlying holdings have been posted for this account.</div>') + "</div>" +
       "</div>";
   }
 
   function marketBody() {
     return '' +
       section("Supported instrument coverage", "The market page now reflects the broker's multi-asset instrument universe.", table(
-        ["Symbol", "Instrument", "Category", "Market", "Currency", "Current price", "Risk", "Dividend eligible", "Tradable", "Investable", "Status"],
+        ["Symbol", "Instrument", "Category", "Market", "Currency", "Current price", "Source", "Risk", "Tradable", "Investable", "Status", "Action"],
         DEMO.instruments.map(function (row) {
-          return [row.symbol, row.name, row.category, row.market, row.currency, row.price, badge(row.risk, riskTone(row.risk)), row.dividend, row.tradable, row.investable, badge(row.status, statusTone(row.status))];
+          const source = row.priceAsOf ? row.priceSource + " - " + formatDate(row.priceAsOf) : "No snapshot";
+          return [row.symbol, row.name, row.category, row.market, row.currency, row.price, source, badge(row.risk, riskTone(row.risk)), row.tradable, row.investable, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + row.id + '" class="font-semibold text-primary">Save</button>'];
         })
       )) +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
       '<div class="xl:col-span-6">' + section("Watch themes", "Priority watch areas for the current client account.", miniList(DEMO.watchlist, function (row) {
         return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + row.symbol + " - " + row.theme + '</p><span class="text-sm font-semibold">' + row.price + '</span></div><p class="mt-1 text-sm text-muted-foreground">' + row.note + '</p><p class="mt-2 text-xs text-emerald-600 dark:text-emerald-300">' + row.move + "</p></div>";
       })) + "</div>" +
-      '<div class="xl:col-span-6">' + section("Market disclosures", "Returns remain projected, simulated or market-based; nothing is framed as guaranteed.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument prices and expected portfolio outcomes in this UI are sample market values.</p><p>Options, commodities and sector concentration carry higher volatility and are surfaced with higher risk labels and access controls.</p><p>Users should move through KYC, wallet funding, portfolio selection and risk review before taking advanced actions.</p></div>') + "</div>" +
+      '<div class="xl:col-span-6">' + section("Market disclosures", "Returns remain projected, estimated or market-based; nothing is framed as guaranteed.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument values are admin-managed snapshots with a named source and timestamp, not a live exchange feed.</p><p>Options, commodities and sector concentration carry higher volatility and are surfaced with higher risk labels and access controls.</p><p>Users must complete KYC, wallet funding and risk review before restricted actions become available.</p></div>') + "</div>" +
       "</div>";
   }
 
   function tradingBody() {
     const selected = DEMO.instruments[0];
+    if (!selected) return section("Trading workspace", "The internal order desk accepts requests only for published instruments.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No instrument is currently available.</div>');
     return '' +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-8">' + section(selected.name + " (" + selected.symbol + ")", "Broker trading workspace for research, order prep and instrument context.", lineChart(DEMO.portfolioSeries, "profit")) + "</div>" +
-      '<div class="xl:col-span-4">' + section("Trade setup summary", "Static trading panel aligned to broker terminology.", keyValueRows([
+      '<div class="xl:col-span-8">' + section(selected.name + " (" + selected.symbol + ")", "Submit an instruction for internal desk review. This is not represented as live exchange execution.", keyValueRows([
+        { label: "Published price", value: selected.price },
+        { label: "Price source", value: selected.priceSource },
+        { label: "Snapshot time", value: selected.priceAsOf ? formatDate(selected.priceAsOf) : "Unavailable" },
+        { label: "Execution mode", value: "Internal order desk" }
+      ]) + '<div class="mt-4"><button type="button" data-broker-action="order-create" data-broker-instrument-id="' + selected.id + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Create order request</button></div>') + "</div>" +
+      '<div class="xl:col-span-4">' + section("Trade setup summary", "Eligibility and instrument controls from the broker API.", keyValueRows([
         { label: "Category", value: selected.category },
         { label: "Market", value: selected.market },
         { label: "Current price", value: selected.price },
@@ -1040,12 +1160,15 @@
   }
 
   function watchlistBody() {
+    if (!DEMO.watchlist.length) {
+      return section("Saved instruments", "Watchlist cards appear here after an instrument is saved from Markets.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">Your watchlist is empty. <a class="font-semibold text-primary" href="market.html">Browse markets</a>.</div>');
+    }
     return '<div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">' + DEMO.watchlist.map(function (row) {
-      const moveTone = row.move.indexOf("-") === 0 ? "danger" : "success";
+      const moveTone = "info";
       return '<section class="rounded-xl border border-border bg-card p-5 shadow-sm">'
         + '<div class="flex items-start justify-between gap-3"><div><div class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">' + row.symbol + '</div><h2 class="mt-3 text-lg font-semibold tracking-tight">' + row.theme + '</h2><p class="mt-2 text-sm text-muted-foreground">' + row.note + '</p></div>' + badge(row.move, moveTone) + '</div>'
         + '<div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current price</p><p class="mt-2 text-sm font-semibold">' + row.price + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Watch status</p><p class="mt-2 text-sm font-semibold">Tracked for market review</p></div></div>'
-        + '<div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><a href="trading.html" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Open instrument</a><a href="market.html" class="text-sm font-semibold text-primary">View market</a></div>'
+        + '<div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><a href="trading.html" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Open instrument</a><button type="button" data-broker-action="watchlist-remove" data-broker-instrument-id="' + row.instrumentId + '" class="text-sm font-semibold text-primary">Remove</button></div>'
         + '</section>';
     }).join("") + "</div>";
   }
@@ -1114,14 +1237,16 @@
   }
 
   function optionsBody() {
+    const optionData = (appState.data && appState.data.options) || {};
+    const application = optionData.application || {};
     return '' +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
       '<div class="xl:col-span-7">' + section("Eligibility and approval", "Options are treated as an advanced feature, not a default investment plan.", keyValueRows([
         { label: "Current access level", value: DEMO.client.optionsStatus },
-        { label: "Suitability profile", value: "Balanced investor - level 2 pending" },
-        { label: "Required action", value: "Complete options questionnaire and acknowledgment" },
+        { label: "Suitability score", value: application.score == null ? "Not assessed" : String(application.score) },
+        { label: "Required action", value: DEMO.client.optionsStatus === "Not Applied" ? "Complete the options questionnaire" : "Await the recorded compliance decision" },
         { label: "Risk note", value: "Advanced strategies may involve losses beyond premium depending on structure" }
-      ])) + "</div>" +
+      ]) + (DEMO.client.optionsStatus === "Not Applied" || DEMO.client.optionsStatus === "Restricted" ? '<div class="mt-4"><button type="button" data-broker-action="options-apply" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Apply for options access</button></div>' : '')) + "</div>" +
       '<div class="xl:col-span-5">' + section("Risk controls", "Options access is gated and linked to KYC, wallet health and questionnaire review.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Only approved users should see tradable options positions beyond educational previews.</p><p>Higher-risk labels and explicit approval states remain visible in the client portal.</p><p>Approval-required positions should never look identical to regular long-only portfolio products.</p></div>') + "</div>" +
       "</div>" +
       section("Current options-related activity", "Existing activity remains visible, but access-controlled.", table(
@@ -1133,12 +1258,13 @@
   }
 
   function dividendsBody() {
+    const reinvestments = ((appState.data && appState.data.investments) || []).filter(function (row) { return row.reinvestPreference === "REINVEST"; }).length;
     return '' +
       '<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">' +
       card("Total Dividends", money(DEMO.client.totalDividends), "Paid to date across income-generating holdings.", "bg-primary/10 text-primary") +
       card("Total Profits", money(DEMO.client.totalProfits), "Posted profit credits and realized gains.", "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300") +
       card("Next Scheduled Payout", DEMO.client.nextPayout, "Earliest upcoming distribution window.", "bg-amber-500/10 text-amber-600 dark:text-amber-300") +
-      card("Reinvestment Preference", "Auto for 2 mandates", "Remaining mandates still pay to wallet.", "bg-sky-500/10 text-sky-600 dark:text-sky-300") +
+      card("Reinvestment Preference", reinvestments ? reinvestments + " mandate" + (reinvestments === 1 ? "" : "s") : "Wallet credit", "Based on current investment instructions.", "bg-sky-500/10 text-sky-600 dark:text-sky-300") +
       "</div>" +
       section("Dividend and profit history", "Income and profit posting records aligned to the client plan.", table(
         ["Source", "Date", "Type", "Amount", "Settlement", "Status"],
@@ -1149,27 +1275,25 @@
   }
 
   function riskBody() {
+    const alerts = appState.riskAlerts || [];
     return '' +
       '<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">' +
       card("Risk Score", DEMO.risk.score, "Combined client suitability and portfolio exposure score.", "bg-primary/10 text-primary") +
       card("Concentration", DEMO.risk.concentration, "Largest concentration monitored at portfolio level.", "bg-amber-500/10 text-amber-600 dark:text-amber-300") +
-      card("Options Access", "Controlled", "Access remains gated until level 2 is approved.", "bg-rose-500/10 text-rose-600 dark:text-rose-300") +
-      card("Liquidity Cover", "6.2 months", "Available liquidity versus expected withdrawals.", "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300") +
+      card("Options Access", DEMO.client.optionsStatus, "Access remains gated until compliance approval.", "bg-rose-500/10 text-rose-600 dark:text-rose-300") +
+      card("Open Alerts", String(alerts.length), "Active risk and compliance notices.", "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300") +
       "</div>" +
-      section("Client-facing risk alerts", "Risk visibility should make the platform feel like a serious broker system, not a passive ROI app.", miniList([
-        { title: "Commodity allocation above preferred range", state: "Review suggested", note: "Commodity exposure reached 18% of total value." },
-        { title: "Options questionnaire incomplete", state: "Action required", note: "Advanced trading remains restricted until suitability review is complete." },
-        { title: "Proof of address pending", state: "In review", note: "Full withdrawal flexibility depends on final KYC clearance." }
-      ], function (row) {
-        return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + row.title + '</p>' + badge(row.state, statusTone(row.state)) + '</div><p class="mt-2 text-sm text-muted-foreground">' + row.note + "</p></div>";
-      }));
+      section("Client-facing risk alerts", "Risk alerts are generated and resolved through the broker risk workflow.", alerts.length ? miniList(alerts, function (row) {
+        const note = row.details && row.details.note ? row.details.note : labelize(row.category || "Risk review");
+        return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + row.title + '</p>' + badge(labelize(row.status), statusTone(row.status)) + '</div><p class="mt-2 text-sm text-muted-foreground">' + note + "</p></div>";
+      }) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No open risk alerts.</div>');
   }
 
   function reportsBody() {
     return section("Statements and downloads", "Download-ready client records, account statements and performance summaries.", table(
       ["Report", "Type", "Format", "Period", "Status", "Action"],
       DEMO.reports.map(function (row) {
-        return [row.name, row.type, row.format, row.period, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="download-report" data-broker-report="' + row.name + '" class="font-semibold text-primary">Download</button>'];
+        return [row.name, row.type, row.format, row.period, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="download-report" data-broker-report-id="' + (row.id || "") + '" data-broker-report="' + row.name + '" class="font-semibold text-primary">Download</button>'];
       })
     ));
   }
@@ -1177,7 +1301,7 @@
   function notificationsBody() {
     const state = getState();
     return section("Notification feed", "A single stream for KYC, wallet, investments, income and risk messages.", miniList(state.notifications, function (row) {
-      return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-semibold">' + row.title + '</p><p class="mt-1 text-sm text-muted-foreground">' + row.category + "</p></div>" + badge(row.state, statusTone(row.state)) + '</div><p class="mt-2 text-xs text-muted-foreground">' + row.time + "</p></div>";
+        return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-semibold">' + row.title + '</p><p class="mt-1 text-sm text-muted-foreground">' + row.category + "</p></div>" + badge(row.state, statusTone(row.state)) + '</div><div class="mt-2 flex items-center justify-between gap-3"><p class="text-xs text-muted-foreground">' + row.time + '</p>' + (row.state === "New" ? '<button type="button" data-broker-action="notification-read" data-broker-notification-id="' + row.id + '" class="text-xs font-semibold text-primary">Mark read</button>' : '') + "</div></div>";
     }));
   }
 
@@ -1191,11 +1315,11 @@
         { label: "Call scheduling", value: "Available for premium managed clients" }
       ])) + "</div>" +
       '<div class="xl:col-span-7">' + section("Open and recent tickets", "Track resolution and escalations from within the portal.", table(
-        ["Ticket", "Subject", "Channel", "Priority", "Status"],
+        ["Ticket", "Subject", "Channel", "Priority", "Status", "Action"],
         DEMO.supportTickets.map(function (row) {
-          return [row.id, row.subject, row.channel, row.priority, badge(row.status, statusTone(row.status))];
+          return [row.id, row.subject, row.channel, row.priority, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="support-reply" data-broker-ticket-id="' + row.recordId + '" class="font-semibold text-primary">Reply</button>'];
         })
-      )) + "</div>" +
+      ) + '<button type="button" data-broker-action="support-create" class="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Open support ticket</button>') + "</div>" +
       "</div>";
   }
 
@@ -1214,23 +1338,28 @@
   }
 
   function profileBody() {
+    const profile = appState.profile || {};
     return section("Client profile summary", "Identity and contact information used across the client journey.", keyValueRows([
       { label: "Client name", value: DEMO.client.name },
       { label: "Account number", value: DEMO.client.accountNo },
       { label: "Primary email", value: DEMO.client.email },
       { label: "Phone", value: DEMO.client.phone },
       { label: "Country", value: DEMO.client.country },
+      { label: "Email verification", value: DEMO.client.emailVerified ? "Verified" : "Action required" },
+      { label: "Address", value: [profile.addressLine1, profile.city, profile.state, profile.postalCode].filter(Boolean).join(", ") || "Not recorded" },
+      { label: "Tax residence", value: profile.taxResidence || "Not recorded" },
       { label: "Last login", value: DEMO.client.lastLogin }
-    ]));
+    ]) + '<div class="mt-4 flex flex-wrap gap-3"><button type="button" data-broker-action="profile-edit" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Edit profile</button>' + (DEMO.client.emailVerified ? '' : '<button type="button" data-broker-action="verification-resend" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Resend verification</button>') + '</div>');
   }
 
   function settingsBody() {
-    return section("Security and account controls", "Portal preferences aligned to broker account management.", table(
-      ["Setting", "Current value"],
-      DEMO.settings.map(function (row) {
-        return [row.label, row.value];
-      })
-    ));
+    const preferences = appState.preferences || {};
+    const sessions = (appState.data && appState.data.sessions) || [];
+    return '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">'
+      + '<div class="xl:col-span-7">' + section("Notification and payout preferences", "These controls update the client account and active investment instructions.", '<div class="broker-form-grid"><label class="broker-form-field"><span><input data-setting="emailNotifications" type="checkbox" ' + (preferences.emailNotifications !== false ? 'checked' : '') + '> Email notifications</span></label><label class="broker-form-field"><span><input data-setting="inAppNotifications" type="checkbox" ' + (preferences.inAppNotifications !== false ? 'checked' : '') + '> In-app notifications</span></label><label class="broker-form-field"><span><input data-setting="marketAlerts" type="checkbox" ' + (preferences.marketAlerts !== false ? 'checked' : '') + '> Market alerts</span></label><label class="broker-form-field"><span>Distribution preference</span><select data-setting="distributionPreference"><option value="WALLET" ' + (preferences.distributionPreference !== 'REINVEST' ? 'selected' : '') + '>Credit wallet</option><option value="REINVEST" ' + (preferences.distributionPreference === 'REINVEST' ? 'selected' : '') + '>Reinvest</option></select></label></div><button type="button" data-broker-action="settings-save" class="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save preferences</button>') + '</div>'
+      + '<div class="xl:col-span-5">' + section("Password security", "Changing your password revokes every other active session.", '<button type="button" data-broker-action="password-change" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Change password</button>') + '</div>'
+      + '</div>'
+      + section("Active sessions", "Review and revoke browser sessions connected to this account.", sessions.length ? table(["Browser", "IP address", "Last used", "Expires", "Action"], sessions.map(function (row) { return [row.userAgent || "Unknown browser", row.ipAddress || "Unknown", row.lastUsedAt ? formatDate(row.lastUsedAt) : "Not recorded", formatDate(row.expiresAt), '<button type="button" data-broker-action="session-revoke" data-broker-session-id="' + row.id + '" class="font-semibold text-primary">Revoke</button>']; })) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No active sessions were returned.</div>');
   }
 
   function authLayout(kind) {
@@ -1259,8 +1388,23 @@
       '<div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">' +
       '<div class="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">' +
       '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="inline-flex items-center gap-3 rounded-full bg-primary/10 px-4 py-2 text-sm font-semibold text-primary"><span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">$</span> BullPort client portal</div><h1 class="mt-6 text-4xl font-semibold tracking-tight">' + config.title + '</h1><p class="mt-3 max-w-xl text-base text-muted-foreground">' + config.subtitle + '</p><div class="mt-8 grid gap-4 sm:grid-cols-2"><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Managed portfolios</p><p class="mt-2 text-sm font-semibold">6 portfolio models across income, balanced, growth and commodities.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Investor controls</p><p class="mt-2 text-sm font-semibold">Wallet funding, KYC, reports, dividends and risk tracking from one portal.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Markets</p><p class="mt-2 text-sm font-semibold">Stocks, commodities, ETFs, bonds, REITs, indices and access-controlled options.</p></div><div class="rounded-xl border border-border/70 bg-background/60 p-4"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Workflow</p><p class="mt-2 text-sm font-semibold">Register, verify, fund, allocate, monitor and download account reports.</p></div></div></section>' +
-      '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="mb-6"><h2 class="text-2xl font-semibold tracking-tight">' + config.cta + '</h2><p class="mt-2 text-sm text-muted-foreground">Secure access aligned to the BullPort broker journey.</p></div><form class="space-y-4"><div class="space-y-2"><label class="text-sm font-medium">Email address</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="name@example.com"></div>' + (kind === "forgot" ? "" : '<div class="space-y-2"><label class="text-sm font-medium">Password</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="' + (kind === "register" ? "Create a password" : "Enter your password") + '" type="password"></div>') + (kind === "register" ? '<div class="space-y-2"><label class="text-sm font-medium">Country of residence</label><input class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" value="Nigeria"></div>' : "") + '<button class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" data-broker-action="' + (kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset")) + '" type="button">' + config.cta + '</button></form><div class="mt-6 rounded-xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">' + config.foot + '</div></section>' +
+      '<section class="rounded-2xl border border-border bg-card p-8 shadow-sm"><div class="mb-6"><h2 class="text-2xl font-semibold tracking-tight">' + config.cta + '</h2><p class="mt-2 text-sm text-muted-foreground">Secure access aligned to the BullPort broker journey.</p></div><form class="space-y-4">' + (kind === "register" ? '<div class="space-y-2"><label class="text-sm font-medium" for="auth-name">Full name</label><input id="auth-name" name="name" autocomplete="name" required class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="Your full name"></div>' : "") + '<div class="space-y-2"><label class="text-sm font-medium" for="auth-email">Email address</label><input id="auth-email" name="email" autocomplete="email" type="email" required class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="name@example.com"></div>' + (kind === "forgot" ? "" : '<div class="space-y-2"><label class="text-sm font-medium" for="auth-password">Password</label><input id="auth-password" name="password" autocomplete="' + (kind === "register" ? "new-password" : "current-password") + '" required class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" placeholder="' + (kind === "register" ? "At least 10 characters" : "Enter your password") + '" type="password"></div>') + (kind === "register" ? '<div class="space-y-2"><label class="text-sm font-medium" for="auth-country">Country of residence</label><input id="auth-country" name="country" autocomplete="country-name" required class="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none" value="Nigeria"></div>' : "") + '<button class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" data-broker-action="' + (kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset")) + '" type="button">' + config.cta + '</button></form><div class="mt-6 rounded-xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">' + config.foot + '</div></section>' +
       "</div></div>";
+  }
+
+  function renderPortalState(message, failed) {
+    const main = findMain();
+    if (!main) return;
+    const meta = currentMeta();
+    main.innerHTML = '' +
+      '<div id="main-content" class="space-y-6">' +
+      '<section class="rounded-xl border border-border bg-card p-6 shadow-sm">' +
+      '<div class="flex min-h-[320px] flex-col items-center justify-center px-4 text-center">' +
+      '<span class="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground' + (failed ? '' : ' animate-pulse') + '">$</span>' +
+      '<h1 class="mt-5 text-2xl font-semibold tracking-tight">' + (failed ? 'Unable to load ' : 'Loading ') + meta.title + '</h1>' +
+      '<p class="mt-2 max-w-xl text-sm text-muted-foreground">' + message + '</p>' +
+      (failed ? '<button type="button" data-broker-action="api-retry" class="mt-5 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Try again</button>' : '') +
+      '</div></section></div>';
   }
 
   function renderPage() {
@@ -1454,6 +1598,11 @@
     document.querySelectorAll("button, div, span").forEach(function (el) {
       if (!el.childElementCount && el.textContent && el.textContent.trim() === "AS") {
         el.textContent = "TA";
+        if (el.tagName === "BUTTON") {
+          el.setAttribute("data-broker-action", "auth-logout");
+          el.setAttribute("aria-label", "Sign out");
+          el.setAttribute("title", "Sign out");
+        }
       }
     });
   }
@@ -1500,6 +1649,16 @@
     modal.querySelectorAll("[data-broker-close-modal]").forEach(function (node) {
       node.addEventListener("click", closeModal);
     });
+    bindActions();
+  }
+
+  function modalValue(name) {
+    const field = document.querySelector('#broker-modal [name="' + name + '"]');
+    return field ? field.value.trim() : "";
+  }
+
+  function modalField(label, name, type, value, extra) {
+    return '<label class="broker-form-field"><span>' + label + '</span><input name="' + name + '" type="' + (type || "text") + '" value="' + (value || "") + '" ' + (extra || "") + '></label>';
   }
 
   function navigateTo(page) {
@@ -1538,19 +1697,34 @@
   async function handleAction(action, node) {
     const state = getState();
     switch (action) {
+      case "api-retry":
+        appState.apiLoaded = false;
+        appState.apiMessage = "Retrying secure account connection";
+        renderPortalState(appState.apiMessage, false);
+        patchApiStatus();
+        if (await loadClientBackendData(true)) {
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          patchApiStatus();
+        } else {
+          renderPortalState(appState.apiMessage, true);
+          bindActions();
+          patchApiStatus();
+        }
+        return;
       case "auth-login":
         try {
           const form = authFormValues(node);
-          const data = await apiRequest("/api/auth/client/login", {
+          if (!form.email || !form.password) throw new Error("Enter your email address and password.");
+          await apiRequest("/api/v1/auth/client/login", {
             method: "POST",
             body: JSON.stringify({ email: form.email, password: form.password })
           }, true);
-          localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
-          localStorage.setItem(CLIENT_ID_KEY, data.client.id);
-          await loadClientBackendData(true);
-          patchApiStatus();
           toast("Signed in. Redirecting to the dashboard.", "success");
-          setTimeout(function () { navigateTo("dashboard.html"); }, 250);
+          const returnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+          sessionStorage.removeItem("bullport_return_to");
+          setTimeout(function () { navigateTo(returnTo); }, 250);
         } catch (error) {
           toast((error && error.message) || "Could not sign in. Check the API and credentials.", "warning");
         }
@@ -1558,19 +1732,17 @@
       case "auth-register":
         try {
           const form = authFormValues(node);
-          const data = await apiRequest("/api/auth/client/register", {
+          if (!form.name || !form.email || !form.password || !form.country) throw new Error("Complete every required registration field.");
+          await apiRequest("/api/v1/auth/client/register", {
             method: "POST",
             body: JSON.stringify({
               name: form.name,
               email: form.email,
               password: form.password,
-              country: form.country
+              country: form.country,
+              acceptedTerms: true
             })
           }, true);
-          localStorage.setItem(CLIENT_TOKEN_KEY, data.token);
-          localStorage.setItem(CLIENT_ID_KEY, data.client.id);
-          await loadClientBackendData(true);
-          patchApiStatus();
           toast("Account created. Continue with KYC verification.", "success");
           setTimeout(function () { navigateTo("kyc.html"); }, 250);
         } catch (error) {
@@ -1578,7 +1750,23 @@
         }
         return;
       case "auth-reset":
-        toast("Password reset instructions sent.", "info");
+        try {
+          const form = authFormValues(node);
+          if (!form.email) throw new Error("Enter your account email address.");
+          await apiRequest("/api/v1/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: form.email, actorType: "CLIENT" }) }, true);
+          toast("If the account exists, reset instructions have been sent.", "info");
+        } catch (error) {
+          toast((error && error.message) || "Could not request password recovery.", "warning");
+        }
+        return;
+      case "auth-logout":
+        try {
+          await apiRequest("/api/v1/auth/client/logout", { method: "POST", body: "{}" }, false);
+        } catch (error) {
+          if (!error || error.status !== 401) toast(error.message || "Could not close the session cleanly.", "warning");
+        }
+        sessionStorage.removeItem(STATE_KEY);
+        navigateTo("login.html");
         return;
       case "goto-deposit":
         navigateTo("deposit.html");
@@ -1593,114 +1781,212 @@
         toast("Card funding is coming soon.", "warning");
         return;
       case "deposit-bank":
+        showModal("Submit bank deposit", '<p>Enter the amount already sent and the bank transfer reference. Funds remain pending until two-admin review and KYC clearance.</p><div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"') + modalField("Bank transfer reference", "externalReference", "text", "", 'required maxlength="120"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-bank-confirm">Submit deposit</button>');
+        return;
+      case "deposit-bank-confirm":
         try {
-          await ensureDemoClientToken();
-          await apiRequest("/api/client/deposits", {
-            method: "POST",
-            body: JSON.stringify({ amount: 3500, method: "Bank transfer", rail: "Manual transfer" })
-          }, false);
-          await refreshLiveView("Bank transfer request logged for operations review.", "success");
-        } catch (error) {
-          state.walletBalance += 3500;
-          state.pendingDeposit += 3500;
-          pushTransaction(state, "Deposit", "Bank transfer funding", "+$3,500", "Pending");
-          pushNotification(state, "Wallet", "Bank transfer deposit submitted", "Pending confirmation");
-          saveState(state);
-          renderPage();
-          patchChromeUI();
-          bindActions();
-          patchApiStatus();
-          toast("API unavailable. Bank transfer request logged in static mode.", "warning");
-        }
+          await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey("bank-deposit") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", method: "BANK", rail: "Bank transfer", externalReference: modalValue("externalReference") }) }, false);
+          closeModal();
+          await refreshLiveView("Bank deposit submitted for operations review.", "success");
+        } catch (error) { toast((error && error.message) || "Could not submit the deposit.", "warning"); }
         return;
       case "deposit-crypto":
-        showModal("Crypto funding instructions", '<p>Send only supported assets to the reviewed broker wallet route.</p><div class="broker-modal-grid"><div><span>Supported assets</span><strong>USDT (TRC20), BTC, ETH</strong></div><div><span>Posting rule</span><strong>Credit after compliance and chain confirmation</strong></div><div><span>Reference</span><strong>' + DEMO.client.accountNo + '</strong></div></div>', '<button type="button" class="broker-modal-button is-primary" data-broker-close-modal="true">Close</button>');
+        showModal("Submit crypto funding", '<p>Submit a transfer only after sending it to BullPort\'s reviewed funding wallet. The transaction is credited after chain, compliance, and finance confirmation.</p><div class="broker-form-grid">' + modalField("Amount (USD equivalent)", "amount", "number", "2500", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Network</span><select name="rail"><option value="TRC20">USDT (TRC20)</option><option value="Bitcoin">Bitcoin</option><option value="Ethereum">Ethereum</option></select></label>' + modalField("Transaction hash", "transactionHash", "text", "", 'required minlength="8"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-crypto-confirm">Submit transfer</button>');
+        return;
+      case "deposit-crypto-confirm":
+        try {
+          await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey("crypto-deposit") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", method: "CRYPTO", rail: modalValue("rail"), transactionHash: modalValue("transactionHash") }) }, false);
+          closeModal();
+          await refreshLiveView("Crypto transfer submitted for confirmation.", "success");
+        } catch (error) { toast((error && error.message) || "Could not submit the crypto transfer.", "warning"); }
         return;
       case "withdraw-bank":
-        try {
-          await ensureDemoClientToken();
-          await apiRequest("/api/client/withdrawals", {
-            method: "POST",
-            body: JSON.stringify({ amount: 1200, destination: DEMO.wallet.linkedBank || "Verified bank account" })
-          }, false);
-          await refreshLiveView("Withdrawal request submitted for finance review.", "success");
-        } catch (error) {
-          if (error && error.message) {
-            toast(error.message, "warning");
-            return;
-          }
-          if (state.kycStatus !== "Approved") {
-            toast("Withdrawal remains blocked until KYC is approved.", "warning");
-            return;
-          }
-          state.walletBalance -= 1200;
-          state.pendingWithdrawal += 1200;
-          pushTransaction(state, "Withdrawal request", "Wallet withdrawal to bank", "-$1,200", "Under review");
-          pushNotification(state, "Wallet", "Bank withdrawal submitted", "Under review");
-          saveState(state);
-          renderPage();
-          patchChromeUI();
-          bindActions();
-          patchApiStatus();
-          toast("Withdrawal request submitted in static mode.", "warning");
-        }
+        const beneficiaries = ((appState.data && appState.data.beneficiaries) || []).filter(function (item) { return item.type === "BANK" && item.status === "VERIFIED"; });
+        if (!beneficiaries.length) { toast("Add and verify a bank beneficiary before withdrawing.", "warning"); return; }
+        showModal("Withdraw to bank", '<p>Cleared funds are reserved immediately and remain held until finance, risk, and maker-checker review completes.</p><div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified beneficiary</span><select name="beneficiaryId">' + beneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.accountNumberMasked || "verified") + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
         return;
       case "withdraw-crypto":
-        toast("Crypto withdrawal needs enhanced review and wallet screening.", "warning");
+        const cryptoBeneficiaries = ((appState.data && appState.data.beneficiaries) || []).filter(function (item) { return item.type === "CRYPTO" && item.status === "VERIFIED"; });
+        if (!cryptoBeneficiaries.length) { toast("Add and verify a crypto beneficiary before withdrawing.", "warning"); return; }
+        showModal("Withdraw to crypto", '<p>Crypto withdrawals require approved KYC, a screened beneficiary, and enhanced risk review.</p><div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified wallet</span><select name="beneficiaryId">' + cryptoBeneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.walletAddressMasked || item.cryptoNetwork) + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
+        return;
+      case "withdraw-confirm":
+        try {
+          await apiRequest("/api/v1/client/withdrawals", { method: "POST", headers: { "Idempotency-Key": requestKey("withdrawal") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", beneficiaryId: modalValue("beneficiaryId") }) }, false);
+          closeModal();
+          await refreshLiveView("Withdrawal submitted for finance and risk review.", "success");
+        } catch (error) { toast((error && error.message) || "Could not submit the withdrawal.", "warning"); }
         return;
       case "subscribe-plan":
+        const plan = DEMO.plans.find(function (item) { return item.name === node.getAttribute("data-broker-plan"); });
+        if (!plan || !plan.id) { toast("This portfolio is not currently open for subscription.", "warning"); return; }
+        showModal("Subscribe to " + plan.name, '<p>Subscriptions require approved KYC, suitable risk classification, and cleared wallet funds. Returns remain projected and market-based.</p><div class="broker-form-grid">' + modalField("Investment amount (USD)", "amount", "number", String(Number(String(plan.minimum).replace(/[^0-9.]/g, "")) || 2500), 'min="1" step="0.01"') + '<input type="hidden" name="productId" value="' + plan.id + '"><label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="subscribe-plan-confirm">Confirm subscription</button>');
+        return;
+      case "subscribe-plan-confirm":
         try {
-          await ensureDemoClientToken();
-          await apiRequest("/api/client/investments", {
-            method: "POST",
-            body: JSON.stringify({
-              productName: node.getAttribute("data-broker-plan") || "Balanced Growth",
-              amount: 2500
-            })
-          }, false);
-          await refreshLiveView("Portfolio subscription created and reflected in My Investments.", "success");
-        } catch (error) {
-          if (error && error.message) {
-            toast(error.message, "warning");
-            return;
-          }
-          state.activeInvestments += 1;
-          pushTransaction(state, "Portfolio subscription", node.getAttribute("data-broker-plan") || "Portfolio plan", "-$2,500", "Completed");
-          pushNotification(state, "Portfolio", (node.getAttribute("data-broker-plan") || "Portfolio plan") + " added to subscriptions", "Completed");
-          saveState(state);
-          toast("Plan added to the static subscription flow.", "warning");
-        }
+          await apiRequest("/api/v1/client/investments", { method: "POST", headers: { "Idempotency-Key": requestKey("investment") }, body: JSON.stringify({ productId: modalValue("productId"), amount: Number(modalValue("amount")), reinvestPreference: modalValue("reinvestPreference") }) }, false);
+          closeModal();
+          await refreshLiveView("Portfolio subscription is active in My Investments.", "success");
+        } catch (error) { toast((error && error.message) || "Could not create the subscription.", "warning"); }
         return;
       case "investment-action":
-        toast((node.getAttribute("data-broker-label") || "Action") + " queued for " + (node.getAttribute("data-broker-investment") || "investment") + ".", "info");
+        navigateTo("portfolio.html?investment=" + encodeURIComponent(node.getAttribute("data-broker-investment-id") || ""));
         return;
       case "download-report":
-        pushNotification(state, "Reports", (node.getAttribute("data-broker-report") || "Report") + " download prepared", "Ready");
-        saveState(state);
-        toast("Report prepared for download.", "success");
+        try {
+          const reportId = node.getAttribute("data-broker-report-id");
+          if (!reportId) throw new Error("This report is not available for download.");
+          const response = await fetch(API_BASE + "/api/v1/client/reports/" + encodeURIComponent(reportId) + "/download", { credentials: "include" });
+          if (!response.ok) { const payload = await response.json().catch(function () { return {}; }); throw new Error(payload.error && payload.error.message ? payload.error.message : "Report download failed"); }
+          const blob = await response.blob();
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "bullport-report.csv";
+          link.click();
+          setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+          toast("Report download started.", "success");
+        } catch (error) { toast((error && error.message) || "Could not download the report.", "warning"); }
         return;
       case "kyc-upload":
-        toast("Document upload panel is represented in this prototype flow.", "info");
+        const currentCase = appState.data && appState.data.kycCases && appState.data.kycCases[0];
+        if (!currentCase) { toast("Start the KYC review before uploading documents.", "warning"); return; }
+        showModal("Upload KYC document", '<p>Accepted formats are PDF, JPG, and PNG. Files are private and validated before storage.</p><div class="broker-form-grid"><input type="hidden" name="caseId" value="' + currentCase.id + '"><label class="broker-form-field"><span>Document type</span><select name="documentType"><option value="Government ID">Government ID</option><option value="Proof of address">Proof of address</option><option value="Source of funds">Source of funds</option></select></label><label class="broker-form-field"><span>File</span><input name="documentFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="kyc-upload-confirm">Upload document</button>');
+        return;
+      case "kyc-upload-confirm":
+        try {
+          const fileInput = document.querySelector('#broker-modal [name="documentFile"]');
+          const file = fileInput && fileInput.files && fileInput.files[0];
+          if (!file) throw new Error("Choose a KYC document to upload.");
+          const base64 = await new Promise(function (resolve, reject) { const reader = new FileReader(); reader.onload = function () { resolve(String(reader.result).split(",")[1]); }; reader.onerror = reject; reader.readAsDataURL(file); });
+          await apiRequest("/api/v1/client/kyc/documents", { method: "POST", body: JSON.stringify({ caseId: modalValue("caseId"), type: modalValue("documentType"), fileName: file.name, mimeType: file.type, base64: base64 }) }, false);
+          closeModal();
+          await refreshLiveView("KYC document uploaded securely.", "success");
+        } catch (error) { toast((error && error.message) || "Could not upload the document.", "warning"); }
         return;
       case "kyc-submit":
         try {
-          await ensureDemoClientToken();
-          await apiRequest("/api/client/kyc/submit", {
+          await apiRequest("/api/v1/client/kyc/submit", {
             method: "POST",
-            body: JSON.stringify({ requirement: "Proof of address", documentRef: "dashboard-upload.pdf" })
+            body: JSON.stringify({ level: "Standard", questionnaire: { objective: "Long-term portfolio growth", experience: "Intermediate", lossTolerance: "Moderate", horizon: "Long term" } })
           }, false);
           await refreshLiveView("KYC documents submitted for compliance review.", "success");
-        } catch (error) {
-          state.kycStatus = "Approved";
-          state.profileCompletion = 100;
-          pushNotification(state, "KYC", "Verification completed and approved", "Approved");
-          saveState(state);
-          renderPage();
-          patchChromeUI();
-          bindActions();
-          patchApiStatus();
-          toast("KYC status updated in static mode.", "warning");
-        }
+        } catch (error) { toast((error && error.message) || "Could not submit KYC.", "warning"); }
+        return;
+      case "watchlist-add":
+        try {
+          await apiRequest("/api/v1/client/watchlist", {
+            method: "POST",
+            body: JSON.stringify({ instrumentId: node.getAttribute("data-broker-instrument-id") })
+          }, false);
+          await refreshLiveView("Instrument saved to your watchlist.", "success");
+        } catch (error) { toast((error && error.message) || "Could not save the instrument.", "warning"); }
+        return;
+      case "watchlist-remove":
+        try {
+          await apiRequest("/api/v1/client/watchlist/" + encodeURIComponent(node.getAttribute("data-broker-instrument-id") || ""), { method: "DELETE", body: "{}" }, false);
+          await refreshLiveView("Instrument removed from your watchlist.", "success");
+        } catch (error) { toast((error && error.message) || "Could not remove the instrument.", "warning"); }
+        return;
+      case "order-create":
+        showModal("Create order request", '<p>The instruction is submitted to BullPort\'s internal order desk for risk review and approval.</p><div class="broker-form-grid"><input type="hidden" name="instrumentId" value="' + (node.getAttribute("data-broker-instrument-id") || "") + '"><label class="broker-form-field"><span>Side</span><select name="side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label><label class="broker-form-field"><span>Order type</span><select name="type"><option value="MARKET">Market snapshot</option><option value="LIMIT">Limit</option></select></label>' + modalField("Quantity", "quantity", "number", "1", 'min="0.00000001" step="0.00000001"') + modalField("Limit price (required for limit)", "limitPrice", "number", "", 'min="0.01" step="0.01"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="order-confirm">Submit order request</button>');
+        return;
+      case "order-confirm":
+        try {
+          const orderType = modalValue("type");
+          const orderBody = {
+            instrumentId: modalValue("instrumentId"),
+            side: modalValue("side"),
+            type: orderType,
+            quantity: Number(modalValue("quantity"))
+          };
+          if (orderType === "LIMIT") orderBody.limitPrice = Number(modalValue("limitPrice"));
+          await apiRequest("/api/v1/client/orders", { method: "POST", headers: { "Idempotency-Key": requestKey("order") }, body: JSON.stringify(orderBody) }, false);
+          closeModal();
+          await refreshLiveView("Order request submitted to the internal desk.", "success");
+        } catch (error) { toast((error && error.message) || "Could not submit the order.", "warning"); }
+        return;
+      case "options-apply":
+        showModal("Options suitability application", '<p>Options are high risk and require compliance approval. Answer each question accurately.</p><div class="broker-form-grid"><label class="broker-form-field"><span>Options experience</span><select name="experience"><option value="NONE">None</option><option value="UNDER_2">Under 2 years</option><option value="TWO_TO_FIVE">2 to 5 years</option><option value="OVER_FIVE">Over 5 years</option></select></label><label class="broker-form-field"><span>Knowledge</span><select name="knowledge"><option value="BASIC">Basic</option><option value="INTERMEDIATE">Intermediate</option><option value="ADVANCED">Advanced</option></select></label><label class="broker-form-field"><span>Loss tolerance</span><select name="lossTolerance"><option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option></select></label><label class="broker-form-field"><span>Primary objective</span><select name="objective"><option value="INCOME">Income</option><option value="GROWTH">Growth</option><option value="HEDGING">Hedging</option><option value="SPECULATION">Speculation</option></select></label><label class="broker-form-field"><span><input name="disclosureAccepted" type="checkbox" required> I accept the options risk disclosure.</span></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="options-confirm">Submit application</button>');
+        return;
+      case "options-confirm":
+        try {
+          const accepted = document.querySelector('#broker-modal [name="disclosureAccepted"]');
+          if (!accepted || !accepted.checked) throw new Error("Accept the options risk disclosure to continue.");
+          await apiRequest("/api/v1/client/options/apply", { method: "POST", body: JSON.stringify({ questionnaire: { experience: modalValue("experience"), knowledge: modalValue("knowledge"), lossTolerance: modalValue("lossTolerance"), objective: modalValue("objective") }, disclosureAccepted: true }) }, false);
+          closeModal();
+          await refreshLiveView("Options application submitted for compliance review.", "success");
+        } catch (error) { toast((error && error.message) || "Could not submit the options application.", "warning"); }
+        return;
+      case "profile-edit":
+        const profile = appState.profile || {};
+        showModal("Edit client profile", '<div class="broker-form-grid">' + modalField("Full name", "name", "text", profile.name || DEMO.client.name, 'required maxlength="120"') + modalField("Phone", "phone", "tel", profile.phone || "", 'required maxlength="30"') + modalField("Country", "country", "text", profile.country || "", 'required maxlength="80"') + modalField("Address line 1", "addressLine1", "text", profile.addressLine1 || "", 'required maxlength="160"') + modalField("Address line 2", "addressLine2", "text", profile.addressLine2 || "", 'maxlength="160"') + modalField("City", "city", "text", profile.city || "", 'required maxlength="80"') + modalField("State / county", "state", "text", profile.state || "", 'maxlength="80"') + modalField("Postal code", "postalCode", "text", profile.postalCode || "", 'maxlength="30"') + modalField("Tax residence", "taxResidence", "text", profile.taxResidence || "", 'maxlength="80"') + modalField("Tax ID", "taxId", "text", profile.taxId || "", 'maxlength="60"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="profile-confirm">Save profile</button>');
+        return;
+      case "profile-confirm":
+        try {
+          await apiRequest("/api/v1/client/profile", { method: "PUT", body: JSON.stringify({ name: modalValue("name"), phone: modalValue("phone"), country: modalValue("country"), addressLine1: modalValue("addressLine1"), addressLine2: modalValue("addressLine2") || null, city: modalValue("city"), state: modalValue("state") || null, postalCode: modalValue("postalCode") || null, taxResidence: modalValue("taxResidence") || null, taxId: modalValue("taxId") || null }) }, false);
+          closeModal();
+          await refreshLiveView("Profile updated.", "success");
+        } catch (error) { toast((error && error.message) || "Could not update the profile.", "warning"); }
+        return;
+      case "verification-resend":
+        try {
+          await apiRequest("/api/v1/auth/client/resend-verification", { method: "POST", body: "{}" }, false);
+          toast("Verification instructions were queued for delivery.", "success");
+        } catch (error) { toast((error && error.message) || "Could not resend verification.", "warning"); }
+        return;
+      case "settings-save":
+        try {
+          const value = function (name) { return document.querySelector('[data-setting="' + name + '"]'); };
+          await apiRequest("/api/v1/client/settings", { method: "PUT", body: JSON.stringify({ emailNotifications: value("emailNotifications").checked, inAppNotifications: value("inAppNotifications").checked, marketAlerts: value("marketAlerts").checked, distributionPreference: value("distributionPreference").value }) }, false);
+          await refreshLiveView("Account preferences updated.", "success");
+        } catch (error) { toast((error && error.message) || "Could not update preferences.", "warning"); }
+        return;
+      case "password-change":
+        showModal("Change password", '<p>Your other active sessions will be revoked after this change.</p><div class="broker-form-grid">' + modalField("Current password", "currentPassword", "password", "", 'required autocomplete="current-password"') + modalField("New password", "newPassword", "password", "", 'required autocomplete="new-password" minlength="10"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="password-confirm">Change password</button>');
+        return;
+      case "password-confirm":
+        try {
+          await apiRequest("/api/v1/auth/client/change-password", { method: "POST", body: JSON.stringify({ currentPassword: modalValue("currentPassword"), newPassword: modalValue("newPassword") }) }, false);
+          closeModal();
+          toast("Password changed and other sessions revoked.", "success");
+        } catch (error) { toast((error && error.message) || "Could not change the password.", "warning"); }
+        return;
+      case "session-revoke":
+        try {
+          const result = await apiRequest("/api/v1/auth/client/sessions/" + encodeURIComponent(node.getAttribute("data-broker-session-id") || ""), { method: "DELETE", body: "{}" }, false);
+          if (result.currentSession) {
+            sessionStorage.removeItem(STATE_KEY);
+            navigateTo("login.html");
+            return;
+          }
+          await refreshLiveView("Session revoked.", "success");
+        } catch (error) { toast((error && error.message) || "Could not revoke the session.", "warning"); }
+        return;
+      case "notification-read":
+        try {
+          await apiRequest("/api/v1/client/notifications/" + encodeURIComponent(node.getAttribute("data-broker-notification-id") || "") + "/read", { method: "POST", body: "{}" }, false);
+          await refreshLiveView("Notification marked as read.", "success");
+        } catch (error) { toast((error && error.message) || "Could not update the notification.", "warning"); }
+        return;
+      case "support-create":
+        showModal("Open support ticket", '<div class="broker-form-grid">' + modalField("Subject", "subject", "text", "", 'required maxlength="160"') + '<label class="broker-form-field"><span>Category</span><select name="category"><option value="Wallet">Wallet</option><option value="KYC">KYC</option><option value="Investments">Investments</option><option value="Trading">Trading</option><option value="Reports">Reports</option><option value="General">General</option></select></label><label class="broker-form-field"><span>Priority</span><select name="priority"><option value="Normal">Normal</option><option value="Low">Low</option><option value="High">High</option></select></label><label class="broker-form-field"><span>Description</span><textarea name="description" required minlength="5" maxlength="5000"></textarea></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="support-create-confirm">Submit ticket</button>');
+        return;
+      case "support-create-confirm":
+        try {
+          await apiRequest("/api/v1/client/support/tickets", { method: "POST", body: JSON.stringify({ subject: modalValue("subject"), category: modalValue("category"), priority: modalValue("priority"), description: modalValue("description") }) }, false);
+          closeModal();
+          await refreshLiveView("Support ticket opened.", "success");
+        } catch (error) { toast((error && error.message) || "Could not open the support ticket.", "warning"); }
+        return;
+      case "support-reply":
+        showModal("Reply to support ticket", '<input type="hidden" name="ticketId" value="' + (node.getAttribute("data-broker-ticket-id") || "") + '"><label class="broker-form-field"><span>Message</span><textarea name="body" required maxlength="5000"></textarea></label>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="support-reply-confirm">Send reply</button>');
+        return;
+      case "support-reply-confirm":
+        try {
+          await apiRequest("/api/v1/client/support/tickets/" + encodeURIComponent(modalValue("ticketId")) + "/messages", { method: "POST", body: JSON.stringify({ body: modalValue("body") }) }, false);
+          closeModal();
+          await refreshLiveView("Support reply sent.", "success");
+        } catch (error) { toast((error && error.message) || "Could not send the reply.", "warning"); }
         return;
       default:
         return;
@@ -1749,6 +2035,10 @@
       + " .broker-modal-grid div{border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc}"
       + " .broker-modal-grid span{display:block;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:4px}"
       + " .broker-modal-grid strong{display:block;color:#0f172a}"
+      + " .broker-form-grid{display:grid;gap:14px;margin-top:16px}"
+      + " .broker-form-field{display:grid;gap:7px;color:#334155;font-size:.85rem;font-weight:600}"
+      + " .broker-form-field input,.broker-form-field select{width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a;padding:9px 11px;font:inherit;font-weight:500}"
+      + " .broker-form-field input[type=file]{padding:7px}"
       + " .broker-api-status{position:fixed;left:16px;bottom:16px;z-index:110;display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.35);border-radius:999px;background:rgba(255,255,255,.94);color:#0f172a;padding:8px 11px;box-shadow:0 12px 30px rgba(15,23,42,.12);font-size:12px;backdrop-filter:blur(10px)}"
       + " .broker-api-status span{width:8px;height:8px;border-radius:999px;background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
       + " .broker-api-status strong{font-weight:700}"
@@ -1766,13 +2056,21 @@
     patchLinks();
     patchNav();
     patchHeaderAndText();
-    renderPage();
+    if (isAuthPage() || (appState.apiLoaded && appState.apiOnline)) {
+      renderPage();
+    } else {
+      renderPortalState(appState.apiLoaded ? appState.apiMessage : "Loading secure account data from BullPort.", appState.apiLoaded);
+    }
     patchChromeUI();
     bindActions();
     patchApiStatus();
     if (!appState.apiLoaded && !appState.loadPromise) {
       loadClientBackendData(false).then(function (updated) {
         if (!updated) {
+          if (!isAuthPage()) {
+            renderPortalState(appState.apiMessage, true);
+            bindActions();
+          }
           patchApiStatus();
           return;
         }
