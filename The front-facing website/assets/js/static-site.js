@@ -1747,24 +1747,38 @@
       "Contact",
       "Speak with support about onboarding, portfolios, markets, pricing, risk disclosures or portal readiness.",
       `
-        ${contactVideoPanel()}
-        <section class="static-section">
+        <section class="static-section static-section--contact-intake">
           <div class="static-container">
-            <div class="static-grid static-two-col">
-              <div class="static-card">
-                <div class="static-card__body">
-                  <h3>Support Details</h3>
-                  <p>Email: <a href="mailto:${escapeHtml(data.brand.email)}">${escapeHtml(data.brand.email)}</a></p>
-                  <p>Phone: <a href="tel:${escapeHtml(phoneHref())}">${escapeHtml(data.brand.phone)}</a></p>
-                  <p>Address: ${escapeHtml(data.brand.address)}</p>
-                  <p>Hours: ${escapeHtml(data.brand.supportHours)}</p>
-                  <p class="static-notice">${escapeHtml(data.brand.risk)}</p>
+            <div class="contact-intake-panel">
+              <div class="contact-intake-panel__info">
+                <span class="static-kicker">Contact support</span>
+                <h2>Tell us what you need, and we'll route it to the right BullPort desk.</h2>
+                <p>Use the form for onboarding, KYC, funding, portfolio, pricing, market access and report questions.</p>
+                <div class="contact-intake-routes">
+                  <div><strong>Onboarding</strong><span>Account setup, KYC and portal readiness.</span></div>
+                  <div><strong>Money movement</strong><span>Funding, withdrawal and payment-route questions.</span></div>
+                  <div><strong>Investments</strong><span>Portfolios, market access, reporting and risk review.</span></div>
+                </div>
+                <div class="contact-intake-details">
+                  <p><span>Email</span><a href="mailto:${escapeHtml(data.brand.email)}">${escapeHtml(data.brand.email)}</a></p>
+                  <p><span>Phone</span><a href="tel:${escapeHtml(phoneHref())}">${escapeHtml(data.brand.phone)}</a></p>
+                  <p><span>Address</span>${escapeHtml(data.brand.address)}</p>
+                  <p><span>Hours</span>${escapeHtml(data.brand.supportHours)}</p>
                 </div>
               </div>
-              ${contactForm()}
+              <div class="contact-form-shell">
+                <div class="contact-form-shell__head">
+                  <span>Message desk</span>
+                  <h3>Send a request</h3>
+                  <p>We'll respond with the next step or route you into the secure client portal.</p>
+                </div>
+                ${contactForm()}
+                <p class="static-notice">${escapeHtml(data.brand.risk)}</p>
+              </div>
             </div>
           </div>
-        </section>`
+        </section>
+        ${contactVideoPanel()}`
     );
   }
 

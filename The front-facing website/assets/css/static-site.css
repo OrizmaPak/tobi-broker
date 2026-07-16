@@ -1401,6 +1401,156 @@ body.app-nav-open {
   margin: 18px 0 0;
 }
 
+.static-section--contact-intake {
+  padding-bottom: 52px;
+}
+
+.contact-intake-panel {
+  background: linear-gradient(135deg, #f8fbf7 0%, #ffffff 52%, #eef7eb 100%);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  box-shadow: var(--app-shadow);
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+  overflow: hidden;
+  padding: 28px;
+  position: relative;
+}
+
+.contact-intake-panel::before {
+  background: linear-gradient(180deg, var(--app-green), #8bd75e);
+  content: "";
+  inset: 0 auto 0 0;
+  position: absolute;
+  width: 6px;
+}
+
+.contact-intake-panel__info {
+  align-content: center;
+  display: grid;
+  gap: 18px;
+  padding: 24px 18px 24px 28px;
+}
+
+.contact-intake-panel__info h2 {
+  color: var(--app-ink);
+  font-size: 42px;
+  line-height: 1.08;
+  margin: 0;
+  max-width: 560px;
+}
+
+.contact-intake-panel__info > p {
+  color: var(--app-muted);
+  font-size: 17px;
+  line-height: 1.72;
+  margin: 0;
+  max-width: 560px;
+}
+
+.contact-intake-routes {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.contact-intake-routes div {
+  background: var(--app-white);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  box-shadow: 0 14px 32px rgba(31, 37, 30, 0.06);
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.contact-intake-routes strong {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 17px;
+}
+
+.contact-intake-routes span {
+  color: var(--app-muted);
+  line-height: 1.55;
+}
+
+.contact-intake-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.contact-intake-details p {
+  align-items: baseline;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 78px minmax(0, 1fr);
+  margin: 0;
+}
+
+.contact-intake-details span {
+  color: var(--app-green-dark);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.contact-intake-details a,
+.contact-intake-details p {
+  color: var(--app-ink);
+  font-weight: 700;
+}
+
+.contact-form-shell {
+  background: var(--app-white);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  box-shadow: 0 26px 70px rgba(31, 37, 30, 0.12);
+  display: grid;
+  gap: 20px;
+  padding: 30px;
+  position: relative;
+  z-index: 1;
+}
+
+.contact-form-shell__head {
+  border-bottom: 1px solid var(--app-line);
+  padding-bottom: 18px;
+}
+
+.contact-form-shell__head span {
+  color: var(--app-green);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.contact-form-shell__head h3 {
+  color: var(--app-ink);
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 7px 0 8px;
+}
+
+.contact-form-shell__head p {
+  color: var(--app-muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.contact-form-shell .static-form {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.contact-form-shell .static-notice {
+  margin: 0;
+}
+
 .static-form {
   background: var(--app-white);
   border: 1px solid var(--app-line);
@@ -1456,6 +1606,7 @@ body.app-nav-open {
 }
 
 .static-section--contact-video {
+  padding-top: 0;
   padding-bottom: 0;
 }
 
@@ -1857,6 +2008,14 @@ body.app-nav-open {
     grid-template-columns: 1fr;
   }
 
+  .contact-intake-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-intake-panel__info {
+    padding: 24px 18px 0 26px;
+  }
+
   .static-signal-strip {
     grid-template-columns: 1fr;
   }
@@ -1908,6 +2067,41 @@ body.app-nav-open {
 
   .static-card img {
     height: 190px;
+  }
+
+  .static-section--contact-intake {
+    padding-bottom: 38px;
+  }
+
+  .contact-intake-panel {
+    padding: 20px;
+  }
+
+  .contact-intake-panel::before {
+    inset: 0 0 auto 0;
+    height: 5px;
+    width: auto;
+  }
+
+  .contact-intake-panel__info {
+    padding: 18px 0 0;
+  }
+
+  .contact-intake-panel__info h2 {
+    font-size: 31px;
+  }
+
+  .contact-intake-details p {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .contact-form-shell {
+    padding: 22px;
+  }
+
+  .contact-form-shell__head h3 {
+    font-size: 26px;
   }
 
   .contact-video-panel {
