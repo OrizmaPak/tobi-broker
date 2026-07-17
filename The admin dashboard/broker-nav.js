@@ -1724,11 +1724,19 @@
       if (!el.childElementCount && el.textContent && el.textContent.trim() === "AS") {
         el.textContent = "TA";
         if (el.tagName === "BUTTON") {
-          el.setAttribute("data-broker-action", "auth-logout");
-          el.setAttribute("aria-label", "Sign out");
-          el.setAttribute("title", "Sign out");
+          el.setAttribute("data-broker-action", "user-menu-toggle");
+          el.setAttribute("aria-label", "Account menu");
+          el.setAttribute("aria-haspopup", "menu");
+          el.setAttribute("aria-expanded", document.getElementById("broker-user-menu") ? "true" : "false");
+          el.setAttribute("title", "Account menu");
         }
       }
+    });
+
+    document.querySelectorAll('button[aria-label="Notifications"]').forEach(function (button) {
+      button.setAttribute("data-broker-action", "notifications-toggle");
+      button.setAttribute("aria-haspopup", "menu");
+      button.setAttribute("aria-expanded", document.getElementById("broker-notification-menu") ? "true" : "false");
     });
   }
 
@@ -1757,6 +1765,94 @@
         node.remove();
       }, 220);
     }, 2600);
+  }
+
+  function closeNotificationMenu() {
+    const menu = document.getElementById("broker-notification-menu");
+    if (menu) menu.remove();
+    document.querySelectorAll('[data-broker-action="notifications-toggle"]').forEach(function (button) {
+      button.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function closeUserMenu() {
+    const menu = document.getElementById("broker-user-menu");
+    if (menu) menu.remove();
+    document.querySelectorAll('[data-broker-action="user-menu-toggle"]').forEach(function (button) {
+      button.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function showNotificationMenu(button) {
+    closeUserMenu();
+    const existing = document.getElementById("broker-notification-menu");
+    if (existing) {
+      closeNotificationMenu();
+      return;
+    }
+    const rows = (getState().notifications || []).slice(0, 5);
+    const menu = document.createElement("div");
+    const rect = button.getBoundingClientRect();
+    menu.id = "broker-notification-menu";
+    menu.className = "broker-notification-menu";
+    menu.setAttribute("role", "menu");
+    menu.style.top = Math.round(rect.bottom + 12 + window.scrollY) + "px";
+    menu.style.right = Math.max(16, Math.round(window.innerWidth - rect.right)) + "px";
+    menu.innerHTML = '<div class="broker-notification-head"><div><strong>Notifications</strong><span>' + rows.length + ' recent alerts</span></div><a href="notifications.html">View all</a></div>'
+      + '<div class="broker-notification-list">' + (rows.length ? rows.map(function (row) {
+        return '<button type="button" role="menuitem" data-broker-action="notification-open" data-broker-notification-id="' + (row.id || "") + '" class="broker-notification-item"><span class="broker-notification-dot ' + (row.state === "New" ? "is-new" : "") + '"></span><span><strong>' + row.title + '</strong><em>' + row.category + ' · ' + row.time + '</em></span></button>';
+      }).join("") : '<div class="broker-notification-empty">No notifications yet.</div>') + '</div>';
+    document.body.appendChild(menu);
+    button.setAttribute("aria-expanded", "true");
+    bindActions();
+    setTimeout(function () {
+      document.addEventListener("click", outsideNotificationClick, { once: true });
+    }, 0);
+  }
+
+  function showUserMenu(button) {
+    const existing = document.getElementById("broker-user-menu");
+    if (existing) {
+      closeUserMenu();
+      return;
+    }
+    closeNotificationMenu();
+    const profile = appState.profile || {};
+    const name = profile.name || DEMO.client.name;
+    const email = profile.email || DEMO.client.email;
+    const menu = document.createElement("div");
+    const rect = button.getBoundingClientRect();
+    menu.id = "broker-user-menu";
+    menu.className = "broker-user-menu";
+    menu.setAttribute("role", "menu");
+    menu.style.top = Math.round(rect.bottom + 12 + window.scrollY) + "px";
+    menu.style.right = Math.max(16, Math.round(window.innerWidth - rect.right)) + "px";
+    menu.innerHTML = '<div class="broker-user-head"><div class="broker-user-avatar">TA</div><div><strong>' + name + '</strong><span>' + email + '</span></div></div>'
+      + '<div class="broker-user-list">'
+      + '<button type="button" role="menuitem" data-broker-action="goto-profile" class="broker-user-item"><span>Profile</span><em>Identity and contact details</em></button>'
+      + '<button type="button" role="menuitem" data-broker-action="goto-settings" class="broker-user-item"><span>Settings</span><em>Security and preferences</em></button>'
+      + '<button type="button" role="menuitem" data-broker-action="auth-logout" class="broker-user-item is-danger"><span>Sign out</span><em>Close this client session</em></button>'
+      + '</div>';
+    document.body.appendChild(menu);
+    button.setAttribute("aria-expanded", "true");
+    bindActions();
+    setTimeout(function () {
+      document.addEventListener("click", outsideUserClick, { once: true });
+    }, 0);
+  }
+
+  function outsideUserClick(event) {
+    const menu = document.getElementById("broker-user-menu");
+    const toggle = event.target && event.target.closest ? event.target.closest('[data-broker-action="user-menu-toggle"]') : null;
+    if (menu && !menu.contains(event.target) && !toggle) closeUserMenu();
+    else if (menu) document.addEventListener("click", outsideUserClick, { once: true });
+  }
+
+  function outsideNotificationClick(event) {
+    const menu = document.getElementById("broker-notification-menu");
+    const toggle = event.target && event.target.closest ? event.target.closest('[data-broker-action="notifications-toggle"]') : null;
+    if (menu && !menu.contains(event.target) && !toggle) closeNotificationMenu();
+    else if (menu) document.addEventListener("click", outsideNotificationClick, { once: true });
   }
 
   function closeModal() {
@@ -1889,6 +1985,8 @@
         }
         return;
       case "auth-logout":
+        closeUserMenu();
+        closeNotificationMenu();
         try {
           await apiRequest("/api/v1/auth/client/logout", { method: "POST", body: "{}" }, false);
         } catch (error) {
@@ -2098,6 +2196,24 @@
           await refreshLiveView("Notification marked as read.", "success");
         } catch (error) { toast((error && error.message) || "Could not update the notification.", "warning"); }
         return;
+      case "notifications-toggle":
+        showNotificationMenu(node);
+        return;
+      case "notification-open":
+        closeNotificationMenu();
+        navigateTo("notifications.html");
+        return;
+      case "user-menu-toggle":
+        showUserMenu(node);
+        return;
+      case "goto-profile":
+        closeUserMenu();
+        navigateTo("profile.html");
+        return;
+      case "goto-settings":
+        closeUserMenu();
+        navigateTo("settings.html");
+        return;
       case "support-create":
         showModal("Open support ticket", '<div class="broker-form-grid">' + modalField("Subject", "subject", "text", "", 'required maxlength="160"') + '<label class="broker-form-field"><span>Category</span><select name="category"><option value="Wallet">Wallet</option><option value="KYC">KYC</option><option value="Investments">Investments</option><option value="Trading">Trading</option><option value="Reports">Reports</option><option value="General">General</option></select></label><label class="broker-form-field"><span>Priority</span><select name="priority"><option value="Normal">Normal</option><option value="Low">Low</option><option value="High">High</option></select></label><label class="broker-form-field"><span>Description</span><textarea name="description" required minlength="5" maxlength="5000"></textarea></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="support-create-confirm">Submit ticket</button>');
         return;
@@ -2162,6 +2278,11 @@
       + " .broker-toast-default,.broker-toast-info{background:#0f172a}"
       + " .broker-toast-success{background:#15803d}"
       + " .broker-toast-warning{background:#b45309}"
+      + " .broker-notification-menu{position:absolute;z-index:130;width:min(380px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
+      + " .broker-notification-head{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-notification-head strong{display:block;font-size:15px;font-weight:850}.broker-notification-head span{display:block;margin-top:2px;color:#64748b;font-size:12px}.broker-notification-head a{color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;text-decoration:none}"
+      + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
+      + " .broker-user-menu{position:absolute;z-index:130;width:min(320px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
+      + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:block;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item span{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger span{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
       + " .broker-modal{position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px}"
       + " .broker-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.48)}"
       + " .broker-modal-panel{position:relative;z-index:1;width:min(560px,100%);border-radius:18px;background:#fff;color:#0f172a;padding:20px;box-shadow:0 24px 60px rgba(15,23,42,.22)}"
