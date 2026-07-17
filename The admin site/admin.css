@@ -367,6 +367,27 @@ a {
   opacity: 0.55;
 }
 
+.btn.is-loading {
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.button-spinner {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: button-spin 0.72s linear infinite;
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .grid {
   display: grid;
   gap: 14px;

@@ -427,6 +427,28 @@ body[data-page] .loader-wrap {
   background: var(--app-ink);
 }
 
+.static-button.is-loading {
+  cursor: wait;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.static-button-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  flex: none;
+  animation: static-button-spin 0.72s linear infinite;
+}
+
+@keyframes static-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .static-signal-strip {
   background: var(--app-dark);
   border-radius: 8px;

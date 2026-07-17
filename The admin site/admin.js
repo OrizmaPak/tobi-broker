@@ -904,6 +904,7 @@
   async function submitAdminLogin(event) {
     event.preventDefault();
     const form = event.currentTarget;
+    const stopLoading = setButtonLoading(event.submitter || form.querySelector('button[type="submit"]'), "Signing in...");
     const credentials = {
       email: form.elements.email.value.trim(),
       password: form.elements.password.value,
@@ -923,11 +924,14 @@
       render();
     } catch (error) {
       renderAdminLogin(error.message || "Sign in failed.", error.code === "MFA_REQUIRED" || Boolean(credentials.mfaCode));
+    } finally {
+      stopLoading();
     }
   }
 
   async function confirmMfaSetup(event) {
     event.preventDefault();
+    const stopLoading = setButtonLoading(event.submitter || event.currentTarget.querySelector('button[type="submit"]'), "Checking...");
     try {
       const result = await api("/api/v1/auth/admin/mfa/confirm", { method: "POST", body: JSON.stringify({ setupToken: appState.mfaSetup.setupToken, code: event.currentTarget.elements.code.value.trim() }), skipRefresh: true });
       appState.admin = result.admin;
@@ -940,6 +944,8 @@
       node.className = "auth-error";
       node.textContent = error.message || "The authenticator code was not accepted.";
       document.querySelector(".auth-heading")?.after(node);
+    } finally {
+      stopLoading();
     }
   }
 
@@ -969,52 +975,93 @@
     }, 2400);
   }
 
+  function adminActionHasLoading(action) {
+    return [
+      "admin-logout", "approval-confirm", "kyc-requirement-save",
+      "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
+      "report-download", "setting-save", "decision"
+    ].includes(action);
+  }
+
+  function setButtonLoading(node, text) {
+    if (!node || node.dataset.loading === "true") return function () {};
+    const originalHtml = node.innerHTML;
+    const originalDisabled = Boolean(node.disabled);
+    const originalMinWidth = node.style.minWidth || "";
+    const originalAriaDisabled = node.getAttribute("aria-disabled");
+    const width = node.getBoundingClientRect ? node.getBoundingClientRect().width : 0;
+    node.dataset.loading = "true";
+    node.classList.add("is-loading");
+    node.setAttribute("aria-busy", "true");
+    node.setAttribute("aria-disabled", "true");
+    if (width) node.style.minWidth = Math.ceil(width) + "px";
+    if ("disabled" in node) node.disabled = true;
+    node.innerHTML = '<span class="button-spinner" aria-hidden="true"></span><span>' + (text || "Working...") + '</span>';
+    return function () {
+      if (!node || !node.isConnected) return;
+      node.innerHTML = originalHtml;
+      node.classList.remove("is-loading");
+      node.removeAttribute("aria-busy");
+      if (originalAriaDisabled == null) node.removeAttribute("aria-disabled");
+      else node.setAttribute("aria-disabled", originalAriaDisabled);
+      node.style.minWidth = originalMinWidth;
+      if ("disabled" in node) node.disabled = originalDisabled;
+      delete node.dataset.loading;
+    };
+  }
+
   function bindActions() {
     document.querySelectorAll("[data-action]").forEach((node) => {
       if (node.dataset.bound === "true") return;
       node.dataset.bound = "true";
       node.addEventListener("click", async () => {
+        if (node.dataset.loading === "true") return;
         const action = node.getAttribute("data-action");
-        if (action === "goto-queues") location.href = "queues.html";
-        else if (action === "goto-clients") location.href = "clients.html";
-        else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
-        else if (action === "admin-logout") {
-          try { await api("/api/v1/auth/admin/logout", { method: "POST", body: "{}" }); } catch {}
-          appState.admin = null;
-          appState.apiOnline = false;
-          renderAdminLogin("You have signed out.", false);
-        }
-        else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
-        else if (action === "approval-confirm") submitApprovalDecision();
-        else if (action === "kyc-requirement-new") openKycRequirementEditor();
-        else if (action === "kyc-requirement-edit") openKycRequirementEditor(node.dataset.requirementId);
-        else if (action === "kyc-requirement-save") submitKycRequirement();
-        else if (action === "kyc-requirement-toggle") toggleKycRequirement(node.dataset.requirementId, node.dataset.requirementActive === "true");
-        else if (action === "kyc-document-decision") openKycDocumentDecision(node.dataset);
-        else if (action === "kyc-document-confirm") submitKycDocumentDecision();
-        else if (action === "record-decision") openRecordDecision(node.dataset);
-        else if (action === "record-confirm") submitRecordDecision();
-        else if (action === "report-download") downloadAdminReport(node.dataset.reportId);
-        else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
-        else if (action === "setting-save") submitSetting(node.dataset.settingKey);
-        else if (action === "open-modal") openModal(node.dataset.modal || "task");
-        else if (action === "decision") {
-          const apiAction = node.dataset.apiAction || "unsupportedDecision";
-          const result = node.dataset.result || node.textContent.trim();
-          const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
-          try {
-            await executeBackendAction(apiAction);
-            node.classList.add("is-confirmed");
-            if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
-            addAudit("Now", appState.admin?.name || "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
-            toast(result + ". Backend action completed.");
-          } catch (error) {
-            node.classList.remove("is-confirmed");
-            if (stateNode) stateNode.innerHTML = badge("Not completed") + '<span>' + (error?.message || "Backend action failed") + "</span>";
-            toast(error?.message || "Backend action failed.");
+        const stopLoading = adminActionHasLoading(action) ? setButtonLoading(node) : function () {};
+        try {
+          if (action === "goto-queues") location.href = "queues.html";
+          else if (action === "goto-clients") location.href = "clients.html";
+          else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
+          else if (action === "admin-logout") {
+            try { await api("/api/v1/auth/admin/logout", { method: "POST", body: "{}" }); } catch {}
+            appState.admin = null;
+            appState.apiOnline = false;
+            renderAdminLogin("You have signed out.", false);
           }
+          else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
+          else if (action === "approval-confirm") await submitApprovalDecision();
+          else if (action === "kyc-requirement-new") openKycRequirementEditor();
+          else if (action === "kyc-requirement-edit") openKycRequirementEditor(node.dataset.requirementId);
+          else if (action === "kyc-requirement-save") await submitKycRequirement();
+          else if (action === "kyc-requirement-toggle") await toggleKycRequirement(node.dataset.requirementId, node.dataset.requirementActive === "true");
+          else if (action === "kyc-document-decision") openKycDocumentDecision(node.dataset);
+          else if (action === "kyc-document-confirm") await submitKycDocumentDecision();
+          else if (action === "record-decision") openRecordDecision(node.dataset);
+          else if (action === "record-confirm") await submitRecordDecision();
+          else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
+          else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
+          else if (action === "setting-save") await submitSetting(node.dataset.settingKey);
+          else if (action === "open-modal") openModal(node.dataset.modal || "task");
+          else if (action === "decision") {
+            const apiAction = node.dataset.apiAction || "unsupportedDecision";
+            const result = node.dataset.result || node.textContent.trim();
+            const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
+            try {
+              await executeBackendAction(apiAction);
+              node.classList.add("is-confirmed");
+              if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
+              addAudit("Now", appState.admin?.name || "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
+              toast(result + ". Backend action completed.");
+            } catch (error) {
+              node.classList.remove("is-confirmed");
+              if (stateNode) stateNode.innerHTML = badge("Not completed") + '<span>' + (error?.message || "Backend action failed") + "</span>";
+              toast(error?.message || "Backend action failed.");
+            }
+          }
+          else toast("This control is not available for the current record or role.");
+        } finally {
+          stopLoading();
         }
-        else toast("This control is not available for the current record or role.");
       });
     });
     document.querySelectorAll("[data-close-modal]").forEach((node) => {
@@ -1025,7 +1072,15 @@
     document.querySelectorAll("[data-submit-modal]").forEach((node) => {
       if (node.dataset.bound === "true") return;
       node.dataset.bound = "true";
-      node.addEventListener("click", () => submitModal(node.dataset.submitModal));
+      node.addEventListener("click", async () => {
+        if (node.dataset.loading === "true") return;
+        const stopLoading = setButtonLoading(node);
+        try {
+          await submitModal(node.dataset.submitModal);
+        } finally {
+          stopLoading();
+        }
+      });
     });
   }
 

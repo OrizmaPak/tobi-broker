@@ -2207,6 +2207,45 @@
     }
   }
 
+  function brokerActionHasLoading(action) {
+    return [
+      "toggle-password", "phone-country-toggle", "phone-country-select",
+      "goto-deposit", "goto-kyc", "goto-reports",
+      "deposit-card", "deposit-bank", "deposit-crypto",
+      "withdraw-bank", "withdraw-crypto", "subscribe-plan", "investment-action",
+      "order-create", "options-apply", "profile-edit", "password-change",
+      "notifications-toggle", "notification-open", "user-menu-toggle",
+      "goto-profile", "goto-settings", "support-create", "support-reply"
+    ].indexOf(action) === -1;
+  }
+
+  function setBrokerButtonLoading(node, text) {
+    if (!node || node.dataset.brokerBusy === "true") return function () {};
+    const originalHtml = node.innerHTML;
+    const originalDisabled = Boolean(node.disabled);
+    const originalMinWidth = node.style.minWidth || "";
+    const originalAriaDisabled = node.getAttribute("aria-disabled");
+    const width = node.getBoundingClientRect ? node.getBoundingClientRect().width : 0;
+    node.dataset.brokerBusy = "true";
+    node.classList.add("broker-action-loading");
+    node.setAttribute("aria-busy", "true");
+    node.setAttribute("aria-disabled", "true");
+    if (width) node.style.minWidth = Math.ceil(width) + "px";
+    if ("disabled" in node) node.disabled = true;
+    node.innerHTML = '<span class="broker-button-spinner" aria-hidden="true"></span><span class="broker-button-loading-text">' + (text || "Working...") + '</span>';
+    return function () {
+      if (!node || !node.isConnected) return;
+      node.innerHTML = originalHtml;
+      node.classList.remove("broker-action-loading");
+      node.removeAttribute("aria-busy");
+      if (originalAriaDisabled == null) node.removeAttribute("aria-disabled");
+      else node.setAttribute("aria-disabled", originalAriaDisabled);
+      node.style.minWidth = originalMinWidth;
+      if ("disabled" in node) node.disabled = originalDisabled;
+      delete node.dataset.brokerBusy;
+    };
+  }
+
   async function handleAction(action, node) {
     const state = getState();
     switch (action) {
@@ -2654,8 +2693,15 @@
     document.querySelectorAll("[data-broker-action]").forEach(function (node) {
       if (node.dataset.brokerBound === "true") return;
       node.dataset.brokerBound = "true";
-      node.addEventListener("click", function () {
-        handleAction(node.getAttribute("data-broker-action"), node);
+      node.addEventListener("click", async function () {
+        if (node.dataset.brokerBusy === "true") return;
+        const action = node.getAttribute("data-broker-action");
+        const stopLoading = brokerActionHasLoading(action) ? setBrokerButtonLoading(node) : function () {};
+        try {
+          await handleAction(action, node);
+        } finally {
+          stopLoading();
+        }
       });
     });
   }
@@ -2689,6 +2735,7 @@
       + " .broker-toast-default,.broker-toast-info{background:#0f172a}"
       + " .broker-toast-success{background:#15803d}"
       + " .broker-toast-warning{background:#b45309}"
+      + " .broker-action-loading{display:inline-flex!important;align-items:center;justify-content:center;gap:8px;pointer-events:none;white-space:nowrap}.broker-button-spinner{width:1em;height:1em;border:2px solid currentColor;border-right-color:transparent;border-radius:999px;flex:none;animation:broker-button-spin .72s linear infinite}.broker-button-loading-text{display:inline-flex;align-items:center}@keyframes broker-button-spin{to{transform:rotate(360deg)}}"
       + " .broker-notification-menu{position:absolute;z-index:130;width:min(380px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-notification-head{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-notification-head strong{display:block;font-size:15px;font-weight:850}.broker-notification-head span{display:block;margin-top:2px;color:#64748b;font-size:12px}.broker-notification-head a{color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;text-decoration:none}"
       + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"

@@ -1887,7 +1887,7 @@
         }
         const note = form.querySelector("[data-form-note]");
         const submit = form.querySelector('button[type="submit"]');
-        if (submit) submit.disabled = true;
+        const stopLoading = setStaticButtonLoading(submit, "Sending...");
         try {
           if (form.dataset.formType === "contact") {
             const fields = Object.fromEntries(new FormData(form).entries());
@@ -1904,10 +1904,33 @@
             note.classList.remove("static-hidden");
           }
         } finally {
-          if (submit) submit.disabled = false;
+          stopLoading();
         }
       });
     });
+  }
+
+  function setStaticButtonLoading(button, text) {
+    if (!button || button.dataset.loading === "true") return () => {};
+    const originalHtml = button.innerHTML;
+    const originalDisabled = Boolean(button.disabled);
+    const originalMinWidth = button.style.minWidth || "";
+    const width = button.getBoundingClientRect ? button.getBoundingClientRect().width : 0;
+    button.dataset.loading = "true";
+    button.classList.add("is-loading");
+    button.setAttribute("aria-busy", "true");
+    if (width) button.style.minWidth = `${Math.ceil(width)}px`;
+    button.disabled = true;
+    button.innerHTML = `<span class="static-button-spinner" aria-hidden="true"></span><span>${text || "Working..."}</span>`;
+    return () => {
+      if (!button || !button.isConnected) return;
+      button.innerHTML = originalHtml;
+      button.classList.remove("is-loading");
+      button.removeAttribute("aria-busy");
+      button.style.minWidth = originalMinWidth;
+      button.disabled = originalDisabled;
+      delete button.dataset.loading;
+    };
   }
 
   function bindContactVideo() {
