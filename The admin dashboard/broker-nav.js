@@ -1807,7 +1807,7 @@
     if (cur === "login.html" || cur === "register.html" || cur === "forgot-password.html") {
       clearBootScreen();
       const bodyRoot = document.body;
-      const wrapper = bodyRoot && bodyRoot.querySelector(".flex.min-h-screen.items-center.justify-center");
+      const wrapper = bodyRoot && (bodyRoot.querySelector(".bp-auth-page") || bodyRoot.querySelector(".flex.min-h-screen.items-center.justify-center"));
       if (!wrapper) return;
       wrapper.outerHTML = authLayout(cur === "login.html" ? "login" : (cur === "register.html" ? "register" : "forgot"));
       bindPhoneCountryPicker();
