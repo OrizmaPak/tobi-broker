@@ -1811,6 +1811,7 @@
       if (!wrapper) return;
       wrapper.outerHTML = authLayout(cur === "login.html" ? "login" : (cur === "register.html" ? "register" : "forgot"));
       bindPhoneCountryPicker();
+      bindActions();
       return;
     }
 
