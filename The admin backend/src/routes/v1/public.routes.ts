@@ -35,6 +35,7 @@ v1PublicRouter.get("/capabilities", asyncHandler(async (_req, res) => {
     cardFunding: false,
     bankFunding: true,
     cryptoFunding: true,
+    fileUpload: Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET) || Boolean(env.BLOB_READ_WRITE_TOKEN),
     internalOrderDesk: true,
     liveExchangeExecution: false,
     marketPriceMode: "admin-managed"

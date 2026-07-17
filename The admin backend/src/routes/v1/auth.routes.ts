@@ -57,6 +57,10 @@ function actorResponse(actor: { id: string; name: string; email: string; role?: 
   };
 }
 
+function clientMfaRequired() {
+  return !["false", "0", "no", "off"].includes(String(process.env.CLIENT_MFA_REQUIRED || "true").toLowerCase());
+}
+
 v1AuthRouter.post("/client/register", authLimiter, asyncHandler(async (req, res) => {
   const input = registerSchema.parse(req.body);
   if (!input.acceptedTerms) throw new ApiError(422, "Terms and risk disclosures must be accepted", "TERMS_REQUIRED");
@@ -128,7 +132,7 @@ v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) =>
     throw new ApiError(401, "Invalid credentials", "INVALID_CREDENTIALS");
   }
 
-  if (env.CLIENT_MFA_REQUIRED && !client.mfa?.enabledAt) {
+  if (clientMfaRequired() && !client.mfa?.enabledAt) {
     const secret = createMfaSecret();
     const recoveryCodes = Array.from({ length: 8 }, () => randomCode(10));
     await prisma.clientMfa.upsert({
@@ -146,7 +150,7 @@ v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) =>
     });
   }
 
-  if (env.CLIENT_MFA_REQUIRED && client.mfa?.enabledAt) {
+  if (clientMfaRequired() && client.mfa?.enabledAt) {
     if (!input.mfaCode) throw new ApiError(401, "MFA code is required", "MFA_REQUIRED");
     const secret = decryptSecret(client.mfa.secretEncrypted);
     const recoveryHashes = Array.isArray(client.mfa.recoveryCodeHashes) ? client.mfa.recoveryCodeHashes.map(String) : [];

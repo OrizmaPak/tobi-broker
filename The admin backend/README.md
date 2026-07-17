@@ -1,6 +1,6 @@
 # BullPort Backend
 
-Operational beta API for BullPort. The service uses Express, TypeScript, Prisma, Neon PostgreSQL, Vercel, Vercel Blob, and Resend.
+Operational beta API for BullPort. The service uses Express, TypeScript, Prisma, Neon PostgreSQL, Vercel, Cloudinary/Vercel Blob storage, and Resend.
 
 ## Applications
 
@@ -25,7 +25,7 @@ npm test
 npm run dev
 ```
 
-Run `npm run prisma:deploy` with a direct Neon connection during controlled migrations. Do not run `npm run seed` in production: seed accounts and credentials are restricted to development and test environments.
+Run `npm run prisma:deploy` with a direct Neon connection during controlled migrations. Automated test-data loaders are not included in the operational code path; create operational test records through the application workflows or controlled database migrations.
 
 ## Response Contract
 
@@ -49,7 +49,7 @@ Wallet balances are backed by immutable double-entry ledger transactions. Holds 
 - Card funding remains unavailable until a processor is configured.
 - Market prices are admin-managed snapshots with source and timestamp metadata.
 - Exchange execution is not represented as live; orders use the internal order desk.
-- Blob upload requires `BLOB_READ_WRITE_TOKEN`.
+- File upload uses Cloudinary when `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` are configured. Vercel Blob remains available as a fallback with `BLOB_READ_WRITE_TOKEN`.
 - Email delivery requires `RESEND_API_KEY`; queued in-app records remain authoritative while email is unavailable.
 
 ## Production Rollout

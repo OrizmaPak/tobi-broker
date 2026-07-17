@@ -23,12 +23,14 @@ const envSchema = z.object({
   ADMIN_URL: z.string().url().optional(),
   PUBLIC_SITE_URL: z.string().url().optional(),
   BLOB_READ_WRITE_TOKEN: z.string().optional(),
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default("BullPort <notifications@bullport.com>"),
   SUPPORT_EMAIL: z.string().email().default("support@bullport.com"),
   JOB_SECRET: z.string().min(16).optional(),
-  ADMIN_MFA_REQUIRED: booleanValue.default(true),
-  CLIENT_MFA_REQUIRED: booleanValue.default(true)
+  ADMIN_MFA_REQUIRED: booleanValue.default(true)
 });
 
 export const env = envSchema.parse(process.env);
