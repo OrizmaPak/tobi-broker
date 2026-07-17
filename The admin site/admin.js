@@ -905,8 +905,28 @@
 
   function renderMfaSetup() {
     const setup = appState.mfaSetup;
-    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card is-wide"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">MFA enrollment required</p></div></div><div class="auth-heading"><p class="eyebrow">One-time setup</p><h1>Protect this admin account</h1><p>Add the secret to a TOTP authenticator, store the recovery codes offline, then enter the current six-digit code.</p></div><div class="mfa-secret"><span>Authenticator secret</span><strong>' + setup.secret + '</strong></div><div class="recovery-grid">' + setup.recoveryCodes.map((code) => '<code>' + code + '</code>').join("") + '</div><form class="auth-form" data-mfa-confirm-form><label>Current six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button class="btn primary" type="submit">Enable MFA and continue</button></form></section></main>';
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card is-wide"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">MFA enrollment required</p></div></div><div class="auth-heading"><p class="eyebrow">One-time setup</p><h1>Protect this admin account</h1><p>Scan the barcode with Google Authenticator, Microsoft Authenticator, Authy or another TOTP app, store the recovery codes offline, then enter the current six-digit code.</p></div><div class="mfa-setup-grid"><div class="mfa-qr-card"><span>Scan with authenticator</span><canvas data-mfa-qr width="220" height="220" aria-label="Authenticator setup barcode"></canvas><p data-mfa-qr-fallback hidden>Barcode could not be generated. Use the manual secret instead.</p></div><div><div class="mfa-secret"><span>Manual setup secret</span><strong>' + escapeHtml(setup.secret) + '</strong></div><p class="mfa-help">Use this secret only if your authenticator cannot scan the barcode.</p></div></div><div class="recovery-grid">' + setup.recoveryCodes.map((code) => '<code>' + escapeHtml(code) + '</code>').join("") + '</div><form class="auth-form" data-mfa-confirm-form><label>Current six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button class="btn primary" type="submit">Enable MFA and continue</button></form></section></main>';
+    renderMfaQr();
     document.querySelector("[data-mfa-confirm-form]")?.addEventListener("submit", confirmMfaSetup);
+  }
+
+  function renderMfaQr() {
+    const canvas = document.querySelector("[data-mfa-qr]");
+    const fallback = document.querySelector("[data-mfa-qr-fallback]");
+    const otpauthUrl = appState.mfaSetup?.otpauthUrl;
+    if (!canvas || !otpauthUrl || !window.QRCode?.toCanvas) {
+      if (fallback) fallback.hidden = false;
+      return;
+    }
+    window.QRCode.toCanvas(canvas, otpauthUrl, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: { dark: "#101713", light: "#ffffff" }
+    }, function (error) {
+      if (!error) return;
+      if (fallback) fallback.hidden = false;
+    });
   }
 
   async function submitAdminLogin(event) {
