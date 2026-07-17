@@ -954,18 +954,26 @@
     const form = node && node.closest ? node.closest("form") : null;
     const emailNode = form ? form.querySelector('[name="email"]') : null;
     const passwordNode = form ? form.querySelector('[name="password"]') : null;
+    const confirmPasswordNode = form ? form.querySelector('[name="confirmPassword"]') : null;
     const countryNode = form ? form.querySelector('[name="country"]') : null;
     const nameNode = form ? form.querySelector('[name="name"]') : null;
+    const phoneNode = form ? form.querySelector('[name="phone"]') : null;
+    const acceptedTermsNode = form ? form.querySelector('[name="acceptedTerms"]') : null;
     const email = emailNode ? emailNode.value.trim() : "";
     const password = passwordNode ? passwordNode.value : "";
+    const confirmPassword = confirmPasswordNode ? confirmPasswordNode.value : "";
     const country = countryNode ? countryNode.value.trim() : "";
+    const phone = phoneNode ? phoneNode.value.trim() : "";
     const fallbackName = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, function (letter) {
       return letter.toUpperCase();
     });
     return {
       email: email,
       password: password,
+      confirmPassword: confirmPassword,
       country: country,
+      phone: phone,
+      acceptedTerms: acceptedTermsNode ? acceptedTermsNode.checked : false,
       name: nameNode && nameNode.value.trim() ? nameNode.value.trim() : fallbackName
     };
   }
@@ -1445,6 +1453,39 @@
       + section("Active sessions", "Review and revoke browser sessions connected to this account.", sessions.length ? table(["Browser", "IP address", "Last used", "Expires", "Action"], sessions.map(function (row) { return [row.userAgent || "Unknown browser", row.ipAddress || "Unknown", row.lastUsedAt ? formatDate(row.lastUsedAt) : "Not recorded", formatDate(row.expiresAt), '<button type="button" data-broker-action="session-revoke" data-broker-session-id="' + row.id + '" class="font-semibold text-primary">Revoke</button>']; })) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No active sessions were returned.</div>');
   }
 
+  const COUNTRY_NAMES = [
+    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
+    "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
+    "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Cote d'Ivoire", "Croatia", "Cuba", "Cyprus", "Czechia",
+    "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic",
+    "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia",
+    "Fiji", "Finland", "France",
+    "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana",
+    "Haiti", "Honduras", "Hungary",
+    "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy",
+    "Jamaica", "Japan", "Jordan",
+    "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan",
+    "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg",
+    "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar",
+    "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway",
+    "Oman",
+    "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+    "Qatar",
+    "Romania", "Russia", "Rwanda",
+    "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
+    "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu",
+    "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan",
+    "Vanuatu", "Vatican City", "Venezuela", "Vietnam",
+    "Yemen",
+    "Zambia", "Zimbabwe"
+  ];
+
+  function countryOptions() {
+    return COUNTRY_NAMES.map(function (country) {
+      return '<option value="' + country + '"></option>';
+    }).join("");
+  }
+
   function authLayout(kind) {
     const config = {
       login: {
@@ -1469,11 +1510,14 @@
     const action = kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset");
     const passwordAutocomplete = kind === "register" ? "new-password" : "current-password";
     const passwordPlaceholder = kind === "register" ? "At least 10 characters" : "Enter your password";
+    const passwordField = '<label class="bp-auth-field" for="auth-password"><span>Password</span><div class="bp-auth-password"><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-password" aria-label="Show password">Show</button></div></label>';
+    const confirmPasswordField = '<label class="bp-auth-field" for="auth-confirm-password"><span>Confirm password</span><div class="bp-auth-password"><input id="auth-confirm-password" name="confirmPassword" autocomplete="new-password" required placeholder="Repeat your password" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-confirm-password" aria-label="Show confirm password">Show</button></div></label>';
     const authFields = ''
       + (kind === "register" ? '<label class="bp-auth-field" for="auth-name"><span>Full name</span><input id="auth-name" name="name" autocomplete="name" required placeholder="Your full name"></label>' : "")
+      + (kind === "register" ? '<label class="bp-auth-field" for="auth-phone"><span>Phone number</span><input id="auth-phone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+234 800 000 0000"></label>' : "")
       + '<label class="bp-auth-field" for="auth-email"><span>Email address</span><input id="auth-email" name="email" autocomplete="email" type="email" required placeholder="name@example.com"></label>'
-      + (kind === "forgot" ? "" : '<label class="bp-auth-field" for="auth-password"><span>Password</span><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"></label>')
-      + (kind === "register" ? '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" autocomplete="country-name" required value="Nigeria"></label>' : "");
+      + (kind === "forgot" ? "" : passwordField)
+      + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="Nigeria" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">terms and conditions</a>.</span></label>' : "");
     const trustStrip = kind === "login"
       ? '<div class="bp-auth-checkline"><span></span><p>Protected by secure session cookies, CSRF controls and rotating refresh sessions.</p></div>'
       : '<div class="bp-auth-checkline"><span></span><p>Account access unlocks KYC, wallet funding, managed portfolios and reporting.</p></div>';
@@ -1921,6 +1965,17 @@
   async function handleAction(action, node) {
     const state = getState();
     switch (action) {
+      case "toggle-password": {
+        const targetId = node ? node.getAttribute("data-password-target") : "";
+        const input = targetId ? document.getElementById(targetId) : null;
+        if (input) {
+          const visible = input.getAttribute("type") === "text";
+          input.setAttribute("type", visible ? "password" : "text");
+          node.textContent = visible ? "Show" : "Hide";
+          node.setAttribute("aria-label", visible ? "Show password" : "Hide password");
+        }
+        return;
+      }
       case "api-retry":
         appState.apiLoaded = false;
         appState.apiMessage = "Retrying secure account connection";
@@ -1958,15 +2013,19 @@
       case "auth-register":
         try {
           const form = authFormValues(node);
-          if (!form.name || !form.email || !form.password || !form.country) throw new Error("Complete every required registration field.");
+          if (!form.name || !form.email || !form.phone || !form.password || !form.confirmPassword || !form.country) throw new Error("Complete every required registration field.");
+          if (form.password !== form.confirmPassword) throw new Error("Passwords do not match.");
+          if (COUNTRY_NAMES.indexOf(form.country) === -1) throw new Error("Select a valid country of residence from the list.");
+          if (!form.acceptedTerms) throw new Error("Accept the terms and conditions before creating an account.");
           await apiRequest("/api/v1/auth/client/register", {
             method: "POST",
             body: JSON.stringify({
               name: form.name,
               email: form.email,
               password: form.password,
+              phone: form.phone,
               country: form.country,
-              acceptedTerms: true
+              acceptedTerms: form.acceptedTerms
             })
           }, true);
           markClientTabSession();
@@ -2334,6 +2393,8 @@
       + " .bp-auth-card:before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,#19b72f,#86efac,#101713)}.bp-auth-card-brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:34px}.bp-auth-card-brand p{margin:0;color:#647164;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card-head span{display:inline-flex;margin-bottom:10px;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}.bp-auth-card-head h2{margin:0;color:#101713;font-size:30px;line-height:1.08;font-weight:850;letter-spacing:0}.bp-auth-card-head p{margin:12px 0 0;color:#647164;font-size:14px;line-height:1.6}"
       + " .bp-auth-form{display:grid;gap:15px;margin-top:28px}.bp-auth-field{display:grid;gap:8px;color:#253127;font-size:13px;font-weight:800}.bp-auth-field span{display:flex;align-items:center;justify-content:space-between}.bp-auth-field input{width:100%;height:52px;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;color:#101713;padding:0 15px;font:inherit;font-weight:650;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-field input:focus{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}"
+      + " .bp-auth-password{position:relative;display:flex;align-items:center}.bp-auth-password input{padding-right:72px}.bp-auth-password button{position:absolute;right:8px;height:36px;border:0;border-radius:10px;background:#e8f5ea;color:#128225;padding:0 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-auth-password button:hover{background:#d8f0dc}"
+      + " .bp-auth-terms{display:flex;align-items:flex-start;gap:10px;border:1px solid #dbe7dd;border-radius:16px;background:#f8fbf8;padding:12px 13px;color:#536055;font-size:13px;line-height:1.5}.bp-auth-terms input{margin-top:3px;accent-color:#19b72f}.bp-auth-terms a{color:#128225;font-weight:800;text-decoration:none}.bp-auth-terms a:hover{text-decoration:underline}"
       + " .bp-auth-submit{height:56px;border:0;border-radius:14px;background:#19b72f;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 18px 34px rgba(25,183,47,.28);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-submit:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 22px 38px rgba(25,183,47,.32)}.bp-auth-submit span{display:inline-flex;height:24px;width:24px;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:16px;line-height:1}"
       + " .bp-auth-checkline{display:flex;gap:12px;margin-top:18px;border:1px solid #dbe7dd;border-radius:16px;background:#f3faf4;padding:13px 14px;color:#536055;font-size:13px;line-height:1.55}.bp-auth-checkline span{margin-top:5px;height:9px;width:9px;flex:0 0 auto;border-radius:999px;background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.bp-auth-checkline p{margin:0}"
       + " .bp-auth-foot{margin-top:20px;border-top:1px solid #e3ebe4;padding-top:18px;color:#647164;font-size:14px}.bp-auth-foot a{color:#128225;text-decoration:none}.bp-auth-foot a:hover{text-decoration:underline}"
