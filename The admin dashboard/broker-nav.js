@@ -502,6 +502,7 @@
   }
 
   function labelize(value) {
+    if (String(value || "").toUpperCase() === "DRAFT") return "Not Submitted";
     return String(value || "")
       .toLowerCase()
       .split(/[_\s-]+/)

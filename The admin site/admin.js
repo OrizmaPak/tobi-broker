@@ -167,6 +167,7 @@
   }
 
   function label(value) {
+    if (String(value || "").toUpperCase() === "DRAFT") return "Not submitted";
     return String(value || "").toLowerCase().split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
   }
 
@@ -269,7 +270,7 @@
     data.tasks = [];
     const [clients, kyc, kycRequirements, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
-      tryApi("/api/v1/admin/kyc?limit=100"),
+      tryApi("/api/v1/admin/kyc?status=reviewable&limit=100"),
       tryApi("/api/v1/admin/kyc/requirements"),
       tryApi("/api/v1/admin/money/deposits?limit=100"),
       tryApi("/api/v1/admin/money/withdrawals?limit=100"),

@@ -113,7 +113,7 @@ v1AdminOperationsRouter.post("/notifications", requireAdminRoles("SUPER_ADMIN", 
     if (!input.clientId) throw new ApiError(422, "Client is required for a single-recipient notification", "CLIENT_REQUIRED");
     clients = await prisma.client.findMany({ where: { id: input.clientId } });
   } else if (input.audience === "PENDING_KYC") {
-    clients = await prisma.client.findMany({ where: { kycCases: { some: { status: { in: ["DRAFT", "SUBMITTED", "IN_REVIEW", "RESUBMISSION_REQUIRED"] } } } } });
+    clients = await prisma.client.findMany({ where: { kycCases: { some: { status: { in: ["SUBMITTED", "IN_REVIEW", "RESUBMISSION_REQUIRED"] } } } } });
   } else if (input.audience === "ACTIVE_INVESTORS") {
     clients = await prisma.client.findMany({ where: { investments: { some: { status: "ACTIVE" } } } });
   } else {
