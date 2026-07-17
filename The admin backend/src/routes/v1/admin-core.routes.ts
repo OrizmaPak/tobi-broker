@@ -164,11 +164,13 @@ v1AdminCoreRouter.post("/clients/:id/notes", operationalRoles, asyncHandler(asyn
 v1AdminCoreRouter.get("/kyc", complianceRoles, asyncHandler(async (req, res) => {
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  const where: Prisma.KycCaseWhereInput = status === "all"
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
+  const statusWhere: Prisma.KycCaseWhereInput = status === "all"
     ? {}
     : status === "reviewable" || !status
       ? { status: { in: ["SUBMITTED", "PENDING", "IN_REVIEW", "RESUBMISSION_REQUIRED"] } }
       : { status: status as never };
+  const where: Prisma.KycCaseWhereInput = { ...statusWhere, ...(clientId ? { clientId } : {}) };
   const [rows, total, requirements] = await Promise.all([
     prisma.kycCase.findMany({ where, include: { client: true, documents: { include: { requirement: true }, orderBy: { uploadedAt: "desc" } }, checks: true, decisions: { orderBy: { createdAt: "desc" } } }, orderBy: { updatedAt: "asc" }, skip, take: limit }),
     prisma.kycCase.count({ where }),

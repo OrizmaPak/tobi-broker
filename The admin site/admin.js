@@ -240,7 +240,10 @@
   }
 
   async function loadBackendData() {
-    const requestedRecordId = new URLSearchParams(location.search).get("id");
+    const params = new URLSearchParams(location.search);
+    const requestedRecordId = params.get("id");
+    const requestedClientId = params.get("clientId");
+    const isKycReviewPage = currentFile() === "kyc-review.html";
     const overview = await tryApi("/api/v1/admin/overview");
     if (!overview) {
       appState.apiOnline = false;
@@ -268,9 +271,12 @@
     data.adminUsers = [];
     data.settingsRows = [];
     data.tasks = [];
+    const kycPath = isKycReviewPage
+      ? "/api/v1/admin/kyc?status=all&limit=100" + (requestedClientId ? "&clientId=" + encodeURIComponent(requestedClientId) : "")
+      : "/api/v1/admin/kyc?status=reviewable&limit=100";
     const [clients, kyc, kycRequirements, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
-      tryApi("/api/v1/admin/kyc?status=reviewable&limit=100"),
+      tryApi(kycPath),
       tryApi("/api/v1/admin/kyc/requirements"),
       tryApi("/api/v1/admin/money/deposits?limit=100"),
       tryApi("/api/v1/admin/money/withdrawals?limit=100"),
@@ -314,13 +320,17 @@
           ? client.investments.reduce((sum, item) => sum + Number(item.currentValue || 0), 0)
           : Number(client.wallet?.balance || 0);
         const kycStatus = Array.isArray(client.kycCases) && client.kycCases[0] ? label(client.kycCases[0].status) : "Not started";
-        return [client.accountNumber, client.name, client.tier, formatMoney(investmentValue), kycStatus, label(client.riskLevel), label(client.status), client.id];
+        const latestKycId = Array.isArray(client.kycCases) && client.kycCases[0] ? client.kycCases[0].id : "";
+        return [client.accountNumber, client.name, client.tier, formatMoney(investmentValue), kycStatus, label(client.riskLevel), label(client.status), client.id, latestKycId];
       });
 
-      const profileClient = clients.find((client) => client.id === requestedRecordId) || clients[0];
+      const profileClient = clients.find((client) => client.id === requestedRecordId || client.id === requestedClientId) || clients[0];
       if (profileClient) {
         liveRefs.clientId = profileClient.id;
+        const latestKycCase = Array.isArray(profileClient.kycCases) && profileClient.kycCases[0] ? profileClient.kycCases[0] : null;
         data.clientProfile = {
+          id: profileClient.id,
+          kycCaseId: latestKycCase?.id || "",
           account: profileClient.accountNumber,
           name: profileClient.name,
           email: profileClient.email,
@@ -340,8 +350,8 @@
     }
 
     if (Array.isArray(kyc)) {
-      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", (row.summary?.uploadedDocuments || 0) + "/" + (row.summary?.requiredDocuments || 0) + " required files", row.assignedReviewer || "Unassigned", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status), row.id]);
-      const first = kyc.find((row) => row.id === requestedRecordId) || kyc[0];
+      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", (row.summary?.uploadedDocuments || 0) + "/" + (row.summary?.requiredDocuments || 0) + " required files", row.assignedReviewer || "Unassigned", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status), row.id, row.clientId]);
+      const first = kyc.find((row) => row.id === requestedRecordId || row.clientId === requestedClientId) || (isKycReviewPage ? null : kyc[0]);
       if (first) {
         liveRefs.kycReviewId = first.id;
         data.kycReview = {
@@ -579,6 +589,13 @@
     ]);
   }
 
+  function kycCaseSelector(selectedId) {
+    if (!data.kyc.length) {
+      return '<div class="empty-state" style="display:block">No KYC cases are available for this view.</div>';
+    }
+    return '<div class="filter-bar" style="margin-bottom:14px"><label class="filter-search"><span>Select KYC case</span><select data-kyc-case-select>' + data.kyc.map((row) => '<option value="' + row[6] + '" ' + (row[6] === selectedId ? "selected" : "") + '>' + row[1] + ' - ' + row[0] + ' - ' + row[5] + '</option>').join("") + '</select></label><button class="btn primary" type="button" data-action="kyc-case-open">Load case context</button></div>';
+  }
+
   function details(rows) {
     return '<div class="detail-grid">' + rows.map((row) => '<div class="detail"><span>' + row[0] + '</span><strong>' + row[1] + "</strong></div>").join("") + "</div>";
   }
@@ -744,6 +761,7 @@
 
   function clientDetailPage() {
     const c = data.clientProfile;
+    const kycHref = c.kycCaseId ? "kyc-review.html?id=" + encodeURIComponent(c.kycCaseId) : "kyc-review.html?clientId=" + encodeURIComponent(c.id || liveRefs.clientId || "");
     return '<div class="grid metrics">' + [
       metric("Wallet balance", c.wallet, "Available operating balance.", "Active"),
       metric("Portfolio value", c.portfolioValue, "Current recorded portfolio value.", "Active"),
@@ -751,7 +769,7 @@
       metric("Risk profile", c.risk, "Used for suitability and product access.", "Info")
     ].join("") + "</div>" +
       '<div class="grid two">' +
-      section("Client operating profile", "Identity, tier, account status, and active restrictions.", details([["Account", c.account], ["Client", c.name], ["Email", c.email], ["Phone", c.phone], ["Tier", c.tier], ["Status", badge(c.status)]]) + '<div class="restriction-list">' + c.restrictions.map((r) => '<div class="restriction">' + r + "</div>").join("") + "</div>", '<div class="action-row">' + linkButton("Review KYC", "kyc-review.html", "primary") + linkButton("Open withdrawal", "withdrawal-review.html") + "</div>") +
+      section("Client operating profile", "Identity, tier, account status, and active restrictions.", details([["Account", c.account], ["Client", c.name], ["Email", c.email], ["Phone", c.phone], ["Tier", c.tier], ["Status", badge(c.status)]]) + '<div class="restriction-list">' + c.restrictions.map((r) => '<div class="restriction">' + r + "</div>").join("") + "</div>", '<div class="action-row">' + linkButton("Review KYC", kycHref, "primary") + linkButton("Open withdrawal", "withdrawal-review.html") + "</div>") +
       section("Recent client notes", "Internal audit notes and operational context.", noteList(c.notes), modalButton("Add note", "client-note", "primary")) +
       "</div>" +
       section("Client-linked activity", "A single place to move from the client profile into money movement, investments, and support.", table(["Area", "Reference", "Summary", "Status", "Action"], [
@@ -764,6 +782,10 @@
 
   function kycReviewPage() {
     const r = data.kycReview;
+    const selector = kycCaseSelector(r.id || "");
+    if (!r.id) {
+      return section("Case context", "Choose a client KYC case to load its documents, checks, and decision controls.", selector + details([["Current selection", "No KYC case selected"], ["Next step", "Select a user from the dropdown and load case context."]]));
+    }
     const statusIndex = /approved|rejected/i.test(r.status) ? 3 : /in review/i.test(r.status) ? 2 : /submitted|pending/i.test(r.status) ? 1 : 0;
     const documentsById = new Map((r.documents || []).map((document) => [document.id, document]));
     const documentRows = (r.checklist || []).flatMap((requirement) => (requirement.uploads || []).map((upload) => {
@@ -786,7 +808,7 @@
       '</div>' +
       section("Uploaded document review", "Open each private file, then accept it or deny it with a clear reason.", table(["Requirement", "Side", "File", "Uploaded", "Review", "Action"], documentRows)) +
       '<div class="grid two">' +
-      section("Case context", "Review client identity, case ownership, restrictions, and current operational state.", details([["Account", r.account], ["Client", r.client], ["Document progress", r.requirement], ["Submitted", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
+      section("Case context", "Review client identity, case ownership, restrictions, and current operational state.", selector + details([["Account", r.account], ["Client", r.client], ["Document progress", r.requirement], ["Submitted", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
       kycDecisionPanel(r) +
       "</div>";
   }
@@ -1050,6 +1072,7 @@
           else if (action === "kyc-requirement-edit") openKycRequirementEditor(node.dataset.requirementId);
           else if (action === "kyc-requirement-save") await submitKycRequirement();
           else if (action === "kyc-requirement-toggle") await toggleKycRequirement(node.dataset.requirementId, node.dataset.requirementActive === "true");
+          else if (action === "kyc-case-open") openSelectedKycCase();
           else if (action === "kyc-document-decision") openKycDocumentDecision(node.dataset);
           else if (action === "kyc-document-confirm") await submitKycDocumentDecision();
           else if (action === "record-decision") openRecordDecision(node.dataset);
@@ -1217,6 +1240,13 @@
       render();
       toast(id ? "KYC requirement updated." : "KYC requirement created.");
     } catch (error) { toast(error?.message || "The KYC requirement could not be saved."); }
+  }
+
+  function openSelectedKycCase() {
+    const select = document.querySelector("[data-kyc-case-select]");
+    const id = select?.value || "";
+    if (!id) { toast("Select a KYC case first."); return; }
+    location.href = "kyc-review.html?id=" + encodeURIComponent(id);
   }
 
   async function toggleKycRequirement(id, isActive) {
