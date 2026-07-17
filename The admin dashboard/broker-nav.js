@@ -1608,7 +1608,7 @@
       + (kind === "register" ? phoneField : "")
       + '<label class="bp-auth-field" for="auth-email"><span>Email address</span><input id="auth-email" name="email" autocomplete="email" type="email" required placeholder="name@example.com"></label>'
       + (kind === "forgot" ? "" : passwordField)
-      + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="United Kingdom" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">terms and conditions</a>.</span></label>' : "");
+      + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="United Kingdom" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I have read and agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. I understand the Client Portal is currently a demo/static environment unless BullPort expressly states otherwise.</span></label>' : "");
     const trustStrip = kind === "login"
       ? '<div class="bp-auth-checkline"><span></span><p>Protected by secure session cookies, CSRF controls and rotating refresh sessions.</p></div>'
       : '<div class="bp-auth-checkline"><span></span><p>Account access unlocks KYC, wallet funding, managed portfolios and reporting.</p></div>';
@@ -2211,7 +2211,7 @@
           if (!form.confirmPassword) throw Object.assign(new Error("Confirm your password."), { fieldName: "confirmPassword" });
           if (form.password !== form.confirmPassword) throw Object.assign(new Error("Passwords do not match."), { fieldName: "confirmPassword" });
           if (!form.country || COUNTRY_NAMES.indexOf(form.country) === -1) throw Object.assign(new Error("Select a valid country of residence from the list."), { fieldName: "country" });
-          if (!form.acceptedTerms) throw Object.assign(new Error("Accept the terms and conditions before creating an account."), { fieldName: "acceptedTerms" });
+          if (!form.acceptedTerms) throw Object.assign(new Error("Accept the Terms & Conditions and Privacy Policy before creating an account."), { fieldName: "acceptedTerms" });
           await apiRequest("/api/v1/auth/client/register", {
             method: "POST",
             body: JSON.stringify({
