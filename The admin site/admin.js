@@ -35,65 +35,18 @@
     ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
   ];
 
+  const emptyDetailMessage = "No backend record selected.";
+
   const data = {
-    metrics: [
-      ["Pending KYC", "18", "+4 today", "warning"],
-      ["Deposits to Confirm", "$42,800", "11 open requests", "success"],
-      ["Withdrawals in Review", "$19,600", "6 requests", "danger"],
-      ["Open Support Tickets", "27", "5 high priority", "info"]
-    ],
-    queues: [
-      { title: "Proof of address review", owner: "Compliance", client: "Tobi Adeyemi", age: "24 min", state: "Review" },
-      { title: "Bank transfer confirmation", owner: "Finance", client: "Amara Okafor", age: "42 min", state: "Pending" },
-      { title: "Withdrawal enhanced review", owner: "Finance", client: "Nosa Bello", age: "1 hr", state: "Hold" },
-      { title: "Options suitability questionnaire", owner: "Compliance", client: "Ife Martins", age: "3 hr", state: "Restricted" },
-      { title: "Premium Managed top-up request", owner: "Portfolio Desk", client: "Musa Danladi", age: "4 hr", state: "Open" }
-    ],
-    clients: [
-      ["BP-447215", "Tobi Adeyemi", "Premium Managed", "$164,380", "Under final review", "Balanced", "Active"],
-      ["BP-447216", "Amara Okafor", "Balanced Growth", "$82,900", "Approved", "Moderate", "Active"],
-      ["BP-447217", "Nosa Bello", "Dividend Income", "$48,120", "Approved", "Conservative", "Withdrawal hold"],
-      ["BP-447218", "Ife Martins", "Equity Growth", "$96,400", "Approved", "High", "Options restricted"],
-      ["BP-447219", "Musa Danladi", "Premium Managed", "$248,700", "Approved", "Custom", "Active"]
-    ],
-    kyc: [
-      ["BP-447215", "Tobi Adeyemi", "Proof of address", "Compliance", "24 min", "Review"],
-      ["BP-447220", "Chika Eze", "Bank confirmation", "Finance", "51 min", "Pending"],
-      ["BP-447221", "Ada Hassan", "Liveness check", "Compliance", "2 hr", "Escalated"],
-      ["BP-447222", "Femi Cole", "Government ID", "Compliance", "5 hr", "Rejected draft"]
-    ],
-    deposits: [
-      ["DEP-9012", "Amara Okafor", "Bank transfer", "$7,500", "Zenith Bank", "Pending"],
-      ["DEP-9013", "Tobi Adeyemi", "Crypto USDT", "$3,500", "TRC20", "Compliance review"],
-      ["DEP-9014", "Musa Danladi", "Bank transfer", "$25,000", "GTBank", "Confirmed"],
-      ["DEP-9015", "Ada Hassan", "Bank transfer", "$2,000", "UBA", "Reference mismatch"]
-    ],
-    withdrawals: [
-      ["WDR-3381", "Nosa Bello", "$2,400", "Verified bank", "KYC approved", "Under review"],
-      ["WDR-3382", "Ife Martins", "$5,000", "Crypto wallet", "Enhanced review", "Hold"],
-      ["WDR-3383", "Musa Danladi", "$12,200", "Verified bank", "Approved", "Ready"],
-      ["WDR-3384", "Tobi Adeyemi", "$1,200", "Verified bank", "Address pending", "Blocked"]
-    ],
-    products: [
-      ["Conservative Income", "Low", "$1,000", "Monthly", "Published"],
-      ["Balanced Growth", "Moderate", "$2,500", "Quarterly", "Published"],
-      ["Commodity Opportunity", "Moderate / High", "$5,000", "Quarterly", "Review"],
-      ["Dividend Income", "Moderate", "$3,500", "Monthly / quarterly", "Published"],
-      ["Equity Growth", "High", "$4,000", "Optional", "Published"],
-      ["Premium Managed", "Custom", "$25,000", "Custom", "Published"]
-    ],
-    investments: [
-      ["Tobi Adeyemi", "Balanced Growth", "$42,000", "$47,180", "Top-up requested", "Active"],
-      ["Nosa Bello", "Dividend Income", "$31,000", "$33,810", "Income paid", "Active"],
-      ["Musa Danladi", "Premium Managed", "$180,000", "$196,440", "Desk review", "Active"],
-      ["Ife Martins", "Equity Growth", "$18,000", "$20,160", "Risk alert", "Review"]
-    ],
-    payouts: [
-      ["PAY-881", "Dividend Income Portfolio", "$620", "Wallet credit", "25 Jun 2026", "Posted"],
-      ["PAY-882", "Commodity Opportunity", "$810", "Reinvested", "18 Jun 2026", "Posted"],
-      ["PAY-883", "Balanced Growth", "$740", "Pending selection", "12 Jul 2026", "Scheduled"],
-      ["PAY-884", "Conservative Income", "$210", "Wallet credit", "02 Jul 2026", "Ready"]
-    ],
+    metrics: [],
+    queues: [],
+    clients: [],
+    kyc: [],
+    deposits: [],
+    withdrawals: [],
+    products: [],
+    investments: [],
+    payouts: [],
     approvals: [],
     orders: [],
     positions: [],
@@ -103,103 +56,74 @@
     adminUsers: [],
     settingsRows: [],
     tasks: [],
-    instruments: [
-      ["AAPL", "Apple Inc.", "Stock", "NASDAQ", "Moderate", "Tradable"],
-      ["GLD", "SPDR Gold Shares", "Commodity ETF", "NYSE Arca", "Moderate", "Tradable"],
-      ["US5Y", "US Treasury 5 Year", "Bond", "OTC", "Low", "Investable"],
-      ["XOM C115", "Exxon Jul Call 115", "Option", "OPRA", "High", "Restricted"],
-      ["NGX30", "NGX 30 Index Tracker", "Index Fund", "NGX", "Moderate", "Active"]
-    ],
-    reports: [
-      ["June 2026 Account Statement", "Statement", "PDF", "Monthly", "Ready"],
-      ["Wallet Activity Export", "Transaction export", "CSV", "Last 90 days", "Ready"],
-      ["Admin Audit Log", "Audit", "CSV", "Today", "Ready"],
-      ["Payout Posting Summary", "Operations", "PDF", "Q2 2026", "Draft"]
-    ],
-    tickets: [
-      ["#BP-1208", "Withdrawal timing clarification", "Nosa Bello", "Finance", "Awaiting broker response"],
-      ["#BP-1191", "Options access questionnaire", "Ife Martins", "Compliance", "Resolved"],
-      ["#BP-1188", "Deposit reference mismatch", "Ada Hassan", "Finance", "Open"],
-      ["#BP-1174", "Bank account verification", "Chika Eze", "Support", "Resolved"]
-    ],
-    audit: [
-      ["10:42 AM", "Finance", "Confirmed deposit DEP-9014", "Musa Danladi"],
-      ["10:18 AM", "Compliance", "Requested address resubmission", "Tobi Adeyemi"],
-      ["09:54 AM", "Portfolio Desk", "Updated Commodity Opportunity notes", "Portfolio Products"],
-      ["09:15 AM", "Support", "Assigned ticket #BP-1208", "Nosa Bello"]
-    ],
+    instruments: [],
+    reports: [],
+    tickets: [],
+    audit: [],
     clientProfile: {
-      account: "BP-447215",
-      name: "Tobi Adeyemi",
-      email: "tobi.adeyemi@example.com",
-      phone: "+234 801 000 4472",
-      tier: "Premium Managed",
-      wallet: "$18,420",
-      portfolioValue: "$164,380",
-      kyc: "Under final review",
-      risk: "Balanced",
-      status: "Active",
-      restrictions: ["Withdrawals limited until proof of address is approved", "Large crypto funding requires compliance review"],
-      notes: [
-        ["Compliance", "Proof of address uploaded and awaiting date confirmation."],
-        ["Portfolio Desk", "Client requested Premium Managed allocation review."],
-        ["Finance", "Recent USDT deposit held for source-of-funds check."]
-      ]
+      account: "-",
+      name: emptyDetailMessage,
+      email: "-",
+      phone: "-",
+      tier: "-",
+      wallet: "$0",
+      portfolioValue: "$0",
+      kyc: "Not loaded",
+      risk: "-",
+      status: "No record",
+      restrictions: ["Connect to the operational API and select a backend client record."],
+      notes: [["System", "No backend notes loaded."]]
     },
     kycReview: {
-      account: "BP-447215",
-      client: "Tobi Adeyemi",
-      requirement: "Proof of address",
-      document: "Utility bill - June 2026",
-      uploaded: "08 Jul 2026, 10:14 AM",
-      checks: [["Name match", "Passed"], ["Address match", "Passed"], ["Document date", "Needs review"], ["Fraud screen", "Clear"]],
-      blocked: "Withdrawals and large crypto funding",
-      recommendation: "Request staff confirmation of document date before final approval."
+      account: "-",
+      client: emptyDetailMessage,
+      requirement: "-",
+      document: "-",
+      uploaded: "-",
+      status: "No record",
+      checks: [["Status", "No backend KYC record loaded"]],
+      blocked: "-",
+      recommendation: "Select a live KYC case from the backend queue."
     },
     depositReview: {
-      reference: "DEP-9013",
-      client: "Tobi Adeyemi",
-      method: "Crypto USDT",
-      rail: "TRC20",
-      amount: "$3,500",
-      received: "3,500 USDT",
-      source: "External wallet ending 8F41",
-      status: "Compliance review",
-      checks: [["Wallet screening", "Clear"], ["Network confirmations", "42 confirmations"], ["Source of funds", "Needs note"], ["Client KYC", "Address pending"]]
+      reference: "-",
+      client: emptyDetailMessage,
+      method: "-",
+      rail: "-",
+      amount: "$0",
+      received: "-",
+      source: "-",
+      status: "No record",
+      checks: [["Status", "No backend deposit loaded"]]
     },
     withdrawalReview: {
-      reference: "WDR-3381",
-      client: "Nosa Bello",
-      amount: "$2,400",
-      destination: "Verified bank account",
-      available: "$7,920",
-      kyc: "Approved",
-      status: "Under review",
-      checks: [["Available balance", "Passed"], ["Bank destination", "Verified"], ["Recent deposit hold", "Clear"], ["Risk pattern", "Normal"]]
+      reference: "-",
+      client: emptyDetailMessage,
+      amount: "$0",
+      destination: "-",
+      available: "-",
+      kyc: "-",
+      status: "No record",
+      checks: [["Status", "No backend withdrawal loaded"]]
     },
     productDetail: {
-      name: "Premium Managed",
-      risk: "Custom",
-      minimum: "$25,000",
-      payout: "Custom",
-      visibility: "Published",
-      audience: "High-value clients with completed suitability checks",
-      rules: [["Projected return label", "Required"], ["Manager review", "Required before subscription"], ["Options exposure", "Disabled by default"], ["Client dashboard visibility", "Published"]]
+      name: emptyDetailMessage,
+      risk: "-",
+      minimum: "$0",
+      payout: "-",
+      visibility: "No record",
+      audience: "Select a live portfolio product from the backend catalog.",
+      rules: [["Status", "No backend product loaded"]]
     },
     supportDetail: {
-      ticket: "#BP-1208",
-      client: "Nosa Bello",
-      subject: "Withdrawal timing clarification",
-      owner: "Finance",
-      status: "Awaiting broker response",
-      timeline: [
-        ["Client", "Asked when withdrawal WDR-3381 will be settled."],
-        ["Support", "Confirmed the request is in finance review."],
-        ["Finance", "Needs final destination confirmation before release."]
-      ]
+      ticket: "-",
+      client: emptyDetailMessage,
+      subject: "-",
+      owner: "-",
+      status: "No record",
+      timeline: [["System", "No backend support ticket loaded."]]
     }
   };
-
   const appState = {
     audit: data.audit.slice(),
     decisions: {},
@@ -420,6 +344,7 @@
           requirement: first.level + " identity verification",
           document: first.documents?.[0]?.fileName || "Document pending",
           uploaded: first.submittedAt ? new Date(first.submittedAt).toLocaleString() : "-",
+          status: label(first.status),
           blocked: "Withdrawals and large funding until approved",
           recommendation: first.decisions?.[0]?.note || "Review document details before final decision.",
           checks: [["Current status", label(first.status)], ["Reviewer", first.assignedReviewer || "Unassigned"], ["Client risk", label(first.client?.riskLevel)], ["Account status", label(first.client?.status)]]
@@ -703,7 +628,7 @@
   function kycPage() {
     return '<div class="grid two">' +
       section("KYC decision queue", "Document reviews awaiting compliance action.", filterableTable("Search account, client, requirement...", ["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html?id=" + encodeURIComponent(row[6]))])), modalButton("Approve selected", "bulk-kyc", "primary")) +
-      section("Review detail sample", "The detail panel the admin will use before approving or rejecting verification.", details([["Client", "Tobi Adeyemi"], ["Requirement", "Proof of address"], ["Uploaded", "Utility bill - June 2026"], ["Decision", "Review before approval"], ["Blocked actions", "Withdrawals and large crypto funding"], ["Audit note", "Address matches bank city but needs date confirmation"]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html", "primary") + modalButton("Request resubmission", "bulk-kyc") + "</div>") +
+      section("Review detail workspace", "The detail panel admins use before approving or rejecting backend verification records.", details([["Client", data.kycReview.client], ["Requirement", data.kycReview.requirement], ["Uploaded", data.kycReview.uploaded], ["Decision", data.kycReview.status || "No record"], ["Blocked actions", data.kycReview.blocked], ["Audit note", data.kycReview.recommendation]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html", "primary") + modalButton("Request resubmission", "bulk-kyc") + "</div>") +
       "</div>";
   }
 
