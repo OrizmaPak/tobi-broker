@@ -712,10 +712,10 @@
       section("Recent client notes", "Internal audit notes and operational context.", noteList(c.notes), modalButton("Add note", "client-note", "primary")) +
       "</div>" +
       section("Client-linked activity", "A single place to move from the client profile into money movement, investments, and support.", table(["Area", "Reference", "Summary", "Status", "Action"], [
-        ["Deposit", "DEP-9013", "USDT funding under compliance review", badge("Compliance review"), linkButton("Open", "deposit-review.html")],
-        ["Withdrawal", "WDR-3384", "Withdrawal blocked by address review", badge("Blocked"), linkButton("Open", "withdrawal-review.html")],
-        ["Portfolio", "Premium Managed", "Allocation review requested", badge("Review"), linkButton("Open", "portfolio-product-detail.html")],
-        ["Support", "#BP-1208", "Withdrawal timing clarification", badge("Awaiting broker response"), linkButton("Open", "support-ticket-detail.html")]
+        ["Deposit", data.depositReview.reference, data.depositReview.status, badge(data.depositReview.status), linkButton("Open", "deposit-review.html")],
+        ["Withdrawal", data.withdrawalReview.reference, data.withdrawalReview.status, badge(data.withdrawalReview.status), linkButton("Open", "withdrawal-review.html")],
+        ["Portfolio", data.productDetail.name, data.productDetail.visibility, badge(data.productDetail.visibility), linkButton("Open", "portfolio-product-detail.html")],
+        ["Support", data.supportDetail.ticket, data.supportDetail.subject, badge(data.supportDetail.status), linkButton("Open", "support-ticket-detail.html")]
       ]));
   }
 
@@ -1016,20 +1016,20 @@
 
   function modalContent(type) {
     const copy = {
-      "client-note": ["Create client note", "createClientNote", [["Client", "Tobi Adeyemi"], ["Note type", "Compliance / finance / portfolio"], ["Note", "Proof of address reviewed; awaiting confirmation."]]],
-      "assign-task": ["Assign queue item", "assignQueueTask", [["Queue item", "Proof of address review"], ["Owner", "Compliance Officer"], ["Priority", "High"]]],
-      "bulk-kyc": ["Bulk KYC action", "bulkKycDecision", [["Action", "Approve selected eligible reviews"], ["Reviewer", "Compliance"], ["Audit reason", "Documents passed verification checks."]]],
-      "bulk-deposit": ["Bulk deposit confirmation", "bulkCreditDeposits", [["Action", "Credit selected deposits"], ["Rail", "Bank and crypto"], ["Audit reason", "References reconciled."]]],
-      "bulk-withdrawal": ["Bulk withdrawal approval", "bulkApproveWithdrawals", [["Action", "Approve selected withdrawals"], ["Approver", "Finance Operations"], ["Audit reason", "KYC, destination and balance checks passed."]]],
-      product: ["Create portfolio product", "createPortfolioProduct", [["Name", "Income Builder"], ["Risk", "Moderate"], ["Minimum", "$2,500"]]],
-      "allocation-note": ["Create allocation note", "createAllocationNote", [["Client", "Musa Danladi"], ["Portfolio", "Premium Managed"], ["Note", "Top-up request routed to portfolio desk."]]],
-      payout: ["Post payout", "postPayout", [["Source", "Dividend Income Portfolio"], ["Amount", "$620"], ["Mode", "Wallet credit"]]],
-      instrument: ["Instrument setup", "upsertInstrument", [["Symbol", "MSFT"], ["Category", "Stock"], ["Status", "Tradable"]]],
-      report: ["Generate report", "generateReport", [["Report", "Wallet Activity Export"], ["Period", "Last 90 days"], ["Format", "CSV"]]],
+      "client-note": ["Create client note", "createClientNote", [["Client", data.clientProfile.name], ["Note type", "Compliance / finance / portfolio"], ["Note", "Record the operational note for this backend client."]]],
+      "assign-task": ["Assign queue item", "assignQueueTask", [["Queue item", "Select a backend queue item"], ["Owner", "Operations"], ["Priority", "Normal"]]],
+      "bulk-kyc": ["Bulk KYC action", "bulkKycDecision", [["Action", "Apply to selected backend reviews"], ["Reviewer", "Compliance"], ["Audit reason", "Record the operational decision note."]]],
+      "bulk-deposit": ["Bulk deposit confirmation", "bulkCreditDeposits", [["Action", "Apply to selected backend deposits"], ["Rail", "Selected funding rails"], ["Audit reason", "Record the reconciliation note."]]],
+      "bulk-withdrawal": ["Bulk withdrawal approval", "bulkApproveWithdrawals", [["Action", "Apply to selected backend withdrawals"], ["Approver", "Finance Operations"], ["Audit reason", "Record the finance review note."]]],
+      product: ["Create portfolio product", "createPortfolioProduct", [["Name", "New portfolio product"], ["Risk", "Select risk level"], ["Minimum", "Set minimum amount"]]],
+      "allocation-note": ["Create allocation note", "createAllocationNote", [["Client", data.clientProfile.name], ["Portfolio", data.productDetail.name], ["Note", "Record the allocation note for this backend mandate."]]],
+      payout: ["Post payout", "postPayout", [["Source", "Select backend distribution source"], ["Amount", "Set payout amount"], ["Mode", "Wallet credit or reinvestment"]]],
+      instrument: ["Instrument setup", "upsertInstrument", [["Symbol", "Enter symbol"], ["Category", "Select category"], ["Status", "Select status"]]],
+      report: ["Generate report", "generateReport", [["Report", "Select report type"], ["Period", "Select reporting period"], ["Format", "CSV or PDF"]]],
       "report-download": ["Download report", "downloadReport", [["Report", "June 2026 Account Statement"], ["Format", "PDF"], ["Access", "Audited download"]]],
       notification: ["Create notification", "createNotification", [["Audience", "Clients with pending KYC"], ["Template", "KYC update"], ["Channel", "Dashboard notification"]]],
       "notification-preview": ["Preview notification", "previewNotification", [["Template", "KYC update"], ["Audience", "Single client"], ["Status", "Preview only"]]],
-      "assign-ticket": ["Assign support ticket", "assignSupportTicket", [["Ticket", "#BP-1208"], ["Owner", "Finance"], ["Priority", "High"]]],
+      "assign-ticket": ["Assign support ticket", "assignSupportTicket", [["Ticket", data.supportDetail.ticket], ["Owner", "Operations"], ["Priority", "Normal"]]],
       "admin-user": ["Invite admin user", "inviteAdminUser", [["Email", "operations@example.com"], ["Role", "Finance Operations"], ["Access", "Money movement only"]]],
       export: ["Export current view", "exportCurrentView", [["Format", "CSV"], ["Scope", pageContext()], ["Audit", "Required"]]],
       task: ["Create admin task", "createAdminTask", [["Title", "Follow up pending review"], ["Owner", "Operations"], ["Due", "Today"]]],
