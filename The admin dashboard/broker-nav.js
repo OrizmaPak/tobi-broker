@@ -958,12 +958,14 @@
     const countryNode = form ? form.querySelector('[name="country"]') : null;
     const nameNode = form ? form.querySelector('[name="name"]') : null;
     const phoneNode = form ? form.querySelector('[name="phone"]') : null;
+    const phoneLocalNode = form ? form.querySelector('[name="phoneLocal"]') : null;
     const acceptedTermsNode = form ? form.querySelector('[name="acceptedTerms"]') : null;
     const email = emailNode ? emailNode.value.trim() : "";
     const password = passwordNode ? passwordNode.value : "";
     const confirmPassword = confirmPasswordNode ? confirmPasswordNode.value : "";
     const country = countryNode ? countryNode.value.trim() : "";
     const phone = phoneNode ? phoneNode.value.trim() : "";
+    const phoneLocal = phoneLocalNode ? phoneLocalNode.value.trim() : "";
     const fallbackName = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, function (letter) {
       return letter.toUpperCase();
     });
@@ -973,6 +975,7 @@
       confirmPassword: confirmPassword,
       country: country,
       phone: phone,
+      phoneLocal: phoneLocal,
       acceptedTerms: acceptedTermsNode ? acceptedTermsNode.checked : false,
       name: nameNode && nameNode.value.trim() ? nameNode.value.trim() : fallbackName
     };
@@ -1513,6 +1516,13 @@
     }).join("");
   }
 
+  function phoneCountryOptions() {
+    return COUNTRY_NAMES.map(function (country) {
+      const code = COUNTRY_DIAL_CODES[country] || "";
+      return '<button type="button" class="bp-phone-country-option" data-broker-action="phone-country-select" data-phone-country="' + country + '" data-phone-code="' + code + '"><span>' + country + '</span><strong>' + code + '</strong></button>';
+    }).join("");
+  }
+
   function authLayout(kind) {
     const config = {
       login: {
@@ -1539,9 +1549,10 @@
     const passwordPlaceholder = kind === "register" ? "At least 10 characters" : "Enter your password";
     const passwordField = '<label class="bp-auth-field" for="auth-password"><span>Password</span><div class="bp-auth-password"><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-password" aria-label="Show password">Show</button></div></label>';
     const confirmPasswordField = '<label class="bp-auth-field" for="auth-confirm-password"><span>Confirm password</span><div class="bp-auth-password"><input id="auth-confirm-password" name="confirmPassword" autocomplete="new-password" required placeholder="Repeat your password" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-confirm-password" aria-label="Show confirm password">Show</button></div></label>';
+    const phoneField = '<label class="bp-auth-field" for="auth-phone-local"><span>Phone number</span><div class="bp-phone-control"><button type="button" class="bp-phone-country-button" data-broker-action="phone-country-toggle" aria-expanded="false"><span id="bp-phone-country-label">Nigeria</span><strong id="bp-phone-dial-code">+234</strong></button><input id="auth-phone-local" name="phoneLocal" autocomplete="tel-national" inputmode="tel" required placeholder="800 000 0000"><input id="auth-phone" name="phone" type="hidden" value=""><div class="bp-phone-country-menu" id="bp-phone-country-menu"><input id="bp-phone-country-search" type="search" placeholder="Search country"><div class="bp-phone-country-list">' + phoneCountryOptions() + '</div></div></div></label>';
     const authFields = ''
       + (kind === "register" ? '<label class="bp-auth-field" for="auth-name"><span>Full name</span><input id="auth-name" name="name" autocomplete="name" required placeholder="Your full name"></label>' : "")
-      + (kind === "register" ? '<label class="bp-auth-field" for="auth-phone"><span>Phone number</span><input id="auth-phone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="Select country first"></label>' : "")
+      + (kind === "register" ? phoneField : "")
       + '<label class="bp-auth-field" for="auth-email"><span>Email address</span><input id="auth-email" name="email" autocomplete="email" type="email" required placeholder="name@example.com"></label>'
       + (kind === "forgot" ? "" : passwordField)
       + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="Nigeria" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">terms and conditions</a>.</span></label>' : "");
@@ -1568,26 +1579,63 @@
       "</div></div>";
   }
 
-  function bindCountryDialCode() {
+  function bindPhoneCountryPicker() {
     const countryNode = document.getElementById("auth-country");
     const phoneNode = document.getElementById("auth-phone");
-    if (!countryNode || !phoneNode || countryNode.dataset.dialBound === "true") return;
+    const localNode = document.getElementById("auth-phone-local");
+    const button = document.querySelector(".bp-phone-country-button");
+    const menu = document.getElementById("bp-phone-country-menu");
+    const search = document.getElementById("bp-phone-country-search");
+    const label = document.getElementById("bp-phone-country-label");
+    const dial = document.getElementById("bp-phone-dial-code");
+    if (!phoneNode || !localNode || !button || !menu || button.dataset.phoneBound === "true") return;
 
-    function applyDialCode() {
-      const code = COUNTRY_DIAL_CODES[countryNode.value.trim()];
-      if (!code) return;
-      const raw = phoneNode.value.trim();
-      const withoutDial = raw.replace(/^\+\d{1,4}(?:-\d{1,4})?\s*/, "").trim();
-      phoneNode.placeholder = code + " 800 000 0000";
-      phoneNode.value = withoutDial ? code + " " + withoutDial : code + " ";
+    function closeMenu() {
+      menu.classList.remove("is-open");
+      button.setAttribute("aria-expanded", "false");
     }
 
-    countryNode.dataset.dialBound = "true";
-    countryNode.addEventListener("change", applyDialCode);
-    countryNode.addEventListener("input", function () {
-      if (COUNTRY_DIAL_CODES[countryNode.value.trim()]) applyDialCode();
+    function syncPhone() {
+      const code = button.getAttribute("data-phone-code") || "+234";
+      const local = localNode.value.trim();
+      phoneNode.value = local ? code + " " + local : "";
+    }
+
+    function setPhoneCountry(country) {
+      const code = COUNTRY_DIAL_CODES[country];
+      if (!code) return;
+      button.setAttribute("data-phone-country", country);
+      button.setAttribute("data-phone-code", code);
+      if (label) label.textContent = country;
+      if (dial) dial.textContent = code;
+      syncPhone();
+    }
+
+    button.dataset.phoneBound = "true";
+    button.setAttribute("data-phone-country", "Nigeria");
+    button.setAttribute("data-phone-code", "+234");
+    localNode.addEventListener("input", syncPhone);
+    if (countryNode) {
+      countryNode.addEventListener("change", function () {
+        setPhoneCountry(countryNode.value.trim());
+      });
+      countryNode.addEventListener("input", function () {
+        if (COUNTRY_DIAL_CODES[countryNode.value.trim()]) setPhoneCountry(countryNode.value.trim());
+      });
+    }
+    if (search) {
+      search.addEventListener("input", function () {
+        const query = search.value.trim().toLowerCase();
+        menu.querySelectorAll(".bp-phone-country-option").forEach(function (option) {
+          const text = option.textContent.toLowerCase();
+          option.hidden = query && text.indexOf(query) === -1;
+        });
+      });
+    }
+    document.addEventListener("click", function (event) {
+      if (!menu.contains(event.target) && !button.contains(event.target)) closeMenu();
     });
-    applyDialCode();
+    setPhoneCountry("Nigeria");
   }
 
   function renderPortalState(message, failed) {
@@ -1617,7 +1665,7 @@
       const wrapper = bodyRoot && bodyRoot.querySelector(".flex.min-h-screen.items-center.justify-center");
       if (!wrapper) return;
       wrapper.outerHTML = authLayout(cur === "login.html" ? "login" : (cur === "register.html" ? "register" : "forgot"));
-      bindCountryDialCode();
+      bindPhoneCountryPicker();
       return;
     }
 
@@ -2026,6 +2074,42 @@
         }
         return;
       }
+      case "phone-country-toggle": {
+        const menu = document.getElementById("bp-phone-country-menu");
+        const expanded = node && node.getAttribute("aria-expanded") === "true";
+        if (menu && node) {
+          menu.classList.toggle("is-open", !expanded);
+          node.setAttribute("aria-expanded", expanded ? "false" : "true");
+          const search = document.getElementById("bp-phone-country-search");
+          if (!expanded && search) {
+            search.value = "";
+            menu.querySelectorAll(".bp-phone-country-option").forEach(function (option) { option.hidden = false; });
+            setTimeout(function () { search.focus(); }, 0);
+          }
+        }
+        return;
+      }
+      case "phone-country-select": {
+        const country = node ? node.getAttribute("data-phone-country") : "";
+        const code = node ? node.getAttribute("data-phone-code") : "";
+        const button = document.querySelector(".bp-phone-country-button");
+        const label = document.getElementById("bp-phone-country-label");
+        const dial = document.getElementById("bp-phone-dial-code");
+        const localNode = document.getElementById("auth-phone-local");
+        const phoneNode = document.getElementById("auth-phone");
+        const menu = document.getElementById("bp-phone-country-menu");
+        if (button && country && code) {
+          button.setAttribute("data-phone-country", country);
+          button.setAttribute("data-phone-code", code);
+          if (label) label.textContent = country;
+          if (dial) dial.textContent = code;
+          if (phoneNode) phoneNode.value = localNode && localNode.value.trim() ? code + " " + localNode.value.trim() : "";
+          if (menu) menu.classList.remove("is-open");
+          button.setAttribute("aria-expanded", "false");
+          if (localNode) localNode.focus();
+        }
+        return;
+      }
       case "api-retry":
         appState.apiLoaded = false;
         appState.apiMessage = "Retrying secure account connection";
@@ -2063,7 +2147,7 @@
       case "auth-register":
         try {
           const form = authFormValues(node);
-          if (!form.name || !form.email || !form.phone || !form.password || !form.confirmPassword || !form.country) throw new Error("Complete every required registration field.");
+          if (!form.name || !form.email || !form.phoneLocal || !form.phone || !form.password || !form.confirmPassword || !form.country) throw new Error("Complete every required registration field.");
           if (form.password !== form.confirmPassword) throw new Error("Passwords do not match.");
           if (COUNTRY_NAMES.indexOf(form.country) === -1) throw new Error("Select a valid country of residence from the list.");
           if (!form.acceptedTerms) throw new Error("Accept the terms and conditions before creating an account.");
@@ -2444,12 +2528,13 @@
       + " .bp-auth-card-head span{display:inline-flex;margin-bottom:10px;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}.bp-auth-card-head h2{margin:0;color:#101713;font-size:30px;line-height:1.08;font-weight:850;letter-spacing:0}.bp-auth-card-head p{margin:12px 0 0;color:#647164;font-size:14px;line-height:1.6}"
       + " .bp-auth-form{display:grid;gap:15px;margin-top:28px}.bp-auth-field{display:grid;gap:8px;color:#253127;font-size:13px;font-weight:800}.bp-auth-field span{display:flex;align-items:center;justify-content:space-between}.bp-auth-field input{width:100%;height:52px;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;color:#101713;padding:0 15px;font:inherit;font-weight:650;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-field input:focus{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}"
       + " .bp-auth-password{position:relative;display:flex;align-items:center}.bp-auth-password input{padding-right:72px}.bp-auth-password button{position:absolute;right:8px;height:36px;border:0;border-radius:10px;background:#e8f5ea;color:#128225;padding:0 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-auth-password button:hover{background:#d8f0dc}"
+      + " .bp-phone-control{position:relative;display:grid;grid-template-columns:minmax(132px,auto) 1fr;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-phone-control:focus-within{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}.bp-phone-country-button{height:52px;border:0;border-right:1px solid #d6dfd8;border-radius:14px 0 0 14px;background:#eef8f0;color:#101713;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;font-size:12px;font-weight:850;cursor:pointer}.bp-phone-country-button span{display:block;max-width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bp-phone-country-button strong{color:#128225;font-size:13px}.bp-phone-control>input[name=phoneLocal]{height:52px;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:0 14px 14px 0!important}.bp-phone-country-menu{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:20;display:none;border:1px solid #d6dfd8;border-radius:16px;background:#fff;padding:10px;box-shadow:0 18px 46px rgba(15,23,42,.16)}.bp-phone-country-menu.is-open{display:block}.bp-phone-country-menu input{width:100%;height:42px;border:1px solid #d6dfd8;border-radius:12px;background:#f8fbf8;padding:0 12px;font:inherit;font-size:13px;font-weight:650;outline:none}.bp-phone-country-list{margin-top:8px;max-height:220px;overflow:auto;display:grid;gap:4px}.bp-phone-country-option{width:100%;border:0;border-radius:11px;background:#fff;color:#253127;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;font-size:13px;font-weight:750;text-align:left;cursor:pointer}.bp-phone-country-option:hover{background:#f1f8f2}.bp-phone-country-option strong{color:#128225}"
       + " .bp-auth-terms{display:flex;align-items:flex-start;gap:10px;border:1px solid #dbe7dd;border-radius:16px;background:#f8fbf8;padding:12px 13px;color:#536055;font-size:13px;line-height:1.5}.bp-auth-terms input{margin-top:3px;accent-color:#19b72f}.bp-auth-terms a{color:#128225;font-weight:800;text-decoration:none}.bp-auth-terms a:hover{text-decoration:underline}"
       + " .bp-auth-submit{height:56px;border:0;border-radius:14px;background:#19b72f;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 18px 34px rgba(25,183,47,.28);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-submit:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 22px 38px rgba(25,183,47,.32)}.bp-auth-submit span{display:inline-flex;height:24px;width:24px;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:16px;line-height:1}"
       + " .bp-auth-checkline{display:flex;gap:12px;margin-top:18px;border:1px solid #dbe7dd;border-radius:16px;background:#f3faf4;padding:13px 14px;color:#536055;font-size:13px;line-height:1.55}.bp-auth-checkline span{margin-top:5px;height:9px;width:9px;flex:0 0 auto;border-radius:999px;background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.bp-auth-checkline p{margin:0}"
       + " .bp-auth-foot{margin-top:20px;border-top:1px solid #e3ebe4;padding-top:18px;color:#647164;font-size:14px}.bp-auth-foot a{color:#128225;text-decoration:none}.bp-auth-foot a:hover{text-decoration:underline}"
       + " @media (max-width:1023px){.bp-auth-page{padding:20px}.bp-auth-shell{grid-template-columns:1fr}.bp-auth-hero{min-height:auto}.bp-auth-card{min-height:auto}.bp-auth-copy{margin-top:34px}.bp-auth-card{justify-content:flex-start}}"
-      + " @media (max-width:640px){.bp-auth-page{padding:12px;align-items:flex-start}.bp-auth-hero,.bp-auth-card{border-radius:22px;padding:22px}.bp-auth-copy h1{font-size:2.45rem}.bp-auth-copy>p:not(.bp-auth-kicker){font-size:15px}.bp-auth-topline strong{display:none}.bp-auth-card-head h2{font-size:25px}.bp-auth-foot .flex{display:grid!important}.bp-auth-card-brand{margin-bottom:24px}}"
+      + " @media (max-width:640px){.bp-auth-page{padding:12px;align-items:flex-start}.bp-auth-hero,.bp-auth-card{border-radius:22px;padding:22px}.bp-auth-copy h1{font-size:2.45rem}.bp-auth-copy>p:not(.bp-auth-kicker){font-size:15px}.bp-auth-topline strong{display:none}.bp-auth-card-head h2{font-size:25px}.bp-auth-foot .flex{display:grid!important}.bp-auth-card-brand{margin-bottom:24px}.bp-phone-control{grid-template-columns:1fr}.bp-phone-country-button{border-right:0;border-bottom:1px solid #d6dfd8;border-radius:14px 14px 0 0}.bp-phone-country-button span{max-width:none}.bp-phone-control>input[name=phoneLocal]{border-radius:0 0 14px 14px!important}}"
       + " @media (max-width:1023px){body .min-h-screen,body header,body .sticky.top-0.z-30,body .flex.flex-1.flex-col.transition-all.duration-300{max-width:100vw!important;overflow-x:hidden}body main{padding-left:1rem!important;padding-right:1rem!important}}";
     document.head.appendChild(style);
   }
