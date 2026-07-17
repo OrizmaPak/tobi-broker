@@ -1442,6 +1442,7 @@
       '<p class="mt-2 max-w-xl text-sm text-muted-foreground">' + message + '</p>' +
       (failed ? '<button type="button" data-broker-action="api-retry" class="mt-5 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Try again</button>' : '') +
       '</div></section></div>';
+    clearBootScreen();
   }
 
   function renderPage() {
@@ -1548,6 +1549,14 @@
     }
 
     main.innerHTML = shell(meta.title, meta.subtitle, body);
+    clearBootScreen();
+  }
+
+  function clearBootScreen() {
+    document.documentElement.classList.remove("bp-booting");
+    document.querySelectorAll(".bp-boot-screen").forEach(function (node) {
+      node.setAttribute("hidden", "hidden");
+    });
   }
 
   function patchNav() {
