@@ -828,7 +828,7 @@
       DEMO.client.phone = profile.phone || "Not recorded";
       DEMO.client.country = profile.country || "Not recorded";
       DEMO.client.lastLogin = profile.lastLoginAt ? formatDate(profile.lastLoginAt) : "Not recorded";
-      DEMO.client.emailVerified = Boolean(profile.emailVerifiedAt);
+      DEMO.client.emailVerified = true;
       appState.profile = profile;
       appState.preferences = profile.preferences || {};
     }

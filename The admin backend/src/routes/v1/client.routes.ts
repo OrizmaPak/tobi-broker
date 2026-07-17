@@ -23,7 +23,6 @@ function clientId(req: { user?: { id: string } }) {
 async function verifiedClient(id: string) {
   const client = await prisma.client.findUnique({ where: { id } });
   if (!client) throw new ApiError(404, "Client was not found", "CLIENT_NOT_FOUND");
-  if (!client.emailVerifiedAt) throw new ApiError(403, "Email verification is required", "EMAIL_VERIFICATION_REQUIRED");
   return client;
 }
 

@@ -97,18 +97,10 @@ v1AuthRouter.post("/client/register", authLimiter, asyncHandler(async (req, res)
     return created;
   });
   const session = await createSession({ type: "CLIENT", value: client }, req, res);
-  await notifyClient({
-    clientId: client.id,
-    email: client.email,
-    category: "Onboarding",
-    title: "Verify your BullPort email",
-    body: `Verify your email to continue onboarding. Verification token: ${rawVerificationToken}`,
-    actionUrl: "kyc.html"
-  });
   return ok(res, {
     session,
     client: actorResponse(client),
-    emailVerificationRequired: true,
+    emailVerificationRequired: false,
     ...(env.NODE_ENV !== "production" ? { verificationToken: rawVerificationToken } : {})
   }, 201);
 }));
@@ -169,7 +161,7 @@ v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) =>
   });
   await recordAttempt(input.email, "CLIENT", true, req.ip);
   const session = await createSession({ type: "CLIENT", value: updated }, req, res);
-  return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: !updated.emailVerifiedAt });
+  return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: false });
 }));
 
 v1AuthRouter.post("/client/mfa/confirm", authLimiter, asyncHandler(async (req, res) => {
@@ -187,7 +179,7 @@ v1AuthRouter.post("/client/mfa/confirm", authLimiter, asyncHandler(async (req, r
   const updated = await prisma.client.update({ where: { id: client.id }, data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } });
   await recordAttempt(client.email, "CLIENT", true, req.ip);
   const session = await createSession({ type: "CLIENT", value: updated }, req, res);
-  return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: !updated.emailVerifiedAt, mfaEnabled: true });
+  return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: false, mfaEnabled: true });
 }));
 
 v1AuthRouter.post("/client/verify-email", asyncHandler(async (req, res) => {
