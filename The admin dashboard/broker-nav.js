@@ -266,7 +266,9 @@
     authRedirecting: false,
     loadPromise: null,
     lastSync: null,
-    data: null
+    data: null,
+    loginMfaRequired: false,
+    mfaSetup: null
   };
 
   const NAV_GROUPS = [
@@ -1004,6 +1006,7 @@
     const form = authFormFromNode(node);
     const emailNode = form ? form.querySelector('[name="email"]') : null;
     const passwordNode = form ? form.querySelector('[name="password"]') : null;
+    const mfaCodeNode = form ? form.querySelector('[name="mfaCode"]') : null;
     const confirmPasswordNode = form ? form.querySelector('[name="confirmPassword"]') : null;
     const countryNode = form ? form.querySelector('[name="country"]') : null;
     const nameNode = form ? form.querySelector('[name="name"]') : null;
@@ -1029,6 +1032,7 @@
       country: country,
       phone: phone,
       phoneLocal: phoneLocal,
+      mfaCode: mfaCodeNode ? mfaCodeNode.value.trim() : "",
       acceptedTerms: acceptedTermsNode ? acceptedTermsNode.checked : false,
       name: nameNode && nameNode.value.trim() ? nameNode.value.trim() : fallbackName
     };
@@ -1601,6 +1605,7 @@
     const passwordAutocomplete = kind === "register" ? "new-password" : "current-password";
     const passwordPlaceholder = kind === "register" ? "10+ chars, A-z, number, symbol" : "Enter your password";
     const passwordField = '<label class="bp-auth-field" for="auth-password"><span>Password</span><div class="bp-auth-password"><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-password" aria-label="Show password">Show</button></div></label>';
+    const mfaCodeField = kind === "login" && appState.loginMfaRequired ? '<label class="bp-auth-field" for="auth-mfa-code"><span>Authenticator or recovery code</span><input id="auth-mfa-code" name="mfaCode" autocomplete="one-time-code" inputmode="numeric" required placeholder="Enter 6-digit code"></label>' : "";
     const confirmPasswordField = '<label class="bp-auth-field" for="auth-confirm-password"><span>Confirm password</span><div class="bp-auth-password"><input id="auth-confirm-password" name="confirmPassword" autocomplete="new-password" required placeholder="Repeat your password" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-confirm-password" aria-label="Show confirm password">Show</button></div></label>';
     const phoneField = '<label class="bp-auth-field" for="auth-phone-local"><span>Phone number</span><div class="bp-phone-control"><button type="button" class="bp-phone-country-button" data-broker-action="phone-country-toggle" aria-expanded="false"><span id="bp-phone-country-label">United Kingdom</span><strong id="bp-phone-dial-code">+44</strong></button><input id="auth-phone-local" name="phoneLocal" autocomplete="tel-national" inputmode="tel" required placeholder="7700 900000"><input id="auth-phone" name="phone" type="hidden" value=""><div class="bp-phone-country-menu" id="bp-phone-country-menu"><input id="bp-phone-country-search" type="search" placeholder="Search country"><div class="bp-phone-country-list">' + phoneCountryOptions() + '</div></div></div></label>';
     const authFields = ''
@@ -1608,6 +1613,7 @@
       + (kind === "register" ? phoneField : "")
       + '<label class="bp-auth-field" for="auth-email"><span>Email address</span><input id="auth-email" name="email" autocomplete="email" type="email" required placeholder="name@example.com"></label>'
       + (kind === "forgot" ? "" : passwordField)
+      + mfaCodeField
       + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="United Kingdom" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I have read and agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. I understand the Client Portal is currently a demo/static environment unless BullPort expressly states otherwise.</span></label>' : "");
     const trustStrip = kind === "login"
       ? '<div class="bp-auth-checkline"><span></span><p>Protected by secure session cookies, CSRF controls and rotating refresh sessions.</p></div>'
@@ -1706,6 +1712,55 @@
       (failed ? '<button type="button" data-broker-action="api-retry" class="mt-5 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Try again</button>' : '') +
       '</div></section></div>';
     if (failed && !appState.authRedirecting) clearBootScreen();
+  }
+
+  function renderClientMfaSetup() {
+    const setup = appState.mfaSetup;
+    const wrapper = document.body && document.body.querySelector(".bp-auth-page");
+    if (!setup || !wrapper) return;
+    wrapper.outerHTML = '' +
+      '<div class="bp-auth-page">' +
+      '<div class="bp-auth-backdrop"><span></span><span></span><span></span></div>' +
+      '<div class="bp-auth-shell bp-auth-shell-single">' +
+      '<section class="bp-auth-card bp-auth-card-wide" aria-label="Authenticator setup">' +
+      '<div class="bp-auth-card-brand"><img class="bp-auth-logo" src="assets/images/bullport-logo.png" alt="BullPort"><div><p>Investor security</p></div></div>' +
+      '<div class="bp-auth-card-head"><div><span>One-time setup</span><h2>Protect your BullPort account</h2></div><p>Scan the barcode with Google Authenticator, Microsoft Authenticator, Authy or another TOTP app. Then enter the six-digit code to finish signing in.</p></div>' +
+      '<div class="bp-mfa-grid"><div class="bp-mfa-qr"><span>Scan with authenticator</span><canvas data-client-mfa-qr width="220" height="220" aria-label="Authenticator setup barcode"></canvas><p data-client-mfa-qr-fallback hidden>Barcode could not be generated. Use the manual secret instead.</p></div><div class="bp-mfa-manual"><div class="bp-mfa-secret"><span>Manual setup secret</span><strong>' + escapeHtml(setup.secret) + '</strong></div><p>Use this secret only if your authenticator cannot scan the barcode.</p></div></div>' +
+      '<div class="bp-mfa-recovery"><span>Recovery codes</span><div>' + (setup.recoveryCodes || []).map(function (code) { return '<code>' + escapeHtml(code) + '</code>'; }).join("") + '</div></div>' +
+      '<form class="bp-auth-form" novalidate><label class="bp-auth-field" for="auth-mfa-confirm-code"><span>Current six-digit code</span><input id="auth-mfa-confirm-code" name="mfaCode" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" required placeholder="123456"></label><div class="bp-auth-error" role="alert" hidden></div><button class="bp-auth-submit" data-broker-action="auth-mfa-confirm" type="button">Enable MFA and continue<span aria-hidden="true">&rarr;</span></button></form>' +
+      '<div class="bp-auth-foot"><a class="font-medium text-primary hover:underline" href="login.html">Return to sign in</a></div>' +
+      '</section></div></div>';
+    renderClientMfaQr();
+    bindActions();
+    const code = document.getElementById("auth-mfa-confirm-code");
+    if (code) code.focus();
+  }
+
+  function renderClientMfaQr() {
+    const canvas = document.querySelector("[data-client-mfa-qr]");
+    const fallback = document.querySelector("[data-client-mfa-qr-fallback]");
+    const otpauthUrl = appState.mfaSetup && appState.mfaSetup.otpauthUrl;
+    if (!canvas || !otpauthUrl || !window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+      if (fallback) fallback.hidden = false;
+      return;
+    }
+    window.QRCode.toCanvas(canvas, otpauthUrl, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: { dark: "#101713", light: "#ffffff" }
+    }, function (error) {
+      if (error && fallback) fallback.hidden = false;
+    });
+  }
+
+  function completeAuthRedirect(message) {
+    markClientTabSession();
+    startClientTabHeartbeat();
+    toast(message || "Signed in. Redirecting to the dashboard.", "success");
+    const returnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+    sessionStorage.removeItem("bullport_return_to");
+    setTimeout(function () { navigateTo(returnTo); }, 250);
   }
 
   function renderPage() {
@@ -2180,13 +2235,22 @@
         }
         return;
       case "auth-login":
+        const loginForm = authFormFromNode(node);
         try {
+          clearAuthErrors(loginForm);
           const form = authFormValues(node);
           if (!form.email || !form.password) throw new Error("Enter your email address and password.");
-          await apiRequest("/api/v1/auth/client/login", {
+          const result = await apiRequest("/api/v1/auth/client/login", {
             method: "POST",
-            body: JSON.stringify({ email: form.email, password: form.password })
+            body: JSON.stringify({ email: form.email, password: form.password, ...(form.mfaCode ? { mfaCode: form.mfaCode } : {}) })
           }, true);
+          if (result && result.mfaSetupRequired) {
+            appState.mfaSetup = result;
+            renderClientMfaSetup();
+            return;
+          }
+          appState.loginMfaRequired = false;
+          appState.mfaSetup = null;
           markClientTabSession();
           startClientTabHeartbeat();
           toast("Signed in. Redirecting to the dashboard.", "success");
@@ -2194,7 +2258,43 @@
           sessionStorage.removeItem("bullport_return_to");
           setTimeout(function () { navigateTo(returnTo); }, 250);
         } catch (error) {
-          toast((error && error.message) || "Could not sign in. Check the API and credentials.", "warning");
+          if (error && error.code === "MFA_REQUIRED") {
+            appState.loginMfaRequired = true;
+            const email = loginForm && loginForm.querySelector('[name="email"]') ? loginForm.querySelector('[name="email"]').value : "";
+            const password = loginForm && loginForm.querySelector('[name="password"]') ? loginForm.querySelector('[name="password"]').value : "";
+            renderPage();
+            const nextEmail = document.querySelector('[name="email"]');
+            const nextPassword = document.querySelector('[name="password"]');
+            const nextCode = document.querySelector('[name="mfaCode"]');
+            if (nextEmail) nextEmail.value = email;
+            if (nextPassword) nextPassword.value = password;
+            showAuthError(document.querySelector(".bp-auth-form"), "Enter the authenticator code for this account.", "mfaCode");
+            if (nextCode) nextCode.focus();
+            return;
+          }
+          showAuthError(loginForm, (error && error.message) || "Could not sign in. Check the API and credentials.", error && error.fieldName);
+        }
+        return;
+      case "auth-mfa-confirm":
+        const mfaForm = authFormFromNode(node);
+        try {
+          clearAuthErrors(mfaForm);
+          const form = authFormValues(node);
+          if (!form.mfaCode || !/^\d{6}$/.test(form.mfaCode)) throw Object.assign(new Error("Enter the six-digit authenticator code."), { fieldName: "mfaCode" });
+          await apiRequest("/api/v1/auth/client/mfa/confirm", {
+            method: "POST",
+            body: JSON.stringify({ setupToken: appState.mfaSetup && appState.mfaSetup.setupToken, code: form.mfaCode })
+          }, true);
+          appState.loginMfaRequired = false;
+          appState.mfaSetup = null;
+          markClientTabSession();
+          startClientTabHeartbeat();
+          toast("MFA enabled. Redirecting to the dashboard.", "success");
+          const mfaReturnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+          sessionStorage.removeItem("bullport_return_to");
+          setTimeout(function () { navigateTo(mfaReturnTo); }, 250);
+        } catch (error) {
+          showAuthError(mfaForm, (error && error.message) || "The authenticator code was not accepted.", error && error.fieldName);
         }
         return;
       case "auth-register":
@@ -2568,6 +2668,7 @@
       + " .bp-auth-page{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:#edf5ef;color:#101713;isolation:isolate}"
       + " .bp-auth-backdrop{position:absolute;inset:0;overflow:hidden;z-index:-1;background:linear-gradient(135deg,#e9f5eb 0%,#f8fafc 42%,#e5f0e8 100%)}.bp-auth-backdrop span{position:absolute;border-radius:999px;filter:blur(10px);opacity:.72}.bp-auth-backdrop span:nth-child(1){width:420px;height:420px;left:-120px;top:-90px;background:radial-gradient(circle,rgba(34,197,94,.28),transparent 68%)}.bp-auth-backdrop span:nth-child(2){width:360px;height:360px;right:-120px;bottom:-80px;background:radial-gradient(circle,rgba(15,23,42,.12),transparent 70%)}.bp-auth-backdrop span:nth-child(3){width:220px;height:220px;right:26%;top:18%;background:radial-gradient(circle,rgba(25,183,47,.18),transparent 70%)}"
       + " .bp-auth-shell{width:min(1040px,100%);display:grid;grid-template-columns:minmax(0,.95fr) minmax(390px,.75fr);gap:22px;align-items:stretch}"
+      + " .bp-auth-shell-single{width:min(720px,100%);grid-template-columns:1fr}"
       + " .bp-auth-hero,.bp-auth-card{position:relative;overflow:hidden;border:1px solid rgba(15,23,42,.1);box-shadow:0 28px 80px rgba(15,23,42,.16)}"
       + " .bp-auth-hero{min-height:560px;border-radius:30px;background:linear-gradient(135deg,#08110c 0%,#152219 50%,#0b130e 100%);color:#fff;padding:34px;display:flex;flex-direction:column;justify-content:space-between}"
       + " .bp-auth-hero:before{content:'';position:absolute;inset:auto -12% -30% 20%;height:420px;background:radial-gradient(circle,rgba(34,197,94,.36),transparent 64%);pointer-events:none}"
@@ -2585,6 +2686,7 @@
       + " .bp-auth-copy>p:not(.bp-auth-kicker){margin:22px 0 0;max-width:500px;color:rgba(255,255,255,.76);font-size:17px;line-height:1.7}"
       + " .bp-auth-minimal-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px}.bp-auth-minimal-list span{border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.08);padding:9px 12px;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card{border-radius:30px;background:rgba(255,255,255,.96);padding:34px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;backdrop-filter:blur(20px)}"
+      + " .bp-auth-card-wide{justify-content:flex-start}"
       + " .bp-auth-card:before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,#19b72f,#86efac,#101713)}.bp-auth-card-brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:34px}.bp-auth-card-brand p{margin:0;color:#647164;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}"
       + " .bp-auth-card-head span{display:inline-flex;margin-bottom:10px;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}.bp-auth-card-head h2{margin:0;color:#101713;font-size:30px;line-height:1.08;font-weight:850;letter-spacing:0}.bp-auth-card-head p{margin:12px 0 0;color:#647164;font-size:14px;line-height:1.6}"
       + " .bp-auth-form{display:grid;gap:15px;margin-top:28px}.bp-auth-field{display:grid;gap:8px;color:#253127;font-size:13px;font-weight:800}.bp-auth-field span{display:flex;align-items:center;justify-content:space-between}.bp-auth-field input{width:100%;height:52px;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;color:#101713;padding:0 15px;font:inherit;font-weight:650;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-field input:focus{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}"
@@ -2592,11 +2694,12 @@
       + " .bp-phone-control{position:relative;display:grid;grid-template-columns:minmax(132px,auto) 1fr;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-phone-control:focus-within{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}.bp-phone-country-button{height:52px;border:0;border-right:1px solid #d6dfd8;border-radius:14px 0 0 14px;background:#eef8f0;color:#101713;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;font-size:12px;font-weight:850;cursor:pointer}.bp-phone-country-button span{display:block;max-width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bp-phone-country-button strong{color:#128225;font-size:13px}.bp-phone-control>input[name=phoneLocal]{height:52px;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:0 14px 14px 0!important}.bp-phone-country-menu{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:20;display:none;border:1px solid #d6dfd8;border-radius:16px;background:#fff;padding:10px;box-shadow:0 18px 46px rgba(15,23,42,.16)}.bp-phone-country-menu.is-open{display:block}.bp-phone-country-menu input{width:100%;height:42px;border:1px solid #d6dfd8;border-radius:12px;background:#f8fbf8;padding:0 12px;font:inherit;font-size:13px;font-weight:650;outline:none}.bp-phone-country-list{margin-top:8px;max-height:220px;overflow:auto;display:grid;gap:4px}.bp-phone-country-option{width:100%;border:0;border-radius:11px;background:#fff;color:#253127;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;font-size:13px;font-weight:750;text-align:left;cursor:pointer}.bp-phone-country-option:hover{background:#f1f8f2}.bp-phone-country-option strong{color:#128225}"
       + " .bp-auth-terms{display:flex;align-items:flex-start;gap:10px;border:1px solid #dbe7dd;border-radius:16px;background:#f8fbf8;padding:12px 13px;color:#536055;font-size:13px;line-height:1.5}.bp-auth-terms input{margin-top:3px;accent-color:#19b72f}.bp-auth-terms a{color:#128225;font-weight:800;text-decoration:none}.bp-auth-terms a:hover{text-decoration:underline}"
       + " .bp-auth-error{border:1px solid #fecaca;border-radius:14px;background:#fff1f2;color:#991b1b;padding:12px 14px;font-size:13px;font-weight:800;line-height:1.45}.bp-auth-field.is-invalid input,.bp-auth-field.is-invalid .bp-phone-control{border-color:#ef4444!important;box-shadow:0 0 0 4px rgba(239,68,68,.12)!important}.bp-auth-terms.is-invalid{border-color:#ef4444;background:#fff1f2}"
+      + " .bp-mfa-grid{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:stretch;margin-top:24px}.bp-mfa-qr{display:grid;justify-items:center;gap:12px;border:1px solid #dbe7dd;border-radius:18px;background:#f8fbf8;padding:16px}.bp-mfa-qr span,.bp-mfa-secret span,.bp-mfa-recovery>span{color:#647164;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.1em}.bp-mfa-qr canvas{height:220px;width:220px;border:10px solid #fff;border-radius:14px;background:#fff;box-shadow:0 14px 32px rgba(16,24,20,.08)}.bp-mfa-qr p,.bp-mfa-manual p{margin:0;color:#647164;font-size:12px;line-height:1.5}.bp-mfa-secret{display:grid;gap:8px;border:1px solid #dbe7dd;border-radius:18px;background:#f8fbf8;padding:16px}.bp-mfa-secret strong{overflow-wrap:anywhere;color:#101713;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}.bp-mfa-manual{display:grid;align-content:start;gap:12px}.bp-mfa-recovery{display:grid;gap:10px;margin-top:18px}.bp-mfa-recovery>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.bp-mfa-recovery code{border:1px solid #dbe7dd;border-radius:10px;background:#f8fbf8;padding:9px;text-align:center;color:#253127;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}"
       + " .bp-auth-submit{height:56px;border:0;border-radius:14px;background:#19b72f;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 18px 34px rgba(25,183,47,.28);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-submit:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 22px 38px rgba(25,183,47,.32)}.bp-auth-submit span{display:inline-flex;height:24px;width:24px;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:16px;line-height:1}"
       + " .bp-auth-checkline{display:flex;gap:12px;margin-top:18px;border:1px solid #dbe7dd;border-radius:16px;background:#f3faf4;padding:13px 14px;color:#536055;font-size:13px;line-height:1.55}.bp-auth-checkline span{margin-top:5px;height:9px;width:9px;flex:0 0 auto;border-radius:999px;background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.bp-auth-checkline p{margin:0}"
       + " .bp-auth-foot{margin-top:20px;border-top:1px solid #e3ebe4;padding-top:18px;color:#647164;font-size:14px}.bp-auth-foot a{color:#128225;text-decoration:none}.bp-auth-foot a:hover{text-decoration:underline}"
       + " @media (max-width:1023px){.bp-auth-page{padding:20px}.bp-auth-shell{grid-template-columns:1fr}.bp-auth-hero{min-height:auto}.bp-auth-card{min-height:auto}.bp-auth-copy{margin-top:34px}.bp-auth-card{justify-content:flex-start}}"
-      + " @media (max-width:640px){.bp-auth-page{padding:12px;align-items:flex-start}.bp-auth-hero,.bp-auth-card{border-radius:22px;padding:22px}.bp-auth-copy h1{font-size:2.45rem}.bp-auth-copy>p:not(.bp-auth-kicker){font-size:15px}.bp-auth-topline strong{display:none}.bp-auth-card-head h2{font-size:25px}.bp-auth-foot .flex{display:grid!important}.bp-auth-card-brand{margin-bottom:24px}.bp-phone-control{grid-template-columns:1fr}.bp-phone-country-button{border-right:0;border-bottom:1px solid #d6dfd8;border-radius:14px 14px 0 0}.bp-phone-country-button span{max-width:none}.bp-phone-control>input[name=phoneLocal]{border-radius:0 0 14px 14px!important}}"
+      + " @media (max-width:640px){.bp-auth-page{padding:12px;align-items:flex-start}.bp-auth-hero,.bp-auth-card{border-radius:22px;padding:22px}.bp-auth-copy h1{font-size:2.45rem}.bp-auth-copy>p:not(.bp-auth-kicker){font-size:15px}.bp-auth-topline strong{display:none}.bp-auth-card-head h2{font-size:25px}.bp-auth-foot .flex{display:grid!important}.bp-auth-card-brand{margin-bottom:24px}.bp-phone-control{grid-template-columns:1fr}.bp-phone-country-button{border-right:0;border-bottom:1px solid #d6dfd8;border-radius:14px 14px 0 0}.bp-phone-country-button span{max-width:none}.bp-phone-control>input[name=phoneLocal]{border-radius:0 0 14px 14px!important}.bp-mfa-grid{grid-template-columns:1fr}.bp-mfa-recovery>div{grid-template-columns:1fr}.bp-mfa-qr canvas{height:200px;width:200px}}"
       + " @media (max-width:1023px){body .min-h-screen,body header,body .sticky.top-0.z-30,body .flex.flex-1.flex-col.transition-all.duration-300{max-width:100vw!important;overflow-x:hidden}body main{padding-left:1rem!important;padding-right:1rem!important}}";
     document.head.appendChild(style);
   }

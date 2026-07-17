@@ -16,7 +16,8 @@ export const openApiDocument = {
   },
   paths: {
     "/auth/client/register": { post: { tags: ["Auth"], summary: "Register a client" } },
-    "/auth/client/login": { post: { tags: ["Auth"], summary: "Create a client session" } },
+    "/auth/client/login": { post: { tags: ["Auth"], summary: "Create or continue an MFA-protected client session" } },
+    "/auth/client/mfa/confirm": { post: { tags: ["Auth"], summary: "Confirm client authenticator setup" } },
     "/auth/client/verify-email": { post: { tags: ["Auth"], summary: "Verify a client email" } },
     "/auth/client/change-password": { post: { tags: ["Auth"], summary: "Change a client password and revoke other sessions", security: [{ cookieSession: [], csrf: [] }] } },
     "/auth/admin/login": { post: { tags: ["Auth"], summary: "Create or continue an MFA-protected admin session" } },

@@ -363,6 +363,7 @@ model Client {
   lastLoginAt         DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+  mfa                 ClientMfa?
   sessions            AuthSession[]
   kycReviews          KycReview[]
   kycCases            KycCase[]
@@ -384,6 +385,17 @@ model Client {
   notes               ClientNote[]
   notifications       Notification[]
   reports             ReportExport[]
+}
+
+model ClientMfa {
+  id                 String   @id @default(cuid())
+  clientId           String   @unique
+  secretEncrypted    String
+  recoveryCodeHashes Json
+  enabledAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  client             Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model ClientNote {

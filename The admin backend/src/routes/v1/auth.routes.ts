@@ -111,7 +111,7 @@ v1AuthRouter.post("/client/register", authLimiter, asyncHandler(async (req, res)
 
 v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) => {
   const input = loginSchema.parse(req.body);
-  const client = await prisma.client.findUnique({ where: { email: input.email } });
+  const client = await prisma.client.findUnique({ where: { email: input.email }, include: { mfa: true } });
   const now = new Date();
   if (!client || !client.passwordHash || client.status === "SUSPENDED" || (client.lockedUntil && client.lockedUntil > now)) {
     await recordAttempt(input.email, "CLIENT", false, req.ip);
@@ -127,6 +127,38 @@ v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) =>
     await recordAttempt(input.email, "CLIENT", false, req.ip);
     throw new ApiError(401, "Invalid credentials", "INVALID_CREDENTIALS");
   }
+
+  if (env.CLIENT_MFA_REQUIRED && !client.mfa?.enabledAt) {
+    const secret = createMfaSecret();
+    const recoveryCodes = Array.from({ length: 8 }, () => randomCode(10));
+    await prisma.clientMfa.upsert({
+      where: { clientId: client.id },
+      update: { secretEncrypted: encryptSecret(secret), recoveryCodeHashes: recoveryCodes.map(hashValue), enabledAt: null },
+      create: { clientId: client.id, secretEncrypted: encryptSecret(secret), recoveryCodeHashes: recoveryCodes.map(hashValue) }
+    });
+    const setupToken = jwt.sign({ clientId: client.id, purpose: "CLIENT_MFA_SETUP" }, env.JWT_SECRET, { expiresIn: "10m" });
+    return ok(res, {
+      mfaSetupRequired: true,
+      setupToken,
+      secret,
+      otpauthUrl: `otpauth://totp/BullPort:${encodeURIComponent(client.email)}?secret=${secret}&issuer=BullPort`,
+      recoveryCodes
+    });
+  }
+
+  if (env.CLIENT_MFA_REQUIRED && client.mfa?.enabledAt) {
+    if (!input.mfaCode) throw new ApiError(401, "MFA code is required", "MFA_REQUIRED");
+    const secret = decryptSecret(client.mfa.secretEncrypted);
+    const recoveryHashes = Array.isArray(client.mfa.recoveryCodeHashes) ? client.mfa.recoveryCodeHashes.map(String) : [];
+    const suppliedHash = hashValue(input.mfaCode.toUpperCase());
+    const recoveryIndex = recoveryHashes.indexOf(suppliedHash);
+    if (!verifyTotp(secret, input.mfaCode) && recoveryIndex < 0) throw new ApiError(401, "MFA code is invalid", "MFA_INVALID");
+    if (recoveryIndex >= 0) {
+      recoveryHashes.splice(recoveryIndex, 1);
+      await prisma.clientMfa.update({ where: { id: client.mfa.id }, data: { recoveryCodeHashes: recoveryHashes } });
+    }
+  }
+
   const updated = await prisma.client.update({
     where: { id: client.id },
     data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: now }
@@ -134,6 +166,24 @@ v1AuthRouter.post("/client/login", authLimiter, asyncHandler(async (req, res) =>
   await recordAttempt(input.email, "CLIENT", true, req.ip);
   const session = await createSession({ type: "CLIENT", value: updated }, req, res);
   return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: !updated.emailVerifiedAt });
+}));
+
+v1AuthRouter.post("/client/mfa/confirm", authLimiter, asyncHandler(async (req, res) => {
+  const input = z.object({ setupToken: z.string().min(20), code: z.string().regex(/^\d{6}$/) }).parse(req.body);
+  let payload: { clientId: string; purpose: string };
+  try {
+    payload = jwt.verify(input.setupToken, env.JWT_SECRET) as typeof payload;
+  } catch {
+    throw new ApiError(401, "MFA setup session is invalid or expired", "MFA_SETUP_EXPIRED");
+  }
+  if (payload.purpose !== "CLIENT_MFA_SETUP") throw new ApiError(401, "MFA setup session is invalid", "MFA_SETUP_INVALID");
+  const client = await prisma.client.findUnique({ where: { id: payload.clientId }, include: { mfa: true } });
+  if (!client?.mfa || !verifyTotp(decryptSecret(client.mfa.secretEncrypted), input.code)) throw new ApiError(422, "Authenticator code is invalid", "MFA_INVALID");
+  await prisma.clientMfa.update({ where: { id: client.mfa.id }, data: { enabledAt: new Date() } });
+  const updated = await prisma.client.update({ where: { id: client.id }, data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } });
+  await recordAttempt(client.email, "CLIENT", true, req.ip);
+  const session = await createSession({ type: "CLIENT", value: updated }, req, res);
+  return ok(res, { session, client: actorResponse(updated), emailVerificationRequired: !updated.emailVerifiedAt, mfaEnabled: true });
 }));
 
 v1AuthRouter.post("/client/verify-email", asyncHandler(async (req, res) => {

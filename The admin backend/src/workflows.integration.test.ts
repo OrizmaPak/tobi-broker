@@ -11,13 +11,21 @@ const integration = runDatabaseTests ? describe : describe.skip;
 
 async function loginClient(email = "tobi.adeyemi@example.com") {
   const agent = request.agent(app);
-  const response = await agent.post("/api/v1/auth/client/login").send({ email, password: "ClientPass123!" }).expect(200);
-  expect(response.body.data.session.accessToken).toBeUndefined();
+  const stored = await prisma.client.findUnique({ where: { email }, include: { mfa: true } });
+  const mfaCode = stored?.mfa?.enabledAt ? generateTotp(decryptSecret(stored.mfa.secretEncrypted)) : undefined;
+  const response = await agent.post("/api/v1/auth/client/login").send({ email, password: "ClientPass123!", mfaCode }).expect(200);
+  const completed = response.body.data.mfaSetupRequired
+    ? await agent.post("/api/v1/auth/client/mfa/confirm").send({
+      setupToken: response.body.data.setupToken,
+      code: generateTotp(response.body.data.secret)
+    }).expect(200)
+    : response;
+  expect(completed.body.data.session.accessToken).toBeUndefined();
   return {
     agent,
-    csrf: response.body.data.session.csrfToken as string,
-    clientId: response.body.data.client.id as string,
-    sessionId: response.body.data.session.sessionId as string
+    csrf: completed.body.data.session.csrfToken as string,
+    clientId: completed.body.data.client.id as string,
+    sessionId: completed.body.data.session.sessionId as string
   };
 }
 
@@ -180,7 +188,8 @@ integration.sequential("broker workflows", () => {
   });
 
   it("detects refresh-token replay and revokes the session family", async () => {
-    const login = await request(app).post("/api/v1/auth/client/login").send({ email: "tobi.adeyemi@example.com", password: "ClientPass123!" }).expect(200);
+    const existing = await prisma.client.findUniqueOrThrow({ where: { email: "tobi.adeyemi@example.com" }, include: { mfa: true } });
+    const login = await request(app).post("/api/v1/auth/client/login").send({ email: "tobi.adeyemi@example.com", password: "ClientPass123!", mfaCode: existing.mfa?.enabledAt ? generateTotp(decryptSecret(existing.mfa.secretEncrypted)) : undefined }).expect(200);
     const setCookie = login.headers["set-cookie"] as unknown as string[];
     const oldCookies = setCookie.map((value) => value.split(";")[0]).join("; ");
     const refreshed = await request(app).post("/api/v1/auth/refresh").set("Cookie", oldCookies).send({}).expect(200);
