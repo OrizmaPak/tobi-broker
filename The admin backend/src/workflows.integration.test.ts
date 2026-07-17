@@ -7,13 +7,22 @@ import { prisma } from "./lib/prisma";
 import { reconcileLedger } from "./services/ledger.service";
 
 const runDatabaseTests = process.env.RUN_DB_TESTS === "1";
-const integration = runDatabaseTests ? describe : describe.skip;
+const testClientEmail = process.env.TEST_CLIENT_EMAIL || "";
+const testOptionsClientEmail = process.env.TEST_OPTIONS_CLIENT_EMAIL || testClientEmail;
+const testClientPassword = process.env.TEST_CLIENT_PASSWORD || "";
+const testAdminPassword = process.env.TEST_ADMIN_PASSWORD || "";
+const testSuperAdminEmail = process.env.TEST_SUPER_ADMIN_EMAIL || "";
+const testFinanceAdminEmail = process.env.TEST_FINANCE_ADMIN_EMAIL || "";
+const testPortfolioAdminEmail = process.env.TEST_PORTFOLIO_ADMIN_EMAIL || "";
+const testComplianceAdminEmail = process.env.TEST_COMPLIANCE_ADMIN_EMAIL || "";
+const hasIntegrationAccounts = Boolean(testClientEmail && testClientPassword && testAdminPassword && testSuperAdminEmail && testFinanceAdminEmail && testPortfolioAdminEmail && testComplianceAdminEmail);
+const integration = runDatabaseTests && hasIntegrationAccounts ? describe : describe.skip;
 
-async function loginClient(email = "tobi.adeyemi@example.com") {
+async function loginClient(email = testClientEmail) {
   const agent = request.agent(app);
   const stored = await prisma.client.findUnique({ where: { email }, include: { mfa: true } });
   const mfaCode = stored?.mfa?.enabledAt ? generateTotp(decryptSecret(stored.mfa.secretEncrypted)) : undefined;
-  const response = await agent.post("/api/v1/auth/client/login").send({ email, password: "ClientPass123!", mfaCode }).expect(200);
+  const response = await agent.post("/api/v1/auth/client/login").send({ email, password: testClientPassword, mfaCode }).expect(200);
   const completed = response.body.data.mfaSetupRequired
     ? await agent.post("/api/v1/auth/client/mfa/confirm").send({
       setupToken: response.body.data.setupToken,
@@ -33,7 +42,7 @@ async function loginAdmin(email: string) {
   const agent = request.agent(app);
   const admin = await prisma.adminUser.findUniqueOrThrow({ where: { email }, include: { mfa: true } });
   const mfaCode = admin.mfa?.enabledAt ? generateTotp(decryptSecret(admin.mfa.secretEncrypted)) : undefined;
-  const response = await agent.post("/api/v1/auth/admin/login").send({ email, password: "AdminPass123!", mfaCode }).expect(200);
+  const response = await agent.post("/api/v1/auth/admin/login").send({ email, password: testAdminPassword, mfaCode }).expect(200);
   if (!response.body.data.mfaSetupRequired) {
     return { agent, csrf: response.body.data.session.csrfToken as string };
   }
@@ -57,7 +66,7 @@ integration.sequential("broker workflows", () => {
     expect(repeated.body.data.id).toBe(submitted.body.data.id);
     expect(repeated.body.meta.cached).toBe(true);
 
-    const maker = await loginAdmin("finance@bullport.local");
+    const maker = await loginAdmin(testFinanceAdminEmail);
     const approval = await maker.agent
       .post(`/api/v1/admin/money/deposits/${submitted.body.data.id}/request-approval`)
       .set("x-csrf-token", maker.csrf)
@@ -71,7 +80,7 @@ integration.sequential("broker workflows", () => {
       .expect(403);
     expect(selfApproval.body.error.code).toBe("MAKER_CHECKER_VIOLATION");
 
-    const wrongRole = await loginAdmin("portfolio@bullport.local");
+    const wrongRole = await loginAdmin(testPortfolioAdminEmail);
     const forbidden = await wrongRole.agent
       .post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`)
       .set("x-csrf-token", wrongRole.csrf)
@@ -79,7 +88,7 @@ integration.sequential("broker workflows", () => {
       .expect(403);
     expect(forbidden.body.error.code).toBe("APPROVAL_ROLE_FORBIDDEN");
 
-    const checker = await loginAdmin("admin@bullport.local");
+    const checker = await loginAdmin(testSuperAdminEmail);
     await checker.agent
       .post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`)
       .set("x-csrf-token", checker.csrf)
@@ -136,7 +145,7 @@ integration.sequential("broker workflows", () => {
       .set("idempotency-key", `order-${randomUUID()}`)
       .send({ instrumentId: instrument.id, side: "BUY", type: "LIMIT", quantity: 1, limitPrice: Number(instrument.currentPrice) })
       .expect(201);
-    const desk = await loginAdmin("portfolio@bullport.local");
+    const desk = await loginAdmin(testPortfolioAdminEmail);
     await desk.agent.post(`/api/v1/admin/orders/${submitted.body.data.id}/approve`).set("x-csrf-token", desk.csrf).send({ note: "Client eligibility and order risk checks completed" }).expect(200);
     await desk.agent.post(`/api/v1/admin/orders/${submitted.body.data.id}/fill`).set("x-csrf-token", desk.csrf).send({ price: Number(instrument.currentPrice), quantity: 1, fee: 0, note: "Complete fill recorded by the internal order desk" }).expect(200);
     const position = await prisma.position.findUniqueOrThrow({ where: { clientId_instrumentId: { clientId: client.clientId, instrumentId: instrument.id } } });
@@ -144,22 +153,22 @@ integration.sequential("broker workflows", () => {
   });
 
   it("scores and approves options access through compliance", async () => {
-    const client = await loginClient("amara.okafor@example.com");
+    const client = await loginClient(testOptionsClientEmail);
     const application = await client.agent.post("/api/v1/client/options/apply").set("x-csrf-token", client.csrf).send({
       questionnaire: { experience: "TWO_TO_FIVE", knowledge: "INTERMEDIATE", lossTolerance: "MEDIUM", objective: "HEDGING" },
       disclosureAccepted: true,
       score: 100
     }).expect(201);
     expect(application.body.data.score).toBe(70);
-    const compliance = await loginAdmin("compliance@bullport.local");
+    const compliance = await loginAdmin(testComplianceAdminEmail);
     await compliance.agent.post(`/api/v1/admin/options/applications/${application.body.data.id}/decision`).set("x-csrf-token", compliance.csrf).send({ status: "APPROVED", note: "Suitability responses and risk acknowledgement reviewed" }).expect(200);
     const stored = await prisma.optionsApplication.findUniqueOrThrow({ where: { id: application.body.data.id } });
     expect(stored.status).toBe("APPROVED");
   });
 
   it("posts a calculated distribution through independent approval", async () => {
-    const investment = await prisma.clientInvestment.findFirstOrThrow({ where: { clientId: (await prisma.client.findUniqueOrThrow({ where: { email: "tobi.adeyemi@example.com" } })).id, status: "ACTIVE" } });
-    const maker = await loginAdmin("portfolio@bullport.local");
+    const investment = await prisma.clientInvestment.findFirstOrThrow({ where: { clientId: (await prisma.client.findUniqueOrThrow({ where: { email: testClientEmail } })).id, status: "ACTIVE" } });
+    const maker = await loginAdmin(testPortfolioAdminEmail);
     const now = new Date();
     const batch = await maker.agent.post("/api/v1/admin/distributions").set("x-csrf-token", maker.csrf).send({
       productId: investment.productId,
@@ -172,7 +181,7 @@ integration.sequential("broker workflows", () => {
       note: "Monthly managed portfolio profit allocation"
     }).expect(201);
     const approval = await maker.agent.post(`/api/v1/admin/distributions/${batch.body.data.id}/request-approval`).set("x-csrf-token", maker.csrf).send({ note: "Entitlement calculation frozen for checker approval" }).expect(201);
-    const checker = await loginAdmin("admin@bullport.local");
+    const checker = await loginAdmin(testSuperAdminEmail);
     await checker.agent.post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`).set("x-csrf-token", checker.csrf).send({ note: "Independent distribution review and approval complete" }).expect(200);
     const posted = await prisma.distributionBatch.findUniqueOrThrow({ where: { id: batch.body.data.id }, include: { items: true } });
     expect(posted.status).toBe("POSTED");
@@ -188,8 +197,8 @@ integration.sequential("broker workflows", () => {
   });
 
   it("detects refresh-token replay and revokes the session family", async () => {
-    const existing = await prisma.client.findUniqueOrThrow({ where: { email: "tobi.adeyemi@example.com" }, include: { mfa: true } });
-    const login = await request(app).post("/api/v1/auth/client/login").send({ email: "tobi.adeyemi@example.com", password: "ClientPass123!", mfaCode: existing.mfa?.enabledAt ? generateTotp(decryptSecret(existing.mfa.secretEncrypted)) : undefined }).expect(200);
+    const existing = await prisma.client.findUniqueOrThrow({ where: { email: testClientEmail }, include: { mfa: true } });
+    const login = await request(app).post("/api/v1/auth/client/login").send({ email: testClientEmail, password: testClientPassword, mfaCode: existing.mfa?.enabledAt ? generateTotp(decryptSecret(existing.mfa.secretEncrypted)) : undefined }).expect(200);
     const setCookie = login.headers["set-cookie"] as unknown as string[];
     const oldCookies = setCookie.map((value) => value.split(";")[0]).join("; ");
     const refreshed = await request(app).post("/api/v1/auth/refresh").set("Cookie", oldCookies).send({}).expect(200);
