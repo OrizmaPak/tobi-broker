@@ -950,8 +950,58 @@
     if (message) toast(message, tone || "success");
   }
 
+  function authFormFromNode(node) {
+    return node && node.closest ? node.closest("form") : null;
+  }
+
+  function clearAuthErrors(form) {
+    if (!form) return;
+    const errorNode = form.querySelector(".bp-auth-error");
+    if (errorNode) {
+      errorNode.textContent = "";
+      errorNode.hidden = true;
+    }
+    form.querySelectorAll(".bp-auth-field,.bp-auth-terms").forEach(function (field) {
+      field.classList.remove("is-invalid");
+    });
+    form.querySelectorAll("[aria-invalid='true']").forEach(function (field) {
+      field.removeAttribute("aria-invalid");
+    });
+  }
+
+  function showAuthError(form, message, fieldName) {
+    if (!form) {
+      toast(message, "warning");
+      return;
+    }
+    const errorNode = form.querySelector(".bp-auth-error");
+    if (errorNode) {
+      errorNode.textContent = message;
+      errorNode.hidden = false;
+    }
+    if (fieldName) {
+      const field = form.querySelector('[name="' + fieldName + '"]');
+      if (field) {
+        field.setAttribute("aria-invalid", "true");
+        const wrapper = field.closest(".bp-auth-field") || field.closest(".bp-auth-terms");
+        if (wrapper) wrapper.classList.add("is-invalid");
+        if (field.focus) field.focus();
+      }
+    }
+    toast(message, "warning");
+  }
+
+  function passwordRuleError(password) {
+    if (!password || password.length < 10) return "Password must be at least 10 characters.";
+    if (!/[a-z]/.test(password)) return "Password must include a lowercase letter.";
+    if (!/[A-Z]/.test(password)) return "Password must include an uppercase letter.";
+    if (!/[0-9]/.test(password)) return "Password must include a number.";
+    if (!/[^a-zA-Z0-9]/.test(password)) return "Password must include a symbol.";
+    return "";
+  }
+
   function authFormValues(node) {
-    const form = node && node.closest ? node.closest("form") : null;
+    const form = authFormFromNode(node);
     const emailNode = form ? form.querySelector('[name="email"]') : null;
     const passwordNode = form ? form.querySelector('[name="password"]') : null;
     const confirmPasswordNode = form ? form.querySelector('[name="confirmPassword"]') : null;
@@ -960,12 +1010,15 @@
     const phoneNode = form ? form.querySelector('[name="phone"]') : null;
     const phoneLocalNode = form ? form.querySelector('[name="phoneLocal"]') : null;
     const acceptedTermsNode = form ? form.querySelector('[name="acceptedTerms"]') : null;
+    const phoneCodeNode = form ? form.querySelector(".bp-phone-country-button") : null;
     const email = emailNode ? emailNode.value.trim() : "";
     const password = passwordNode ? passwordNode.value : "";
     const confirmPassword = confirmPasswordNode ? confirmPasswordNode.value : "";
     const country = countryNode ? countryNode.value.trim() : "";
-    const phone = phoneNode ? phoneNode.value.trim() : "";
+    const phoneCode = phoneCodeNode ? (phoneCodeNode.getAttribute("data-phone-code") || "").trim() : "";
+    let phone = phoneNode ? phoneNode.value.trim() : "";
     const phoneLocal = phoneLocalNode ? phoneLocalNode.value.trim() : "";
+    if (!phone && phoneCode && phoneLocal) phone = phoneCode + " " + phoneLocal;
     const fallbackName = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, function (letter) {
       return letter.toUpperCase();
     });
@@ -1546,7 +1599,7 @@
     }[kind];
     const action = kind === "login" ? "auth-login" : (kind === "register" ? "auth-register" : "auth-reset");
     const passwordAutocomplete = kind === "register" ? "new-password" : "current-password";
-    const passwordPlaceholder = kind === "register" ? "At least 10 characters" : "Enter your password";
+    const passwordPlaceholder = kind === "register" ? "10+ chars, A-z, number, symbol" : "Enter your password";
     const passwordField = '<label class="bp-auth-field" for="auth-password"><span>Password</span><div class="bp-auth-password"><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-password" aria-label="Show password">Show</button></div></label>';
     const confirmPasswordField = '<label class="bp-auth-field" for="auth-confirm-password"><span>Confirm password</span><div class="bp-auth-password"><input id="auth-confirm-password" name="confirmPassword" autocomplete="new-password" required placeholder="Repeat your password" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-confirm-password" aria-label="Show confirm password">Show</button></div></label>';
     const phoneField = '<label class="bp-auth-field" for="auth-phone-local"><span>Phone number</span><div class="bp-phone-control"><button type="button" class="bp-phone-country-button" data-broker-action="phone-country-toggle" aria-expanded="false"><span id="bp-phone-country-label">United Kingdom</span><strong id="bp-phone-dial-code">+44</strong></button><input id="auth-phone-local" name="phoneLocal" autocomplete="tel-national" inputmode="tel" required placeholder="7700 900000"><input id="auth-phone" name="phone" type="hidden" value=""><div class="bp-phone-country-menu" id="bp-phone-country-menu"><input id="bp-phone-country-search" type="search" placeholder="Search country"><div class="bp-phone-country-list">' + phoneCountryOptions() + '</div></div></div></label>';
@@ -1572,7 +1625,7 @@
       '<section class="bp-auth-card" aria-label="' + config.cta + '">' +
       '<div class="bp-auth-card-brand"><img class="bp-auth-logo" src="assets/images/bullport-logo.png" alt="BullPort"><div><p>Investor access</p></div></div>' +
       '<div class="bp-auth-card-head"><div><span>Secure access</span><h2>' + config.cta + '</h2></div><p>' + (kind === "login" ? "Use your BullPort account credentials to continue." : "Keep your investor profile aligned from the first step.") + '</p></div>' +
-      '<form class="bp-auth-form">' + authFields + '<button class="bp-auth-submit" data-broker-action="' + action + '" type="button">' + config.cta + '<span aria-hidden="true">&rarr;</span></button></form>' +
+      '<form class="bp-auth-form" novalidate>' + authFields + '<div class="bp-auth-error" role="alert" hidden></div><button class="bp-auth-submit" data-broker-action="' + action + '" type="button">' + config.cta + '<span aria-hidden="true">&rarr;</span></button></form>' +
       trustStrip +
       '<div class="bp-auth-foot">' + config.foot + '</div>' +
       '</section>' +
@@ -2145,12 +2198,20 @@
         }
         return;
       case "auth-register":
+        const registerForm = authFormFromNode(node);
         try {
+          clearAuthErrors(registerForm);
           const form = authFormValues(node);
-          if (!form.name || !form.email || !form.phoneLocal || !form.phone || !form.password || !form.confirmPassword || !form.country) throw new Error("Complete every required registration field.");
-          if (form.password !== form.confirmPassword) throw new Error("Passwords do not match.");
-          if (COUNTRY_NAMES.indexOf(form.country) === -1) throw new Error("Select a valid country of residence from the list.");
-          if (!form.acceptedTerms) throw new Error("Accept the terms and conditions before creating an account.");
+          if (!form.name) throw Object.assign(new Error("Enter your full name."), { fieldName: "name" });
+          if (!form.phoneLocal || !form.phone) throw Object.assign(new Error("Enter your phone number."), { fieldName: "phoneLocal" });
+          if (!form.email) throw Object.assign(new Error("Enter your email address."), { fieldName: "email" });
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) throw Object.assign(new Error("Enter a valid email address."), { fieldName: "email" });
+          const passwordError = passwordRuleError(form.password);
+          if (passwordError) throw Object.assign(new Error(passwordError), { fieldName: "password" });
+          if (!form.confirmPassword) throw Object.assign(new Error("Confirm your password."), { fieldName: "confirmPassword" });
+          if (form.password !== form.confirmPassword) throw Object.assign(new Error("Passwords do not match."), { fieldName: "confirmPassword" });
+          if (!form.country || COUNTRY_NAMES.indexOf(form.country) === -1) throw Object.assign(new Error("Select a valid country of residence from the list."), { fieldName: "country" });
+          if (!form.acceptedTerms) throw Object.assign(new Error("Accept the terms and conditions before creating an account."), { fieldName: "acceptedTerms" });
           await apiRequest("/api/v1/auth/client/register", {
             method: "POST",
             body: JSON.stringify({
@@ -2167,7 +2228,7 @@
           toast("Account created. Continue with KYC verification.", "success");
           setTimeout(function () { navigateTo("kyc.html"); }, 250);
         } catch (error) {
-          toast((error && error.message) || "Could not create account.", "warning");
+          showAuthError(registerForm, (error && error.message) || "Could not create account.", error && error.fieldName);
         }
         return;
       case "auth-reset":
@@ -2530,6 +2591,7 @@
       + " .bp-auth-password{position:relative;display:flex;align-items:center}.bp-auth-password input{padding-right:72px}.bp-auth-password button{position:absolute;right:8px;height:36px;border:0;border-radius:10px;background:#e8f5ea;color:#128225;padding:0 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-auth-password button:hover{background:#d8f0dc}"
       + " .bp-phone-control{position:relative;display:grid;grid-template-columns:minmax(132px,auto) 1fr;border:1px solid #d6dfd8;border-radius:14px;background:#f8fbf8;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.bp-phone-control:focus-within{border-color:#19b72f;background:#fff;box-shadow:0 0 0 4px rgba(25,183,47,.14)}.bp-phone-country-button{height:52px;border:0;border-right:1px solid #d6dfd8;border-radius:14px 0 0 14px;background:#eef8f0;color:#101713;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;font-size:12px;font-weight:850;cursor:pointer}.bp-phone-country-button span{display:block;max-width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bp-phone-country-button strong{color:#128225;font-size:13px}.bp-phone-control>input[name=phoneLocal]{height:52px;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:0 14px 14px 0!important}.bp-phone-country-menu{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:20;display:none;border:1px solid #d6dfd8;border-radius:16px;background:#fff;padding:10px;box-shadow:0 18px 46px rgba(15,23,42,.16)}.bp-phone-country-menu.is-open{display:block}.bp-phone-country-menu input{width:100%;height:42px;border:1px solid #d6dfd8;border-radius:12px;background:#f8fbf8;padding:0 12px;font:inherit;font-size:13px;font-weight:650;outline:none}.bp-phone-country-list{margin-top:8px;max-height:220px;overflow:auto;display:grid;gap:4px}.bp-phone-country-option{width:100%;border:0;border-radius:11px;background:#fff;color:#253127;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;font-size:13px;font-weight:750;text-align:left;cursor:pointer}.bp-phone-country-option:hover{background:#f1f8f2}.bp-phone-country-option strong{color:#128225}"
       + " .bp-auth-terms{display:flex;align-items:flex-start;gap:10px;border:1px solid #dbe7dd;border-radius:16px;background:#f8fbf8;padding:12px 13px;color:#536055;font-size:13px;line-height:1.5}.bp-auth-terms input{margin-top:3px;accent-color:#19b72f}.bp-auth-terms a{color:#128225;font-weight:800;text-decoration:none}.bp-auth-terms a:hover{text-decoration:underline}"
+      + " .bp-auth-error{border:1px solid #fecaca;border-radius:14px;background:#fff1f2;color:#991b1b;padding:12px 14px;font-size:13px;font-weight:800;line-height:1.45}.bp-auth-field.is-invalid input,.bp-auth-field.is-invalid .bp-phone-control{border-color:#ef4444!important;box-shadow:0 0 0 4px rgba(239,68,68,.12)!important}.bp-auth-terms.is-invalid{border-color:#ef4444;background:#fff1f2}"
       + " .bp-auth-submit{height:56px;border:0;border-radius:14px;background:#19b72f;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 18px 34px rgba(25,183,47,.28);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.bp-auth-submit:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 22px 38px rgba(25,183,47,.32)}.bp-auth-submit span{display:inline-flex;height:24px;width:24px;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:16px;line-height:1}"
       + " .bp-auth-checkline{display:flex;gap:12px;margin-top:18px;border:1px solid #dbe7dd;border-radius:16px;background:#f3faf4;padding:13px 14px;color:#536055;font-size:13px;line-height:1.55}.bp-auth-checkline span{margin-top:5px;height:9px;width:9px;flex:0 0 auto;border-radius:999px;background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.bp-auth-checkline p{margin:0}"
       + " .bp-auth-foot{margin-top:20px;border-top:1px solid #e3ebe4;padding-top:18px;color:#647164;font-size:14px}.bp-auth-foot a{color:#128225;text-decoration:none}.bp-auth-foot a:hover{text-decoration:underline}"
