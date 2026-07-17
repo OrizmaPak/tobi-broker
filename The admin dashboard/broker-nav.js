@@ -634,6 +634,7 @@
     const reports = cloneList(data.reports);
     const tickets = cloneList(data.supportTickets);
     const kycReviews = cloneList(data.kycReviews);
+    const kycSetup = data.kycRequirements || null;
     const watchlist = cloneList(data.watchlist);
     const orders = cloneList(data.orders);
     const riskAlerts = cloneList(data.riskAlerts);
@@ -765,12 +766,22 @@
         status: labelize(row.status)
       };
     }));
-    replaceList(DEMO.kycChecklist, kycReviews.map(function (row) {
-      return {
-        item: row.requirement,
-        state: labelize(row.status)
-      };
-    }));
+    replaceList(DEMO.kycChecklist, kycSetup && Array.isArray(kycSetup.requirements)
+      ? kycSetup.requirements.map(function (requirement) {
+          const uploads = Array.isArray(requirement.uploads) ? requirement.uploads : [];
+          const rejected = uploads.some(function (upload) { return upload.document && upload.document.status === "REJECTED"; });
+          const pending = uploads.some(function (upload) { return upload.document && upload.document.status === "PENDING"; });
+          return {
+            item: requirement.documentType + (requirement.isRequired ? "" : " (optional)"),
+            state: rejected ? "Needs Attention" : requirement.reviewComplete ? "Verified" : pending ? "Under Review" : requirement.uploadComplete ? "Uploaded" : "Not Uploaded"
+          };
+        })
+      : kycReviews.map(function (row) {
+          return {
+            item: row.requirement,
+            state: labelize(row.status)
+          };
+        }));
     if (!DEMO.kycChecklist.length) {
       replaceList(DEMO.kycChecklist, [
         { item: "Identity verification", state: "Not Started" },
@@ -890,9 +901,12 @@
     if (cur === "support.html") load("/api/v1/client/support/tickets", "supportTickets");
     if (cur === "profile.html" || cur === "settings.html") load("/api/v1/client/profile", "profile");
     if (cur === "settings.html") load("/api/v1/auth/client/sessions", "sessions");
-    if (cur === "kyc.html") load("/api/v1/client/kyc", "kycReviews", function (rows) {
-      return rows.map(function (row) { return { requirement: row.level + " identity verification", status: row.status, updatedAt: row.updatedAt, documents: row.documents || [] }; });
-    });
+    if (cur === "kyc.html") {
+      load("/api/v1/client/kyc", "kycReviews", function (rows) {
+        return rows.map(function (row) { return { requirement: row.level + " identity verification", status: row.status, updatedAt: row.updatedAt, documents: row.documents || [] }; });
+      });
+      load("/api/v1/client/kyc/requirements", "kycRequirements");
+    }
     await Promise.all(assignments);
     return data;
   }
@@ -1476,16 +1490,39 @@
 
   function kycBody() {
     const state = getState();
+    const setup = appState.data && appState.data.kycRequirements ? appState.data.kycRequirements : {};
+    const currentCase = setup.case || null;
+    const requirements = Array.isArray(setup.requirements) ? setup.requirements : [];
+    const summary = setup.summary || { requiredDocuments: 0, uploadedDocuments: 0, verifiedDocuments: 0, uploadComplete: false, reviewComplete: false };
+    const caseStatus = currentCase ? labelize(currentCase.status) : "Not Started";
+    const isApproved = currentCase && currentCase.status === "APPROVED";
+    const submitted = currentCase && ["SUBMITTED", "PENDING", "IN_REVIEW"].includes(currentCase.status);
+    const uploadPercent = summary.requiredDocuments ? Math.round((summary.uploadedDocuments / summary.requiredDocuments) * 70) : 0;
+    const reviewPercent = summary.requiredDocuments ? Math.round((summary.verifiedDocuments / summary.requiredDocuments) * 20) : 0;
+    const completion = isApproved ? 100 : Math.min(95, uploadPercent + reviewPercent + (submitted ? 10 : 0));
+    const requirementCards = requirements.length ? requirements.map(function (requirement) {
+      const uploadMode = requirement.uploadMode === "FRONT_BACK" ? "Front and back required" : "One front upload";
+      const slots = (requirement.uploads || []).map(function (upload) {
+        const document = upload.document;
+        const documentStatus = document ? labelize(document.status) : "Not Uploaded";
+        const note = document && document.rejectionNote ? '<p class="broker-kyc-rejection">' + document.rejectionNote + '</p>' : '';
+        const uploadLabel = document ? "Replace " + upload.side.toLowerCase() : "Upload " + upload.side.toLowerCase();
+        const action = isApproved ? '' : '<button type="button" data-broker-action="kyc-upload" data-broker-requirement-id="' + requirement.id + '" data-broker-document-side="' + upload.side + '" class="broker-kyc-upload">' + uploadLabel + '</button>';
+        return '<div class="broker-kyc-slot"><div class="broker-kyc-slot-copy"><span>' + labelize(upload.side) + '</span><strong>' + (document ? document.fileName : "No file uploaded") + '</strong><small>' + (document ? formatDate(document.uploadedAt) : "PDF, JPG or PNG up to 5 MB") + '</small>' + note + '</div><div class="broker-kyc-slot-action">' + badge(documentStatus, statusTone(documentStatus)) + action + '</div></div>';
+      }).join("");
+      return '<article class="broker-kyc-requirement"><div class="broker-kyc-requirement-head"><div><div class="broker-kyc-title-row"><h3>' + requirement.documentType + '</h3>' + badge(requirement.isRequired ? "Required" : "Optional", requirement.isRequired ? "warning" : "neutral") + '</div><p>' + requirement.description + '</p></div><span class="broker-kyc-mode">' + uploadMode + '</span></div><div class="broker-kyc-slots">' + slots + '</div></article>';
+    }).join("") : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-5 text-sm text-muted-foreground">No KYC document requirements are currently active. Compliance will notify you when verification is available.</div>';
+    const primaryAction = !currentCase
+      ? '<button type="button" data-broker-action="kyc-start" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Start verification</button>'
+      : isApproved
+        ? '<span class="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-600">KYC passed</span>'
+        : '<button type="button" data-broker-action="kyc-submit" ' + (!summary.uploadComplete ? 'disabled aria-disabled="true"' : '') + ' class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">Submit for review</button>';
     return '' +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-5">' + section("Verification progress", "Broker workflows should make verification state and blockers obvious.", '<p class="text-sm text-muted-foreground">Current status: <span class="font-semibold text-foreground">' + state.kycStatus + '</span></p>' + progressBar(state.profileCompletion) + '<p class="mt-3 text-xs text-muted-foreground">Profile and verification completion: ' + state.profileCompletion + '%</p><div class="mt-4 flex flex-wrap gap-3"><button type="button" data-broker-action="kyc-upload" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Upload document</button><button type="button" data-broker-action="kyc-submit" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Submit for approval</button></div>') + "</div>" +
-      '<div class="xl:col-span-7">' + section("Document checklist", "Actions blocked until all required checks are complete.", table(
-        ["Requirement", "Status"],
-        DEMO.kycChecklist.map(function (row) {
-          return [row.item, badge(row.state, statusTone(row.state))];
-        })
-      )) + "</div>" +
-      "</div>";
+      '<div class="xl:col-span-5">' + section("Verification progress", "Complete the required documents, submit them, then track the compliance decision here.", '<div class="flex items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Current status</p>' + badge(caseStatus, statusTone(caseStatus)) + '</div><div class="mt-5">' + progressBar(completion) + '</div><div class="broker-kyc-summary"><div><span>Uploaded</span><strong>' + summary.uploadedDocuments + '/' + summary.requiredDocuments + '</strong></div><div><span>Accepted</span><strong>' + summary.verifiedDocuments + '/' + summary.requiredDocuments + '</strong></div><div><span>Complete</span><strong>' + completion + '%</strong></div></div><p class="mt-4 text-xs leading-5 text-muted-foreground">Investing, withdrawals and options access remain restricted until BullPort marks the overall KYC case as passed.</p><div class="mt-4 flex flex-wrap gap-3">' + primaryAction + '</div>') + "</div>" +
+      '<div class="xl:col-span-7">' + section("Required documents", "The list below is controlled by BullPort compliance and updates automatically.", requirementCards) + "</div>" +
+      "</div>" +
+      section("What happens next", "Your uploads remain private and are reviewed by the compliance team.", '<div class="grid gap-3 sm:grid-cols-3"><div class="rounded-lg border border-border/70 bg-background/60 p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">1. Upload</p><p class="mt-2 text-sm">Complete every required front and back slot.</p></div><div class="rounded-lg border border-border/70 bg-background/60 p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">2. Review</p><p class="mt-2 text-sm">Compliance accepts each document or requests a replacement.</p></div><div class="rounded-lg border border-border/70 bg-background/60 p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">3. Decision</p><p class="mt-2 text-sm">Your overall KYC status is passed after the final review.</p></div></div>');
   }
 
   function profileBody() {
@@ -2432,18 +2469,33 @@
           toast("Report download started.", "success");
         } catch (error) { toast((error && error.message) || "Could not download the report.", "warning"); }
         return;
+      case "kyc-start":
+        try {
+          await apiRequest("/api/v1/client/kyc/start", { method: "POST", body: "{}" }, false);
+          await refreshLiveView("KYC verification is ready. Upload the required documents below.", "success");
+        } catch (error) { toast((error && error.message) || "Could not start KYC verification.", "warning"); }
+        return;
       case "kyc-upload":
-        const currentCase = appState.data && appState.data.kycCases && appState.data.kycCases[0];
-        if (!currentCase) { toast("Start the KYC review before uploading documents.", "warning"); return; }
-        showModal("Upload KYC document", '<p>Accepted formats are PDF, JPG, and PNG. Files are private and validated before storage.</p><div class="broker-form-grid"><input type="hidden" name="caseId" value="' + currentCase.id + '"><label class="broker-form-field"><span>Document type</span><select name="documentType"><option value="Government ID">Government ID</option><option value="Proof of address">Proof of address</option><option value="Source of funds">Source of funds</option></select></label><label class="broker-form-field"><span>File</span><input name="documentFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="kyc-upload-confirm">Upload document</button>');
+        try {
+          const kycSetup = appState.data && appState.data.kycRequirements ? appState.data.kycRequirements : {};
+          let currentCase = kycSetup.case || null;
+          if (!currentCase) currentCase = await apiRequest("/api/v1/client/kyc/start", { method: "POST", body: "{}" }, false);
+          const requirementId = node.getAttribute("data-broker-requirement-id") || "";
+          const side = node.getAttribute("data-broker-document-side") || "FRONT";
+          const requirement = (kycSetup.requirements || []).find(function (item) { return item.id === requirementId; });
+          if (!requirement) throw new Error("This KYC requirement is no longer available. Refresh the page and try again.");
+          showModal("Upload " + requirement.documentType + " - " + labelize(side), '<p>' + requirement.description + '</p><div class="broker-form-grid"><input type="hidden" name="caseId" value="' + currentCase.id + '"><input type="hidden" name="requirementId" value="' + requirement.id + '"><input type="hidden" name="documentSide" value="' + side + '"><label class="broker-form-field"><span>File</span><input name="documentFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="text-xs text-muted-foreground">Accepted formats: PDF, JPG and PNG. Maximum file size: 5 MB.</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="kyc-upload-confirm">Upload securely</button>');
+        } catch (error) { toast((error && error.message) || "Could not prepare the KYC upload.", "warning"); }
         return;
       case "kyc-upload-confirm":
         try {
           const fileInput = document.querySelector('#broker-modal [name="documentFile"]');
           const file = fileInput && fileInput.files && fileInput.files[0];
           if (!file) throw new Error("Choose a KYC document to upload.");
+          if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Use a PDF, JPG or PNG file.");
+          if (file.size > 5 * 1024 * 1024) throw new Error("The document must be 5 MB or smaller.");
           const base64 = await new Promise(function (resolve, reject) { const reader = new FileReader(); reader.onload = function () { resolve(String(reader.result).split(",")[1]); }; reader.onerror = reject; reader.readAsDataURL(file); });
-          await apiRequest("/api/v1/client/kyc/documents", { method: "POST", body: JSON.stringify({ caseId: modalValue("caseId"), type: modalValue("documentType"), fileName: file.name, mimeType: file.type, base64: base64 }) }, false);
+          await apiRequest("/api/v1/client/kyc/documents", { method: "POST", body: JSON.stringify({ caseId: modalValue("caseId"), requirementId: modalValue("requirementId"), side: modalValue("documentSide"), fileName: file.name, mimeType: file.type, base64: base64 }) }, false);
           closeModal();
           await refreshLiveView("KYC document uploaded securely.", "success");
         } catch (error) { toast((error && error.message) || "Could not upload the document.", "warning"); }
@@ -2640,6 +2692,7 @@
       + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
       + " .broker-user-menu{position:absolute;z-index:130;width:min(320px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:grid;grid-template-columns:36px 1fr;gap:10px;align-items:center;width:100%;border:0;border-radius:12px;background:transparent;padding:10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item i{display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:10px;background:#eef8f0;color:#16a34a}.broker-user-item svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-user-item span{display:block}.broker-user-item strong{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger i{background:#fef2f2;color:#b91c1c}.broker-user-item.is-danger strong{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
+      + " .broker-kyc-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}.broker-kyc-summary div{border:1px solid rgba(148,163,184,.25);border-radius:12px;background:rgba(248,250,252,.72);padding:12px}.broker-kyc-summary span{display:block;color:#64748b;font-size:11px;font-weight:750;text-transform:uppercase}.broker-kyc-summary strong{display:block;margin-top:5px;color:#101713;font-size:17px}.broker-kyc-requirement{overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:14px;background:rgba(255,255,255,.72)}.broker-kyc-requirement+.broker-kyc-requirement{margin-top:14px}.broker-kyc-requirement-head{display:flex;justify-content:space-between;gap:18px;padding:16px}.broker-kyc-title-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px}.broker-kyc-title-row h3{margin:0;font-size:15px;font-weight:800}.broker-kyc-requirement-head p{max-width:620px;margin:7px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-kyc-mode{flex:none;color:#15803d;font-size:11px;font-weight:800;text-transform:uppercase}.broker-kyc-slots{display:grid;border-top:1px solid rgba(148,163,184,.22)}.broker-kyc-slot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 16px}.broker-kyc-slot+.broker-kyc-slot{border-top:1px solid rgba(148,163,184,.18)}.broker-kyc-slot-copy{min-width:0}.broker-kyc-slot-copy>span{display:block;color:#64748b;font-size:10px;font-weight:800;text-transform:uppercase}.broker-kyc-slot-copy strong{display:block;overflow:hidden;margin-top:3px;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.broker-kyc-slot-copy small{display:block;margin-top:3px;color:#64748b;font-size:11px}.broker-kyc-slot-action{display:flex;flex:none;align-items:center;gap:9px}.broker-kyc-upload{border:1px solid rgba(34,197,94,.35);border-radius:9px;background:rgba(34,197,94,.08);color:#15803d;padding:8px 10px;font-size:11px;font-weight:800;cursor:pointer}.broker-kyc-upload:hover{background:rgba(34,197,94,.15)}.broker-kyc-rejection{margin:7px 0 0!important;color:#be123c!important;font-size:11px!important;font-weight:650}.dark .broker-kyc-summary div,.dark .broker-kyc-requirement{background:rgba(15,23,18,.58)}.dark .broker-kyc-summary strong{color:#e7f2e9}.dark .broker-kyc-requirement-head p,.dark .broker-kyc-slot-copy>span,.dark .broker-kyc-slot-copy small{color:#94a3b8}.dark .broker-kyc-mode,.dark .broker-kyc-upload{color:#86efac}"
       + " .broker-modal{position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px}"
       + " .broker-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.48)}"
       + " .broker-modal-panel{position:relative;z-index:1;width:min(560px,100%);border-radius:18px;background:#fff;color:#0f172a;padding:20px;box-shadow:0 24px 60px rgba(15,23,42,.22)}"
@@ -2658,6 +2711,7 @@
       + " .broker-form-field{display:grid;gap:7px;color:#334155;font-size:.85rem;font-weight:600}"
       + " .broker-form-field input,.broker-form-field select{width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a;padding:9px 11px;font:inherit;font-weight:500}"
       + " .broker-form-field input[type=file]{padding:7px}"
+      + " @media (max-width:640px){.broker-kyc-summary{grid-template-columns:1fr}.broker-kyc-requirement-head,.broker-kyc-slot{align-items:flex-start;flex-direction:column}.broker-kyc-mode{white-space:normal}.broker-kyc-slot-action{width:100%;justify-content:space-between}.broker-kyc-upload{min-height:38px}.broker-modal-panel{max-height:calc(100vh - 32px);overflow:auto}.broker-modal-actions{flex-wrap:wrap}.broker-modal-button{flex:1}}"
       + " .broker-api-status{position:fixed;left:16px;bottom:16px;z-index:110;display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.35);border-radius:999px;background:rgba(255,255,255,.94);color:#0f172a;padding:8px 11px;box-shadow:0 12px 30px rgba(15,23,42,.12);font-size:12px;backdrop-filter:blur(10px)}"
       + " .broker-api-status span{width:8px;height:8px;border-radius:999px;background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
       + " .broker-api-status strong{font-weight:700}"

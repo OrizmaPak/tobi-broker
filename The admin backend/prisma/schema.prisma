@@ -388,14 +388,14 @@ model Client {
 }
 
 model ClientMfa {
-  id                 String   @id @default(cuid())
-  clientId           String   @unique
+  id                 String    @id @default(cuid())
+  clientId           String    @unique
   secretEncrypted    String
   recoveryCodeHashes Json
   enabledAt          DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  client             Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model ClientNote {
@@ -442,22 +442,43 @@ model KycCase {
   @@index([clientId, status])
 }
 
+model KycDocumentRequirement {
+  id               String        @id @default(cuid())
+  code             String        @unique
+  documentType     String
+  description      String
+  uploadMode       String        @default("FRONT_ONLY")
+  isRequired       Boolean       @default(true)
+  isActive         Boolean       @default(true)
+  sortOrder        Int           @default(0)
+  createdByAdminId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  documents        KycDocument[]
+
+  @@index([isActive, sortOrder])
+}
+
 model KycDocument {
-  id            String             @id @default(cuid())
+  id            String                  @id @default(cuid())
   caseId        String
+  requirementId String?
   type          String
+  side          String                  @default("FRONT")
   storageKey    String
   fileName      String
   mimeType      String
   size          Int
   checksum      String?
-  status        VerificationStatus @default(PENDING)
+  status        VerificationStatus      @default(PENDING)
   rejectionNote String?
-  uploadedAt    DateTime           @default(now())
+  uploadedAt    DateTime                @default(now())
   reviewedAt    DateTime?
-  kycCase       KycCase            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  kycCase       KycCase                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requirement   KycDocumentRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
 
   @@index([caseId, type])
+  @@index([caseId, requirementId, side, uploadedAt])
 }
 
 model KycCheck {

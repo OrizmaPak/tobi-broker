@@ -1,10 +1,11 @@
-import { Prisma } from "@prisma/client";
+import { KycDocumentRequirement, Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { ApiError, asyncHandler, hashValue, ok, pageInput, pageMeta, reference } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
+import { buildKycChecklist, KYC_UPLOAD_MODES, summarizeKycChecklist } from "../../services/kyc.service";
 import { captureWalletHoldTx, creditClientCashTx, debitClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
 
 export const v1AdminCoreRouter = Router();
@@ -15,6 +16,25 @@ const complianceRoles = requireAdminRoles("SUPER_ADMIN", "COMPLIANCE");
 const financeRoles = requireAdminRoles("SUPER_ADMIN", "FINANCE");
 const operationalRoles = requireAdminRoles("SUPER_ADMIN", "COMPLIANCE", "FINANCE", "PORTFOLIO_MANAGER", "SUPPORT", "AUDITOR");
 const moneySchema = z.coerce.number().positive().max(100_000_000);
+
+type KycCaseWithReview = Prisma.KycCaseGetPayload<{
+  include: {
+    client: true;
+    documents: { include: { requirement: true } };
+    checks: true;
+    decisions: true;
+  };
+}>;
+
+function kycCaseView(row: KycCaseWithReview, requirements: KycDocumentRequirement[], storedFiles: Map<string, string>) {
+  const checklist = buildKycChecklist(requirements, row.documents);
+  return {
+    ...row,
+    documents: row.documents.map((document) => ({ ...document, storedFileId: storedFiles.get(document.storageKey) || null })),
+    checklist,
+    summary: summarizeKycChecklist(checklist)
+  };
+}
 
 const approvalRoles: Record<string, string[]> = {
   CREDIT_DEPOSIT: ["SUPER_ADMIN", "FINANCE"],
@@ -145,23 +165,108 @@ v1AdminCoreRouter.get("/kyc", complianceRoles, asyncHandler(async (req, res) => 
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const where: Prisma.KycCaseWhereInput = status ? { status: status as never } : {};
-  const [rows, total] = await Promise.all([
-    prisma.kycCase.findMany({ where, include: { client: true, documents: true, checks: true, decisions: { orderBy: { createdAt: "desc" } } }, orderBy: { updatedAt: "asc" }, skip, take: limit }),
-    prisma.kycCase.count({ where })
+  const [rows, total, requirements] = await Promise.all([
+    prisma.kycCase.findMany({ where, include: { client: true, documents: { include: { requirement: true }, orderBy: { uploadedAt: "desc" } }, checks: true, decisions: { orderBy: { createdAt: "desc" } } }, orderBy: { updatedAt: "asc" }, skip, take: limit }),
+    prisma.kycCase.count({ where }),
+    prisma.kycDocumentRequirement.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { documentType: "asc" }] })
   ]);
-  return ok(res, rows, 200, pageMeta(page, limit, total));
+  const keys = rows.flatMap((row) => row.documents.map((document) => document.storageKey));
+  const files = keys.length ? await prisma.storedFile.findMany({ where: { storageKey: { in: keys } }, select: { id: true, storageKey: true } }) : [];
+  const storedFiles = new Map(files.map((file) => [file.storageKey, file.id]));
+  return ok(res, rows.map((row) => kycCaseView(row, requirements, storedFiles)), 200, pageMeta(page, limit, total));
 }));
 
-v1AdminCoreRouter.get("/kyc/:id", complianceRoles, asyncHandler(async (req, res) => {
-  const row = await prisma.kycCase.findUnique({ where: { id: String(req.params.id) }, include: { client: true, documents: true, checks: true, decisions: { orderBy: { createdAt: "desc" } } } });
-  if (!row) throw new ApiError(404, "KYC case was not found", "KYC_CASE_NOT_FOUND");
+v1AdminCoreRouter.get("/kyc/requirements", complianceRoles, asyncHandler(async (_req, res) => {
+  const rows = await prisma.kycDocumentRequirement.findMany({ orderBy: [{ sortOrder: "asc" }, { documentType: "asc" }] });
+  return ok(res, rows);
+}));
+
+v1AdminCoreRouter.post("/kyc/requirements", complianceRoles, asyncHandler(async (req, res) => {
+  const input = z.object({
+    documentType: z.string().trim().min(2).max(120),
+    description: z.string().trim().min(5).max(1000),
+    uploadMode: z.enum(KYC_UPLOAD_MODES).default("FRONT_ONLY"),
+    isRequired: z.boolean().default(true),
+    isActive: z.boolean().default(true),
+    sortOrder: z.coerce.number().int().min(0).max(10_000).default(0)
+  }).parse(req.body);
+  const baseCode = input.documentType.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60) || "DOCUMENT";
+  const existing = await prisma.kycDocumentRequirement.findUnique({ where: { code: baseCode } });
+  const row = await prisma.kycDocumentRequirement.create({
+    data: { ...input, code: existing ? `${baseCode}_${Date.now().toString(36).toUpperCase()}` : baseCode, createdByAdminId: req.user!.id }
+  });
+  await writeAudit("createKycRequirement", "KycDocumentRequirement", row.id, { code: row.code, uploadMode: row.uploadMode }, { req, after: row });
+  return ok(res, row, 201);
+}));
+
+v1AdminCoreRouter.patch("/kyc/requirements/:id", complianceRoles, asyncHandler(async (req, res) => {
+  const input = z.object({
+    documentType: z.string().trim().min(2).max(120).optional(),
+    description: z.string().trim().min(5).max(1000).optional(),
+    uploadMode: z.enum(KYC_UPLOAD_MODES).optional(),
+    isRequired: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.coerce.number().int().min(0).max(10_000).optional()
+  }).refine((value) => Object.keys(value).length > 0, "At least one requirement field must be supplied").parse(req.body);
+  const before = await prisma.kycDocumentRequirement.findUnique({ where: { id: String(req.params.id) } });
+  if (!before) throw new ApiError(404, "KYC document requirement was not found", "KYC_REQUIREMENT_NOT_FOUND");
+  const row = await prisma.kycDocumentRequirement.update({ where: { id: before.id }, data: input });
+  await writeAudit("updateKycRequirement", "KycDocumentRequirement", row.id, input as Prisma.InputJsonObject, { req, before, after: row });
   return ok(res, row);
 }));
 
+v1AdminCoreRouter.get("/kyc/:id", complianceRoles, asyncHandler(async (req, res) => {
+  const [row, requirements] = await Promise.all([
+    prisma.kycCase.findUnique({ where: { id: String(req.params.id) }, include: { client: true, documents: { include: { requirement: true }, orderBy: { uploadedAt: "desc" } }, checks: true, decisions: { orderBy: { createdAt: "desc" } } } }),
+    prisma.kycDocumentRequirement.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { documentType: "asc" }] })
+  ]);
+  if (!row) throw new ApiError(404, "KYC case was not found", "KYC_CASE_NOT_FOUND");
+  const files = row.documents.length ? await prisma.storedFile.findMany({ where: { storageKey: { in: row.documents.map((document) => document.storageKey) } }, select: { id: true, storageKey: true } }) : [];
+  return ok(res, kycCaseView(row, requirements, new Map(files.map((file) => [file.storageKey, file.id]))));
+}));
+
+v1AdminCoreRouter.post("/kyc/:id/documents/:documentId/decision", complianceRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ status: z.enum(["VERIFIED", "REJECTED"]), note: z.string().trim().max(2000).default("") })
+    .refine((value) => value.status !== "REJECTED" || value.note.length >= 5, { message: "A rejection reason of at least five characters is required", path: ["note"] })
+    .parse(req.body);
+  const before = await prisma.kycDocument.findFirst({
+    where: { id: String(req.params.documentId), caseId: String(req.params.id) },
+    include: { kycCase: { include: { client: true } }, requirement: true }
+  });
+  if (!before) throw new ApiError(404, "KYC document was not found", "KYC_DOCUMENT_NOT_FOUND");
+  const document = await prisma.$transaction(async (tx) => {
+    const updated = await tx.kycDocument.update({
+      where: { id: before.id },
+      data: { status: input.status, rejectionNote: input.status === "REJECTED" ? input.note : null, reviewedAt: new Date() },
+      include: { requirement: true }
+    });
+    await tx.kycCase.update({ where: { id: before.caseId }, data: { status: "IN_REVIEW", assignedReviewer: req.user!.name } });
+    await tx.notification.create({
+      data: {
+        clientId: before.kycCase.clientId,
+        category: "KYC",
+        title: input.status === "VERIFIED" ? "KYC document accepted" : "KYC document needs attention",
+        body: input.status === "VERIFIED" ? `${before.requirement?.documentType || before.type} was accepted.` : input.note,
+        actionUrl: "kyc.html"
+      }
+    });
+    return updated;
+  });
+  await writeAudit("reviewKycDocument", "KycDocument", document.id, { status: input.status, note: input.note }, { req, reason: input.note || "Document accepted", before, after: document });
+  return ok(res, document);
+}));
+
 v1AdminCoreRouter.post("/kyc/:id/decision", complianceRoles, asyncHandler(async (req, res) => {
-  const input = z.object({ status: z.enum(["APPROVED", "REJECTED", "RESUBMISSION_REQUIRED"]), note: z.string().trim().min(5).max(2000), expiresAt: z.coerce.date().optional() }).parse(req.body);
-  const kycCase = await prisma.kycCase.findUnique({ where: { id: String(req.params.id) }, include: { client: true } });
+  const input = z.object({ status: z.enum(["APPROVED", "REJECTED", "RESUBMISSION_REQUIRED"]), note: z.string().trim().min(5).max(2000), expiresAt: z.coerce.date().optional(), overrideIncomplete: z.boolean().default(false) }).parse(req.body);
+  const [kycCase, requirements] = await Promise.all([
+    prisma.kycCase.findUnique({ where: { id: String(req.params.id) }, include: { client: true, documents: true } }),
+    prisma.kycDocumentRequirement.findMany({ where: { isActive: true, isRequired: true }, orderBy: { sortOrder: "asc" } })
+  ]);
   if (!kycCase) throw new ApiError(404, "KYC case was not found", "KYC_CASE_NOT_FOUND");
+  const summary = summarizeKycChecklist(buildKycChecklist(requirements, kycCase.documents));
+  if (input.status === "APPROVED" && !summary.reviewComplete && !input.overrideIncomplete) {
+    throw new ApiError(409, "Every required document must be accepted before KYC can pass, or use the audited override", "KYC_REVIEW_INCOMPLETE");
+  }
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.kycCase.update({ where: { id: kycCase.id }, data: { status: input.status, assignedReviewer: req.user!.name, approvedAt: input.status === "APPROVED" ? new Date() : null, expiresAt: input.status === "APPROVED" ? input.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null, decisions: { create: { status: input.status, reviewerId: req.user!.id, note: input.note } } } });
     await tx.kycReview.updateMany({ where: { clientId: kycCase.clientId }, data: { status: input.status, reviewer: req.user!.name, decisionNote: input.note } });
@@ -169,7 +274,7 @@ v1AdminCoreRouter.post("/kyc/:id/decision", complianceRoles, asyncHandler(async 
     await tx.notification.create({ data: { clientId: kycCase.clientId, category: "KYC", title: `KYC ${input.status.toLowerCase().replace(/_/g, " ")}`, body: input.note, actionUrl: "kyc.html" } });
     return row;
   });
-  await writeAudit("kycDecision", "KycCase", updated.id, { status: input.status }, { req, reason: input.note, before: kycCase, after: updated });
+  await writeAudit("kycDecision", "KycCase", updated.id, { status: input.status, overrideIncomplete: input.overrideIncomplete, summary }, { req, reason: input.note, before: kycCase, after: updated });
   return ok(res, updated);
 }));
 

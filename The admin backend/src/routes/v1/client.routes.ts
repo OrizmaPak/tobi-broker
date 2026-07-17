@@ -8,6 +8,7 @@ import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { idempotentMutation } from "../../services/idempotency.service";
+import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
 import { debitClientCashTx, placeWalletHoldTx, releaseWalletHoldTx } from "../../services/ledger.service";
 import { notifyClient } from "../../services/notification.service";
 
@@ -93,10 +94,34 @@ v1ClientRouter.get("/kyc", asyncHandler(async (req, res) => {
   const id = clientId(req);
   const cases = await prisma.kycCase.findMany({
     where: { clientId: id },
-    include: { documents: true, checks: true, decisions: { orderBy: { createdAt: "desc" } } },
+    include: { documents: { include: { requirement: true }, orderBy: { uploadedAt: "desc" } }, checks: true, decisions: { orderBy: { createdAt: "desc" } } },
     orderBy: { updatedAt: "desc" }
   });
   return ok(res, cases);
+}));
+
+v1ClientRouter.get("/kyc/requirements", asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  const [requirements, kycCase] = await Promise.all([
+    prisma.kycDocumentRequirement.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { documentType: "asc" }] }),
+    prisma.kycCase.findFirst({
+      where: { clientId: id },
+      include: { documents: { include: { requirement: true }, orderBy: { uploadedAt: "desc" } }, decisions: { orderBy: { createdAt: "desc" } } },
+      orderBy: { updatedAt: "desc" }
+    })
+  ]);
+  const checklist = buildKycChecklist(requirements, kycCase?.documents || []);
+  return ok(res, { case: kycCase, requirements: checklist, summary: summarizeKycChecklist(checklist) });
+}));
+
+v1ClientRouter.post("/kyc/start", requireCsrf, asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  await verifiedClient(id);
+  const latest = await prisma.kycCase.findFirst({ where: { clientId: id }, orderBy: { updatedAt: "desc" } });
+  if (latest?.status === "APPROVED") return ok(res, latest);
+  if (latest && latest.status !== "REJECTED") return ok(res, latest);
+  const kycCase = await prisma.kycCase.create({ data: { clientId: id, status: "DRAFT", level: "Standard" } });
+  return ok(res, kycCase, 201);
 }));
 
 v1ClientRouter.post("/kyc/submit", requireCsrf, asyncHandler(async (req, res) => {
@@ -108,16 +133,26 @@ v1ClientRouter.post("/kyc/submit", requireCsrf, asyncHandler(async (req, res) =>
   }).parse(req.body);
   const score = suitabilityScore(input.questionnaire);
   const riskLevel = score >= 75 ? "HIGH" : score >= 45 ? "MODERATE" : "LOW";
-  const latest = await prisma.kycCase.findFirst({ where: { clientId: id }, orderBy: { updatedAt: "desc" } });
+  const [latest, requirements] = await Promise.all([
+    prisma.kycCase.findFirst({ where: { clientId: id }, include: { documents: true }, orderBy: { updatedAt: "desc" } }),
+    prisma.kycDocumentRequirement.findMany({ where: { isActive: true, isRequired: true }, orderBy: { sortOrder: "asc" } })
+  ]);
   if (latest?.status === "APPROVED") throw new ApiError(409, "KYC is already approved", "KYC_ALREADY_APPROVED");
-  const kycCase = latest
-    ? await prisma.kycCase.update({
-        where: { id: latest.id },
-        data: { status: "SUBMITTED", level: input.level, submittedAt: new Date(), riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score }
-      })
-    : await prisma.kycCase.create({
-        data: { clientId: id, status: "SUBMITTED", level: input.level, submittedAt: new Date(), riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score }
-      });
+  if (!latest) throw new ApiError(409, "Start KYC verification before submitting documents", "KYC_NOT_STARTED");
+  const checklist = buildKycChecklist(requirements, latest.documents);
+  const summary = summarizeKycChecklist(checklist);
+  if (!summary.uploadComplete) {
+    const fields = Object.fromEntries(checklist
+      .filter((requirement) => requirement.isRequired)
+      .flatMap((requirement) => requirement.uploads
+        .filter((upload) => !upload.document)
+        .map((upload) => [`${requirement.code}.${upload.side}`, [`${requirement.documentType} ${upload.side.toLowerCase()} is required`]])));
+    throw new ApiError(422, "Upload every required KYC document before submitting", "KYC_DOCUMENTS_INCOMPLETE", fields);
+  }
+  const kycCase = await prisma.kycCase.update({
+    where: { id: latest.id },
+    data: { status: "SUBMITTED", level: input.level, submittedAt: new Date(), riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score }
+  });
   await prisma.$transaction([
     prisma.client.update({ where: { id }, data: { riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score, riskLevel } }),
     prisma.kycReview.upsert({
@@ -135,18 +170,26 @@ v1ClientRouter.post("/kyc/documents", requireCsrf, asyncHandler(async (req, res)
   const id = clientId(req);
   const input = z.object({
     caseId: z.string().min(1),
-    type: z.string().trim().min(2).max(80),
+    requirementId: z.string().min(1),
+    side: z.enum(KYC_DOCUMENT_SIDES).default("FRONT"),
     fileName: z.string().trim().min(1).max(160),
     mimeType: z.enum(["application/pdf", "image/jpeg", "image/png"]),
     base64: z.string().min(4)
   }).parse(req.body);
-  const kycCase = await prisma.kycCase.findFirst({ where: { id: input.caseId, clientId: id } });
+  const [kycCase, requirement] = await Promise.all([
+    prisma.kycCase.findFirst({ where: { id: input.caseId, clientId: id } }),
+    prisma.kycDocumentRequirement.findFirst({ where: { id: input.requirementId, isActive: true } })
+  ]);
   if (!kycCase) throw new ApiError(404, "KYC case was not found", "KYC_CASE_NOT_FOUND");
+  if (!requirement) throw new ApiError(404, "KYC document requirement was not found", "KYC_REQUIREMENT_NOT_FOUND");
   if (["APPROVED", "REJECTED"].includes(kycCase.status)) throw new ApiError(409, "Documents cannot be changed after a final decision", "KYC_CASE_CLOSED");
+  if (requirement.uploadMode === "FRONT_ONLY" && input.side !== "FRONT") throw new ApiError(422, "This document requires one front upload only", "INVALID_DOCUMENT_SIDE");
   const stored = await storePrivateFile({ ownerType: "CLIENT", ownerId: id, category: "KYC", fileName: input.fileName, mimeType: input.mimeType, base64: input.base64 });
   const document = await prisma.kycDocument.create({
-    data: { caseId: kycCase.id, type: input.type, storageKey: stored.storageKey, fileName: stored.fileName, mimeType: stored.mimeType, size: stored.size, checksum: stored.checksum }
+    data: { caseId: kycCase.id, requirementId: requirement.id, type: requirement.documentType, side: input.side, storageKey: stored.storageKey, fileName: stored.fileName, mimeType: stored.mimeType, size: stored.size, checksum: stored.checksum },
+    include: { requirement: true }
   });
+  if (kycCase.status === "RESUBMISSION_REQUIRED") await prisma.kycCase.update({ where: { id: kycCase.id }, data: { status: "DRAFT" } });
   return ok(res, document, 201);
 }));
 

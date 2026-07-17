@@ -42,6 +42,7 @@
     queues: [],
     clients: [],
     kyc: [],
+    kycRequirements: [],
     deposits: [],
     withdrawals: [],
     products: [],
@@ -71,6 +72,9 @@
       kyc: "Not loaded",
       risk: "-",
       status: "No record",
+      documents: [],
+      checklist: [],
+      summary: { requiredDocuments: 0, uploadedDocuments: 0, verifiedDocuments: 0, uploadComplete: false, reviewComplete: false },
       restrictions: ["Connect to the operational API and select a backend client record."],
       notes: [["System", "No backend notes loaded."]]
     },
@@ -245,6 +249,7 @@
     appState.apiOnline = true;
     data.clients = [];
     data.kyc = [];
+    data.kycRequirements = [];
     data.deposits = [];
     data.withdrawals = [];
     data.products = [];
@@ -262,9 +267,10 @@
     data.adminUsers = [];
     data.settingsRows = [];
     data.tasks = [];
-    const [clients, kyc, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
+    const [clients, kyc, kycRequirements, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi("/api/v1/admin/kyc?limit=100"),
+      tryApi("/api/v1/admin/kyc/requirements"),
       tryApi("/api/v1/admin/money/deposits?limit=100"),
       tryApi("/api/v1/admin/money/withdrawals?limit=100"),
       tryApi("/api/v1/admin/portfolio-products"),
@@ -333,7 +339,7 @@
     }
 
     if (Array.isArray(kyc)) {
-      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", row.level + " identity verification", row.assignedReviewer || "Unassigned", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status), row.id]);
+      data.kyc = kyc.map((row) => [row.client?.accountNumber || "-", row.client?.name || "-", (row.summary?.uploadedDocuments || 0) + "/" + (row.summary?.requiredDocuments || 0) + " required files", row.assignedReviewer || "Unassigned", row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : "-", label(row.status), row.id]);
       const first = kyc.find((row) => row.id === requestedRecordId) || kyc[0];
       if (first) {
         liveRefs.kycReviewId = first.id;
@@ -341,16 +347,21 @@
           id: first.id,
           account: first.client?.accountNumber || "-",
           client: first.client?.name || "-",
-          requirement: first.level + " identity verification",
-          document: first.documents?.[0]?.fileName || "Document pending",
+          requirement: (first.summary?.uploadedDocuments || 0) + "/" + (first.summary?.requiredDocuments || 0) + " required document slots uploaded",
+          document: first.documents?.length ? first.documents.length + " upload record" + (first.documents.length === 1 ? "" : "s") : "Documents pending",
           uploaded: first.submittedAt ? new Date(first.submittedAt).toLocaleString() : "-",
           status: label(first.status),
+          documents: first.documents || [],
+          checklist: first.checklist || [],
+          summary: first.summary || { requiredDocuments: 0, uploadedDocuments: 0, verifiedDocuments: 0, uploadComplete: false, reviewComplete: false },
           blocked: "Withdrawals and large funding until approved",
           recommendation: first.decisions?.[0]?.note || "Review document details before final decision.",
           checks: [["Current status", label(first.status)], ["Reviewer", first.assignedReviewer || "Unassigned"], ["Client risk", label(first.client?.riskLevel)], ["Account status", label(first.client?.status)]]
         };
       }
     }
+
+    if (Array.isArray(kycRequirements)) data.kycRequirements = kycRequirements;
 
     if (Array.isArray(deposits)) {
       data.deposits = deposits.map((row) => [row.reference, row.client?.name || "-", row.method, formatMoney(row.amount), row.rail, label(row.status), row.id]);
@@ -586,6 +597,11 @@
     return '<aside class="review-panel"><h2>' + title + '</h2><p>' + subtitle + '</p><div class="decision-state" data-decision-state>No decision submitted in this session.</div><label>Internal decision note<textarea placeholder="Add a clear audit note before saving a decision."></textarea></label><div class="action-row">' + actions + "</div></aside>";
   }
 
+  function kycDecisionPanel(review) {
+    const incomplete = !review.summary?.reviewComplete;
+    return '<aside class="review-panel"><h2>Overall KYC decision</h2><p>Document decisions and the final KYC status are separate. A manual pass with incomplete checks is recorded as an override.</p><div class="decision-state" data-decision-state>' + badge(review.status || "No record") + '<span>' + (review.summary?.verifiedDocuments || 0) + '/' + (review.summary?.requiredDocuments || 0) + ' required files accepted</span></div><label>Decision note<textarea placeholder="Record the evidence and reason for the overall decision."></textarea></label>' + (incomplete ? '<label class="override-check"><input type="checkbox" name="kycOverride"> Allow an audited pass even though required document checks are incomplete</label>' : '') + '<div class="action-row">' + decisionButton("Mark KYC passed", "primary", "KYC approved", "approveKyc") + decisionButton("Deny KYC", "danger", "KYC rejected", "rejectKyc") + decisionButton("Request resubmission", "", "Resubmission requested", "requestKycResubmission") + '</div></aside>';
+  }
+
   function auditPanel() {
     return section("Live audit trail", "Append-only operational events loaded from the backend audit record.", timeline(appState.audit.slice(0, 6)));
   }
@@ -626,9 +642,19 @@
   }
 
   function kycPage() {
-    return '<div class="grid two">' +
-      section("KYC decision queue", "Document reviews awaiting compliance action.", filterableTable("Search account, client, requirement...", ["Account", "Client", "Requirement", "Owner", "Age", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html?id=" + encodeURIComponent(row[6]))])), modalButton("Approve selected", "bulk-kyc", "primary")) +
-      section("Review detail workspace", "The detail panel admins use before approving or rejecting backend verification records.", details([["Client", data.kycReview.client], ["Requirement", data.kycReview.requirement], ["Uploaded", data.kycReview.uploaded], ["Decision", data.kycReview.status || "No record"], ["Blocked actions", data.kycReview.blocked], ["Audit note", data.kycReview.recommendation]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html", "primary") + modalButton("Request resubmission", "bulk-kyc") + "</div>") +
+    const requirementRows = data.kycRequirements.map((requirement) => [
+      requirement.documentType,
+      requirement.description,
+      requirement.uploadMode === "FRONT_BACK" ? "Front and back" : "Front only",
+      badge(requirement.isRequired ? "Required" : "Optional"),
+      String(requirement.sortOrder),
+      badge(requirement.isActive ? "Active" : "Inactive"),
+      '<div class="action-row"><button class="btn" type="button" data-action="kyc-requirement-edit" data-requirement-id="' + requirement.id + '">Edit</button><button class="btn" type="button" data-action="kyc-requirement-toggle" data-requirement-id="' + requirement.id + '" data-requirement-active="' + String(!requirement.isActive) + '">' + (requirement.isActive ? "Deactivate" : "Activate") + '</button></div>'
+    ]);
+    return section("Required document setup", "Define what the client portal requests. Changes appear automatically for every new and open KYC case.", table(["Document type", "Description", "Upload", "Rule", "Order", "Status", "Action"], requirementRows), '<button class="btn primary" type="button" data-action="kyc-requirement-new">Add document requirement</button>') +
+      '<div class="grid two">' +
+      section("KYC decision queue", "Client cases awaiting document review or an overall compliance decision.", filterableTable("Search account, client, documents...", ["Account", "Client", "Documents", "Owner", "Updated", "State", "Action"], data.kyc.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), linkButton("Review", "kyc-review.html?id=" + encodeURIComponent(row[6]))]))) +
+      section("Selected case", "A compact view of the case currently selected from the operational API.", details([["Client", data.kycReview.client], ["Document progress", data.kycReview.requirement], ["Submitted", data.kycReview.uploaded], ["Decision", badge(data.kycReview.status || "No record")], ["Blocked actions", data.kycReview.blocked], ["Latest audit note", data.kycReview.recommendation]]) + '<div class="action-row" style="margin-top:14px">' + linkButton("Open review", "kyc-review.html?id=" + encodeURIComponent(data.kycReview.id || ""), "primary") + "</div>") +
       "</div>";
   }
 
@@ -721,10 +747,30 @@
 
   function kycReviewPage() {
     const r = data.kycReview;
-    return workflowSteps(["Submitted", "Screened", "Staff review", "Decision"], 2) +
+    const statusIndex = /approved|rejected/i.test(r.status) ? 3 : /in review/i.test(r.status) ? 2 : /submitted|pending/i.test(r.status) ? 1 : 0;
+    const documentsById = new Map((r.documents || []).map((document) => [document.id, document]));
+    const documentRows = (r.checklist || []).flatMap((requirement) => (requirement.uploads || []).map((upload) => {
+      const document = upload.document ? documentsById.get(upload.document.id) || upload.document : null;
+      if (!document) return [requirement.documentType, label(upload.side), "Not uploaded", "-", badge("Missing"), "Required from client"];
+      const view = document.storedFileId ? '<a class="btn" target="_blank" rel="noopener" href="/api/v1/files/' + encodeURIComponent(document.storedFileId) + '">View file</a>' : '<span class="muted">File unavailable</span>';
+      const actions = /approved|rejected/i.test(r.status)
+        ? view
+        : '<div class="action-row">' + view + '<button class="btn primary" type="button" data-action="kyc-document-decision" data-case-id="' + r.id + '" data-document-id="' + document.id + '" data-document-name="' + requirement.documentType + ' ' + label(upload.side) + '" data-document-decision="VERIFIED">Accept</button><button class="btn danger" type="button" data-action="kyc-document-decision" data-case-id="' + r.id + '" data-document-id="' + document.id + '" data-document-name="' + requirement.documentType + ' ' + label(upload.side) + '" data-document-decision="REJECTED">Deny</button></div>';
+      const status = label(document.status);
+      const detail = document.rejectionNote ? status + ": " + document.rejectionNote : status;
+      return [requirement.documentType, label(upload.side), document.fileName, document.uploadedAt ? new Date(document.uploadedAt).toLocaleString() : "-", badge(detail), actions];
+    }));
+    return workflowSteps(["Uploaded", "Submitted", "Document review", "Overall decision"], statusIndex) +
+      '<div class="grid metrics">' +
+      metric("Required files", String(r.summary?.requiredDocuments || 0), "Front and back are counted separately.", "Configured") +
+      metric("Uploaded", String(r.summary?.uploadedDocuments || 0), "Required document slots received.", r.summary?.uploadComplete ? "Complete" : "Pending") +
+      metric("Accepted", String(r.summary?.verifiedDocuments || 0), "Individual file decisions completed.", r.summary?.reviewComplete ? "Complete" : "Review") +
+      metric("Overall status", r.status || "Not started", "Final client eligibility decision.", r.status || "Pending") +
+      '</div>' +
+      section("Uploaded document review", "Open each private file, then accept it or deny it with a clear reason.", table(["Requirement", "Side", "File", "Uploaded", "Review", "Action"], documentRows)) +
       '<div class="grid two">' +
-      section("Document review", "Validate the uploaded document before changing client permissions.", details([["Account", r.account], ["Client", r.client], ["Requirement", r.requirement], ["Document", r.document], ["Uploaded", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Compliance decision", r.recommendation, decisionButton("Approve KYC", "primary", "KYC approved", "approveKyc") + decisionButton("Reject", "danger", "KYC rejected", "rejectKyc") + decisionButton("Request resubmission", "", "Resubmission requested", "requestKycResubmission")) +
+      section("Case context", "Review client identity, case ownership, restrictions, and current operational state.", details([["Account", r.account], ["Client", r.client], ["Document progress", r.requirement], ["Submitted", r.uploaded], ["Blocked actions", r.blocked]]) + "<h3>Verification checks</h3>" + checklist(r.checks)) +
+      kycDecisionPanel(r) +
       "</div>";
   }
 
@@ -939,6 +985,12 @@
         }
         else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
         else if (action === "approval-confirm") submitApprovalDecision();
+        else if (action === "kyc-requirement-new") openKycRequirementEditor();
+        else if (action === "kyc-requirement-edit") openKycRequirementEditor(node.dataset.requirementId);
+        else if (action === "kyc-requirement-save") submitKycRequirement();
+        else if (action === "kyc-requirement-toggle") toggleKycRequirement(node.dataset.requirementId, node.dataset.requirementActive === "true");
+        else if (action === "kyc-document-decision") openKycDocumentDecision(node.dataset);
+        else if (action === "kyc-document-confirm") submitKycDocumentDecision();
         else if (action === "record-decision") openRecordDecision(node.dataset);
         else if (action === "record-confirm") submitRecordDecision();
         else if (action === "report-download") downloadAdminReport(node.dataset.reportId);
@@ -978,8 +1030,9 @@
 
   async function executeBackendAction(apiAction) {
     const note = document.querySelector(".review-panel textarea")?.value || "Updated from BullPort admin UI.";
+    const kycOverride = Boolean(document.querySelector('[name="kycOverride"]')?.checked);
     const routes = {
-      approveKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "APPROVED", note }],
+      approveKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "APPROVED", note, overrideIncomplete: kycOverride }],
       rejectKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "REJECTED", note }],
       requestKycResubmission: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "RESUBMISSION_REQUIRED", note }],
       creditDeposit: ["/api/v1/admin/money/deposits/" + liveRefs.depositId + "/request-approval", { note }],
@@ -1060,6 +1113,70 @@
     } catch (error) {
       toast(error?.message || "The approval decision could not be completed.");
     }
+  }
+
+  function openKycRequirementEditor(id) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const requirement = data.kycRequirements.find((item) => item.id === id) || null;
+    appState.pendingKycRequirement = requirement?.id || null;
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">KYC configuration</p><h2>' + (requirement ? "Edit document requirement" : "Add document requirement") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><label>Document type<input name="kycDocumentType" maxlength="120" value="' + (requirement?.documentType || "") + '" placeholder="e.g. Government-issued ID"></label><label>Description<textarea name="kycDescription" maxlength="1000" placeholder="Explain which documents are accepted and any validity rules.">' + (requirement?.description || "") + '</textarea></label><label>Required upload<select name="kycUploadMode"><option value="FRONT_ONLY" ' + (requirement?.uploadMode !== "FRONT_BACK" ? "selected" : "") + '>Front only / one file</option><option value="FRONT_BACK" ' + (requirement?.uploadMode === "FRONT_BACK" ? "selected" : "") + '>Front and back</option></select></label><label>Display order<input name="kycSortOrder" type="number" min="0" max="10000" value="' + (requirement?.sortOrder ?? data.kycRequirements.length * 10 + 10) + '"></label><label class="modal-check"><input name="kycIsRequired" type="checkbox" ' + (requirement?.isRequired !== false ? "checked" : "") + '> Required before submission</label><label class="modal-check"><input name="kycIsActive" type="checkbox" ' + (requirement?.isActive !== false ? "checked" : "") + '> Active in the client portal</label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="kyc-requirement-save">Save requirement</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitKycRequirement() {
+    const root = document.querySelector("[data-modal-root]");
+    const payload = {
+      documentType: root?.querySelector('[name="kycDocumentType"]')?.value.trim() || "",
+      description: root?.querySelector('[name="kycDescription"]')?.value.trim() || "",
+      uploadMode: root?.querySelector('[name="kycUploadMode"]')?.value || "FRONT_ONLY",
+      sortOrder: Number(root?.querySelector('[name="kycSortOrder"]')?.value || 0),
+      isRequired: Boolean(root?.querySelector('[name="kycIsRequired"]')?.checked),
+      isActive: Boolean(root?.querySelector('[name="kycIsActive"]')?.checked)
+    };
+    if (payload.documentType.length < 2 || payload.description.length < 5) { toast("Add a document type and a clear description."); return; }
+    try {
+      const id = appState.pendingKycRequirement;
+      await api(id ? "/api/v1/admin/kyc/requirements/" + encodeURIComponent(id) : "/api/v1/admin/kyc/requirements", { method: id ? "PATCH" : "POST", body: JSON.stringify(payload) });
+      appState.pendingKycRequirement = null;
+      closeModal();
+      await loadBackendData();
+      render();
+      toast(id ? "KYC requirement updated." : "KYC requirement created.");
+    } catch (error) { toast(error?.message || "The KYC requirement could not be saved."); }
+  }
+
+  async function toggleKycRequirement(id, isActive) {
+    try {
+      await api("/api/v1/admin/kyc/requirements/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify({ isActive }) });
+      await loadBackendData();
+      render();
+      toast(isActive ? "KYC requirement activated." : "KYC requirement deactivated.");
+    } catch (error) { toast(error?.message || "The KYC requirement could not be updated."); }
+  }
+
+  function openKycDocumentDecision(record) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    appState.pendingKycDocument = { caseId: record.caseId, documentId: record.documentId, name: record.documentName, status: record.documentDecision };
+    const accepting = record.documentDecision === "VERIFIED";
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Document decision</p><h2>' + (accepting ? "Accept " : "Deny ") + record.documentName + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p>' + (accepting ? "Confirm that the file is clear, valid, consistent with the client profile, and suitable for this requirement." : "The client will see the reason and can upload a replacement file.") + '</p><label>Review note<textarea name="kycDocumentNote" placeholder="' + (accepting ? "Optional internal acceptance note" : "Explain exactly what must be corrected") + '"></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn ' + (accepting ? "primary" : "danger") + '" type="button" data-action="kyc-document-confirm">' + (accepting ? "Accept document" : "Deny document") + '</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitKycDocumentDecision() {
+    const record = appState.pendingKycDocument;
+    const note = document.querySelector('[name="kycDocumentNote"]')?.value.trim() || "";
+    if (!record) return;
+    if (record.status === "REJECTED" && note.length < 5) { toast("Enter a clear denial reason of at least five characters."); return; }
+    try {
+      await api("/api/v1/admin/kyc/" + encodeURIComponent(record.caseId) + "/documents/" + encodeURIComponent(record.documentId) + "/decision", { method: "POST", body: JSON.stringify({ status: record.status, note }) });
+      appState.pendingKycDocument = null;
+      closeModal();
+      await loadBackendData();
+      render();
+      toast(record.status === "VERIFIED" ? "KYC document accepted." : "KYC document denied and the client was notified.");
+    } catch (error) { toast(error?.message || "The document decision could not be saved."); }
   }
 
   function openRecordDecision(record) {

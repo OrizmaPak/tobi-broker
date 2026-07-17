@@ -727,6 +727,35 @@ tr:last-child td {
   text-transform: none;
 }
 
+.review-panel .override-check,
+.modal-body .modal-check {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.review-panel .override-check input,
+.modal-body .modal-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--green);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .btn.is-confirmed {
   border-color: var(--green);
   background: rgba(22, 163, 74, 0.1);
@@ -828,6 +857,7 @@ tr:last-child td {
 }
 
 .modal-body input,
+.modal-body select,
 .modal-body textarea {
   width: 100%;
   border: 1px solid var(--line);

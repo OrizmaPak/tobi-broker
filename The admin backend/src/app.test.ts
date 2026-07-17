@@ -17,6 +17,8 @@ describe("BullPort API shell", () => {
     expect(response.body.ok).toBe(true);
     expect(response.body.data.openapi).toBe("3.1.0");
     expect(response.body.data.paths).toHaveProperty("/auth/client/login");
+    expect(response.body.data.paths).toHaveProperty("/client/kyc/requirements");
+    expect(response.body.data.paths).toHaveProperty("/admin/kyc/{id}/documents/{documentId}/decision");
   });
 
   it("uses the standard error envelope", async () => {

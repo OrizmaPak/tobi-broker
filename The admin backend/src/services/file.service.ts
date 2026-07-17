@@ -1,5 +1,7 @@
 import { get, put } from "@vercel/blob";
+import { v2 as cloudinary } from "cloudinary";
 import { createHash } from "node:crypto";
+import { extname } from "node:path";
 import { env } from "../config/env";
 import { ApiError } from "../lib/http";
 import { prisma } from "../lib/prisma";
@@ -15,13 +17,13 @@ function cloudinaryResourceType(mimeType: string) {
   return "raw";
 }
 
-function cloudinarySignature(params: Record<string, string | number>) {
-  const payload = Object.entries(params)
-    .filter(([, value]) => value !== "" && value !== undefined && value !== null)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("&");
-  return createHash("sha1").update(`${payload}${env.CLOUDINARY_API_SECRET}`).digest("hex");
+function configureCloudinary() {
+  cloudinary.config({
+    cloud_name: env.CLOUDINARY_CLOUD_NAME,
+    api_key: env.CLOUDINARY_API_KEY,
+    api_secret: env.CLOUDINARY_API_SECRET,
+    secure: true
+  });
 }
 
 export async function uploadToCloudinary(input: {
@@ -31,41 +33,25 @@ export async function uploadToCloudinary(input: {
   base64: string;
 }) {
   if (!hasCloudinaryConfig()) throw new ApiError(503, "Cloudinary storage is not configured", "STORAGE_UNAVAILABLE");
+  configureCloudinary();
   const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
-  const publicId = `${Date.now()}-${safeName.replace(/\.[^.]+$/, "")}`;
-  const timestamp = Math.floor(Date.now() / 1000);
   const resourceType = cloudinaryResourceType(input.mimeType);
-  const params = {
+  const extension = extname(safeName).replace(/^\./, "").toLowerCase();
+  const publicId = `${Date.now()}-${resourceType === "raw" ? safeName : safeName.replace(/\.[^.]+$/, "")}`;
+  const result = await cloudinary.uploader.upload(`data:${input.mimeType};base64,${input.base64.replace(/^data:[^;]+;base64,/, "")}`, {
     folder: input.folder.replace(/[^a-zA-Z0-9/_-]/g, "-"),
     public_id: publicId,
-    timestamp
-  };
-  const form = new FormData();
-  form.set("file", `data:${input.mimeType};base64,${input.base64.replace(/^data:[^;]+;base64,/, "")}`);
-  form.set("api_key", env.CLOUDINARY_API_KEY || "");
-  form.set("folder", params.folder);
-  form.set("public_id", params.public_id);
-  form.set("timestamp", String(params.timestamp));
-  form.set("signature", cloudinarySignature(params));
-
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, {
-    method: "POST",
-    body: form
+    resource_type: resourceType,
+    type: "authenticated",
+    overwrite: false
+  }).catch((error: { message?: string }) => {
+    throw new ApiError(502, error.message || "Cloudinary upload failed", "STORAGE_UPLOAD_FAILED");
   });
-  const result = await response.json().catch(() => ({})) as {
-    public_id?: string;
-    secure_url?: string;
-    bytes?: number;
-    resource_type?: string;
-    format?: string;
-    error?: { message?: string };
-  };
-  if (!response.ok || !result.secure_url || !result.public_id) {
-    throw new ApiError(502, result.error?.message || "Cloudinary upload failed", "STORAGE_UPLOAD_FAILED");
-  }
+  if (!result.secure_url || !result.public_id) throw new ApiError(502, "Cloudinary upload failed", "STORAGE_UPLOAD_FAILED");
+  const format = result.format || extension || "bin";
   return {
-    storageKey: `cloudinary:${result.resource_type || resourceType}:${result.public_id}`,
-    url: result.secure_url,
+    storageKey: `cloudinary:${result.resource_type || resourceType}:authenticated:${format}:${result.public_id}`,
+    url: null,
     size: result.bytes,
     fileName: input.fileName
   };
@@ -121,8 +107,25 @@ async function storeVercelBlob(pathname: string, body: Buffer, mimeType: string,
 export async function readPrivateFile(storageKey: string) {
   if (storageKey.startsWith("cloudinary:")) {
     const file = await prisma.storedFile.findUnique({ where: { storageKey } });
-    if (!file?.url) throw new ApiError(404, "File content was not found", "FILE_NOT_FOUND");
-    const response = await fetch(file.url);
+    if (!file) throw new ApiError(404, "File content was not found", "FILE_NOT_FOUND");
+    const parts = storageKey.split(":");
+    const isAuthenticated = parts[2] === "authenticated";
+    let sourceUrl = file.url || "";
+    if (isAuthenticated) {
+      if (!hasCloudinaryConfig()) throw new ApiError(503, "Cloudinary storage is not configured", "STORAGE_UNAVAILABLE");
+      configureCloudinary();
+      const resourceType = parts[1] as "image" | "video" | "raw";
+      const format = parts[3];
+      const publicId = parts.slice(4).join(":");
+      sourceUrl = cloudinary.utils.private_download_url(publicId, format, {
+        resource_type: resourceType,
+        type: "authenticated",
+        expires_at: Math.floor(Date.now() / 1000) + 300,
+        attachment: false
+      });
+    }
+    if (!sourceUrl) throw new ApiError(404, "File content was not found", "FILE_NOT_FOUND");
+    const response = await fetch(sourceUrl);
     if (!response.ok || !response.body) throw new ApiError(404, "File content was not found", "FILE_NOT_FOUND");
     return {
       statusCode: response.status,
