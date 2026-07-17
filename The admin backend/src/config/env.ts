@@ -30,7 +30,7 @@ const envSchema = z.object({
   RESEND_FROM: z.string().default("BullPort <notifications@bullport.com>"),
   SUPPORT_EMAIL: z.string().email().default("support@bullport.com"),
   JOB_SECRET: z.string().min(16).optional(),
-  ADMIN_MFA_REQUIRED: booleanValue.default(true)
+  ADMIN_MFA_REQUIRED: booleanValue.default(false)
 });
 
 export const env = envSchema.parse(process.env);
