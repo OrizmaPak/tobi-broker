@@ -906,12 +906,13 @@
           return false;
         }
         if (!hasClientTabSession()) {
+          appState.authRedirecting = true;
           sessionStorage.setItem("bullport_return_to", currentFile());
           clearClientTabSession();
           closeCookieSession();
           appState.apiMessage = "Sign in required";
           appState.apiLoaded = true;
-          setTimeout(function () { navigateTo("login.html"); }, 100);
+          setTimeout(function () { location.replace("login.html"); }, 50);
           return false;
         }
         startClientTabHeartbeat();
