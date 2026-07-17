@@ -241,6 +241,9 @@
   };
 
   const STATE_KEY = "bullport-portal-state-v1";
+  const TAB_SESSION_KEY = "bullport-client-tab-session-v1";
+  const LIVE_SESSION_KEY = "bullport-client-live-session-v1";
+  const LIVE_SESSION_TTL = 12000;
   const DEFAULT_STATE = {
     kycStatus: "Under final review",
     profileCompletion: 86,
@@ -260,6 +263,7 @@
     apiOnline: false,
     apiMessage: "Checking secure session",
     apiLoaded: false,
+    authRedirecting: false,
     loadPromise: null,
     lastSync: null,
     data: null
@@ -312,6 +316,59 @@
   function isAuthPage() {
     const cur = currentFile();
     return cur === "login.html" || cur === "register.html" || cur === "forgot-password.html";
+  }
+
+  function markClientTabSession() {
+    try {
+      sessionStorage.setItem(TAB_SESSION_KEY, "active");
+      localStorage.setItem(LIVE_SESSION_KEY, String(Date.now()));
+    } catch (error) {}
+  }
+
+  function hasClientTabSession() {
+    try {
+      if (sessionStorage.getItem(TAB_SESSION_KEY) === "active") return true;
+      const liveAt = Number(localStorage.getItem(LIVE_SESSION_KEY) || 0);
+      if (liveAt && Date.now() - liveAt < LIVE_SESSION_TTL) {
+        sessionStorage.setItem(TAB_SESSION_KEY, "active");
+        return true;
+      }
+    } catch (error) {}
+    return false;
+  }
+
+  function clearClientTabSession() {
+    try {
+      sessionStorage.removeItem(TAB_SESSION_KEY);
+      localStorage.removeItem(LIVE_SESSION_KEY);
+    } catch (error) {}
+  }
+
+  function closeCookieSession() {
+    const csrf = cookieValue("bp_csrf");
+    const headers = { "Content-Type": "application/json" };
+    if (csrf) headers["x-csrf-token"] = csrf;
+    try {
+      fetch(API_BASE + "/api/v1/auth/client/logout", {
+        method: "POST",
+        headers: headers,
+        body: "{}",
+        credentials: "include",
+        keepalive: true
+      }).catch(function () {});
+    } catch (error) {}
+  }
+
+  function startClientTabHeartbeat() {
+    if (isAuthPage() || !hasClientTabSession() || window.__bullportTabHeartbeat) return;
+    window.__bullportTabHeartbeat = window.setInterval(function () {
+      try {
+        if (sessionStorage.getItem(TAB_SESSION_KEY) === "active") {
+          localStorage.setItem(LIVE_SESSION_KEY, String(Date.now()));
+        }
+      } catch (error) {}
+    }, 4000);
+    try { localStorage.setItem(LIVE_SESSION_KEY, String(Date.now())); } catch (error) {}
   }
 
   function svg(icon, active) {
@@ -848,6 +905,16 @@
           appState.apiLoaded = true;
           return false;
         }
+        if (!hasClientTabSession()) {
+          sessionStorage.setItem("bullport_return_to", currentFile());
+          clearClientTabSession();
+          closeCookieSession();
+          appState.apiMessage = "Sign in required";
+          appState.apiLoaded = true;
+          setTimeout(function () { navigateTo("login.html"); }, 100);
+          return false;
+        }
+        startClientTabHeartbeat();
         const data = await apiRequest("/api/v1/client/dashboard", { method: "GET" }, false);
         await pageSpecificData(data);
         syncBackendData(data);
@@ -861,8 +928,9 @@
         appState.apiMessage = error && error.message ? error.message : "API unavailable";
         appState.apiLoaded = true;
         if (error && error.status === 401 && !isAuthPage()) {
+          appState.authRedirecting = true;
           sessionStorage.setItem("bullport_return_to", currentFile());
-          setTimeout(function () { navigateTo("login.html"); }, 150);
+          setTimeout(function () { location.replace("login.html"); }, 50);
         }
         return false;
       } finally {
@@ -1442,7 +1510,7 @@
       '<p class="mt-2 max-w-xl text-sm text-muted-foreground">' + message + '</p>' +
       (failed ? '<button type="button" data-broker-action="api-retry" class="mt-5 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Try again</button>' : '') +
       '</div></section></div>';
-    clearBootScreen();
+    if (failed && !appState.authRedirecting) clearBootScreen();
   }
 
   function renderPage() {
@@ -1450,6 +1518,7 @@
     const main = findMain();
 
     if (cur === "login.html" || cur === "register.html" || cur === "forgot-password.html") {
+      clearBootScreen();
       const bodyRoot = document.body;
       const wrapper = bodyRoot && bodyRoot.querySelector(".flex.min-h-screen.items-center.justify-center");
       if (!wrapper) return;
@@ -1776,6 +1845,8 @@
             method: "POST",
             body: JSON.stringify({ email: form.email, password: form.password })
           }, true);
+          markClientTabSession();
+          startClientTabHeartbeat();
           toast("Signed in. Redirecting to the dashboard.", "success");
           const returnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
           sessionStorage.removeItem("bullport_return_to");
@@ -1798,6 +1869,8 @@
               acceptedTerms: true
             })
           }, true);
+          markClientTabSession();
+          startClientTabHeartbeat();
           toast("Account created. Continue with KYC verification.", "success");
           setTimeout(function () { navigateTo("kyc.html"); }, 250);
         } catch (error) {
@@ -1820,6 +1893,7 @@
         } catch (error) {
           if (!error || error.status !== 401) toast(error.message || "Could not close the session cleanly.", "warning");
         }
+        clearClientTabSession();
         sessionStorage.removeItem(STATE_KEY);
         navigateTo("login.html");
         return;
@@ -2162,6 +2236,7 @@
     if (!appState.apiLoaded && !appState.loadPromise) {
       loadClientBackendData(false).then(function (updated) {
         if (!updated) {
+          if (appState.authRedirecting) return;
           if (!isAuthPage()) {
             renderPortalState(appState.apiMessage, true);
             bindActions();

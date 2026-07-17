@@ -10,13 +10,13 @@ type SessionActor =
   | { type: "CLIENT"; value: Client }
   | { type: "ADMIN"; value: AdminUser };
 
-function cookieOptions(maxAge: number, httpOnly: boolean) {
+function cookieOptions(maxAge: number | undefined, httpOnly: boolean) {
   return {
     httpOnly,
     secure: env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
-    maxAge
+    ...(maxAge ? { maxAge } : {})
   };
 }
 
@@ -54,10 +54,11 @@ function refreshLifetime(actor: SessionActor) {
     : env.ADMIN_REFRESH_HOURS * 60 * 60 * 1000;
 }
 
-function setSessionCookies(res: Response, accessToken: string, refreshToken: string, csrfToken: string, maxAge: number) {
-  res.cookie("bp_access", accessToken, cookieOptions(15 * 60 * 1000, true));
-  res.cookie("bp_refresh", refreshToken, cookieOptions(maxAge, true));
-  res.cookie("bp_csrf", csrfToken, cookieOptions(maxAge, false));
+function setSessionCookies(res: Response, actor: SessionActor, accessToken: string, refreshToken: string, csrfToken: string, maxAge: number) {
+  const persistentAge = actor.type === "CLIENT" ? undefined : maxAge;
+  res.cookie("bp_access", accessToken, cookieOptions(actor.type === "CLIENT" ? undefined : 15 * 60 * 1000, true));
+  res.cookie("bp_refresh", refreshToken, cookieOptions(persistentAge, true));
+  res.cookie("bp_csrf", csrfToken, cookieOptions(persistentAge, false));
 }
 
 export function clearSessionCookies(res: Response) {
@@ -84,7 +85,7 @@ export async function createSession(actor: SessionActor, req: Request, res: Resp
     }
   });
   const accessToken = signAccessToken(actor, session.id);
-  setSessionCookies(res, accessToken, refreshToken, csrfToken, maxAge);
+  setSessionCookies(res, actor, accessToken, refreshToken, csrfToken, maxAge);
   return {
     csrfToken,
     expiresIn: 15 * 60,
@@ -146,7 +147,7 @@ export async function rotateSession(req: Request, res: Response) {
     throw new ApiError(401, "Refresh session reuse was detected", "REFRESH_REPLAY");
   }
   const accessToken = signAccessToken(actor, next.id);
-  setSessionCookies(res, accessToken, refreshToken, csrfToken, maxAge);
+  setSessionCookies(res, actor, accessToken, refreshToken, csrfToken, maxAge);
   return { csrfToken, expiresIn: 15 * 60, sessionId: next.id, refreshExpiresAt: next.expiresAt };
 }
 
