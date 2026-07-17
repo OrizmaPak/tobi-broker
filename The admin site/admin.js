@@ -565,6 +565,20 @@
     return filters(placeholder) + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching records. Adjust the search or status filter.</div>';
   }
 
+  function taskRows(rows) {
+    return rows.map((row) => [
+      row.title || "-",
+      row.category || "-",
+      badge(row.priority || "Normal"),
+      badge(label(row.status || "OPEN")),
+      row.assignedTo?.name || "Unassigned",
+      row.dueAt ? new Date(row.dueAt).toLocaleDateString() : "No due date",
+      '<div class="action-row">' +
+        (row.status === "COMPLETED" ? '<span class="muted">Done</span>' : '<button class="btn" type="button" data-action="task-status" data-task-id="' + row.id + '" data-task-status="' + (row.status === "OPEN" ? "IN_PROGRESS" : "COMPLETED") + '">' + (row.status === "OPEN" ? "Start" : "Complete") + '</button>') +
+      '</div>'
+    ]);
+  }
+
   function details(rows) {
     return '<div class="detail-grid">' + rows.map((row) => '<div class="detail"><span>' + row[0] + '</span><strong>' + row[1] + "</strong></div>").join("") + "</div>";
   }
@@ -611,7 +625,7 @@
     return '<div class="grid metrics">' + data.metrics.map((m) => metric(m[0], m[1], m[2], m[3])).join("") + "</div>" +
       '<div class="grid two">' +
       section("Priority queues", "Highest-impact operations requiring staff attention.", queueList(data.queues.slice(0, 4)), button("Open queues", "primary", "goto-queues")) +
-      section("Recent admin activity", "Latest decisions and operational actions across the desk.", timeline(appState.audit)) +
+      section("Open admin tasks", "Recently created follow-ups and assignments from the operations console.", filterableTable("Search task, owner, category...", ["Task", "Category", "Priority", "Status", "Owner", "Due", "Action"], taskRows(data.tasks.slice(0, 6))), button("Open queues", "", "goto-queues")) +
       "</div>" +
       section("Client operations snapshot", "A compact cross-section of investor records, status, value, and restrictions.", clientTable(data.clients.slice(0, 4)), button("View clients", "", "goto-clients"));
   }
@@ -626,7 +640,9 @@
       metric("Finance queue", String(data.deposits.filter((row) => !/credited|rejected/i.test(row[5])).length + data.withdrawals.filter((row) => !/settled|rejected|cancelled/i.test(row[5])).length), "Deposits and withdrawals requiring action.", "Pending"),
       metric("Pending approvals", String(data.approvals.length), "Maker-checker requests requiring a second admin.", "Open"),
       metric("Open tasks", String(data.tasks.filter((row) => row.status !== "COMPLETED").length), "Assigned operational follow-ups.", "Open")
-    ].join("") + "</div>" + section("Unified operations queue", "All pending work across teams, sorted by operational priority.", filters("Search queue, client, owner...") + queueList(data.queues), modalButton("Assign selected", "assign-task", "primary"));
+    ].join("") + "</div>" +
+      section("Admin task list", "Tasks created from New task, Quick action, and queue assignment appear here.", filterableTable("Search task, owner, category...", ["Task", "Category", "Priority", "Status", "Owner", "Due", "Action"], taskRows(data.tasks)), modalButton("New task", "task", "primary")) +
+      section("Unified operations queue", "All pending work across teams, sorted by operational priority.", filters("Search queue, client, owner...") + queueList(data.queues), modalButton("Assign selected", "assign-task", "primary"));
   }
 
   function clientTable(rows) {
@@ -979,7 +995,7 @@
     return [
       "admin-logout", "approval-confirm", "kyc-requirement-save",
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
-      "report-download", "setting-save", "decision"
+      "task-status", "report-download", "setting-save", "decision"
     ].includes(action);
   }
 
@@ -1038,6 +1054,7 @@
           else if (action === "kyc-document-confirm") await submitKycDocumentDecision();
           else if (action === "record-decision") openRecordDecision(node.dataset);
           else if (action === "record-confirm") await submitRecordDecision();
+          else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
           else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
           else if (action === "setting-save") await submitSetting(node.dataset.settingKey);
@@ -1360,9 +1377,22 @@
       await loadBackendData();
       addAudit("Now", appState.admin?.name || "Admin", "Submitted " + apiAction, pageContext());
       closeModal();
-      toast(apiAction + " saved to backend.");
+      render();
+      toast(apiAction === "createAdminTask" || apiAction === "assignQueueTask" ? "Task saved. Open Queues to track it." : apiAction + " saved to backend.");
     } catch (error) {
       toast(error?.message || "The operation could not be completed.");
+    }
+  }
+
+  async function updateTaskStatus(id, status) {
+    if (!id || !status) { toast("Task record is missing."); return; }
+    try {
+      await api("/api/v1/admin/tasks/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify({ status, note: "Updated from the admin task list." }) });
+      await loadBackendData();
+      render();
+      toast(status === "COMPLETED" ? "Task completed." : "Task moved to in progress.");
+    } catch (error) {
+      toast(error?.message || "Task could not be updated.");
     }
   }
 
