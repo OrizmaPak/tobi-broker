@@ -1549,13 +1549,13 @@
     const passwordPlaceholder = kind === "register" ? "At least 10 characters" : "Enter your password";
     const passwordField = '<label class="bp-auth-field" for="auth-password"><span>Password</span><div class="bp-auth-password"><input id="auth-password" name="password" autocomplete="' + passwordAutocomplete + '" required placeholder="' + passwordPlaceholder + '" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-password" aria-label="Show password">Show</button></div></label>';
     const confirmPasswordField = '<label class="bp-auth-field" for="auth-confirm-password"><span>Confirm password</span><div class="bp-auth-password"><input id="auth-confirm-password" name="confirmPassword" autocomplete="new-password" required placeholder="Repeat your password" type="password"><button type="button" data-broker-action="toggle-password" data-password-target="auth-confirm-password" aria-label="Show confirm password">Show</button></div></label>';
-    const phoneField = '<label class="bp-auth-field" for="auth-phone-local"><span>Phone number</span><div class="bp-phone-control"><button type="button" class="bp-phone-country-button" data-broker-action="phone-country-toggle" aria-expanded="false"><span id="bp-phone-country-label">Nigeria</span><strong id="bp-phone-dial-code">+234</strong></button><input id="auth-phone-local" name="phoneLocal" autocomplete="tel-national" inputmode="tel" required placeholder="800 000 0000"><input id="auth-phone" name="phone" type="hidden" value=""><div class="bp-phone-country-menu" id="bp-phone-country-menu"><input id="bp-phone-country-search" type="search" placeholder="Search country"><div class="bp-phone-country-list">' + phoneCountryOptions() + '</div></div></div></label>';
+    const phoneField = '<label class="bp-auth-field" for="auth-phone-local"><span>Phone number</span><div class="bp-phone-control"><button type="button" class="bp-phone-country-button" data-broker-action="phone-country-toggle" aria-expanded="false"><span id="bp-phone-country-label">United Kingdom</span><strong id="bp-phone-dial-code">+44</strong></button><input id="auth-phone-local" name="phoneLocal" autocomplete="tel-national" inputmode="tel" required placeholder="7700 900000"><input id="auth-phone" name="phone" type="hidden" value=""><div class="bp-phone-country-menu" id="bp-phone-country-menu"><input id="bp-phone-country-search" type="search" placeholder="Search country"><div class="bp-phone-country-list">' + phoneCountryOptions() + '</div></div></div></label>';
     const authFields = ''
       + (kind === "register" ? '<label class="bp-auth-field" for="auth-name"><span>Full name</span><input id="auth-name" name="name" autocomplete="name" required placeholder="Your full name"></label>' : "")
       + (kind === "register" ? phoneField : "")
       + '<label class="bp-auth-field" for="auth-email"><span>Email address</span><input id="auth-email" name="email" autocomplete="email" type="email" required placeholder="name@example.com"></label>'
       + (kind === "forgot" ? "" : passwordField)
-      + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="Nigeria" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">terms and conditions</a>.</span></label>' : "");
+      + (kind === "register" ? confirmPasswordField + '<label class="bp-auth-field" for="auth-country"><span>Country of residence</span><input id="auth-country" name="country" list="bp-country-list" autocomplete="country-name" required value="United Kingdom" placeholder="Search country"><datalist id="bp-country-list">' + countryOptions() + '</datalist></label><label class="bp-auth-terms"><input id="auth-terms" name="acceptedTerms" type="checkbox" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">terms and conditions</a>.</span></label>' : "");
     const trustStrip = kind === "login"
       ? '<div class="bp-auth-checkline"><span></span><p>Protected by secure session cookies, CSRF controls and rotating refresh sessions.</p></div>'
       : '<div class="bp-auth-checkline"><span></span><p>Account access unlocks KYC, wallet funding, managed portfolios and reporting.</p></div>';
@@ -1596,7 +1596,7 @@
     }
 
     function syncPhone() {
-      const code = button.getAttribute("data-phone-code") || "+234";
+      const code = button.getAttribute("data-phone-code") || "+44";
       const local = localNode.value.trim();
       phoneNode.value = local ? code + " " + local : "";
     }
@@ -1612,8 +1612,8 @@
     }
 
     button.dataset.phoneBound = "true";
-    button.setAttribute("data-phone-country", "Nigeria");
-    button.setAttribute("data-phone-code", "+234");
+    button.setAttribute("data-phone-country", "United Kingdom");
+    button.setAttribute("data-phone-code", "+44");
     localNode.addEventListener("input", syncPhone);
     if (countryNode) {
       countryNode.addEventListener("change", function () {
@@ -1635,7 +1635,7 @@
     document.addEventListener("click", function (event) {
       if (!menu.contains(event.target) && !button.contains(event.target)) closeMenu();
     });
-    setPhoneCountry("Nigeria");
+    setPhoneCountry("United Kingdom");
   }
 
   function renderPortalState(message, failed) {
