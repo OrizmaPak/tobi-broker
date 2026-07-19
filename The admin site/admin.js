@@ -841,7 +841,7 @@
   function tone(value) {
     const v = String(value).toLowerCase();
     if (v.indexOf("approved") !== -1 || v.indexOf("active") !== -1 || v.indexOf("confirmed") !== -1 || v.indexOf("posted") !== -1 || v.indexOf("ready") !== -1 || v.indexOf("published") !== -1 || v.indexOf("resolved") !== -1) return "success";
-    if (v.indexOf("hold") !== -1 || v.indexOf("blocked") !== -1 || v.indexOf("rejected") !== -1 || v.indexOf("restricted") !== -1 || v.indexOf("mismatch") !== -1 || v.indexOf("high") !== -1) return "danger";
+    if (v.indexOf("hold") !== -1 || v.indexOf("blocked") !== -1 || v.indexOf("rejected") !== -1 || v.indexOf("restricted") !== -1 || v.indexOf("mismatch") !== -1 || v.indexOf("high") !== -1 || v.indexOf("disabled") !== -1 || v.indexOf("inactive") !== -1) return "danger";
     if (v.indexOf("pending") !== -1 || v.indexOf("review") !== -1 || v.indexOf("scheduled") !== -1 || v.indexOf("draft") !== -1 || v.indexOf("open") !== -1 || v.indexOf("escalated") !== -1) return "warning";
     return "info";
   }

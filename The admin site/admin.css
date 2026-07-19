@@ -864,9 +864,11 @@ a {
 }
 
 .deposit-category-card {
+  position: relative;
   display: flex;
   min-height: 118px;
   min-width: 0;
+  overflow: hidden;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
@@ -876,14 +878,31 @@ a {
   padding: 12px;
 }
 
+.deposit-category-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  content: "";
+}
+
 .deposit-category-card.is-enabled {
-  border-color: rgba(25, 183, 47, 0.24);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(240, 253, 244, 0.72));
+  border-color: rgba(22, 163, 74, 0.45);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(220, 252, 231, 0.86));
+  box-shadow: 0 14px 28px rgba(22, 163, 74, 0.08);
+}
+
+.deposit-category-card.is-enabled::before {
+  background: var(--green);
 }
 
 .deposit-category-card.is-disabled {
-  border-color: rgba(220, 38, 38, 0.16);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(254, 242, 242, 0.72));
+  border-color: rgba(180, 35, 24, 0.42);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(254, 226, 226, 0.9));
+  box-shadow: 0 14px 28px rgba(180, 35, 24, 0.08);
+}
+
+.deposit-category-card.is-disabled::before {
+  background: var(--red);
 }
 
 .deposit-category-card strong,
@@ -898,11 +917,27 @@ a {
   line-height: 1.45;
 }
 
+.deposit-category-card.is-enabled > div:first-child strong {
+  color: var(--green-dark);
+}
+
+.deposit-category-card.is-disabled > div:first-child strong {
+  color: var(--red);
+}
+
 .deposit-category-status {
   display: grid;
   flex: none;
   justify-items: end;
   gap: 10px;
+}
+
+.deposit-category-card.is-enabled .deposit-category-status {
+  color: var(--green-dark);
+}
+
+.deposit-category-card.is-disabled .deposit-category-status {
+  color: var(--red);
 }
 
 .deposit-category-status .btn {
