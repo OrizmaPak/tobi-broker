@@ -327,6 +327,64 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
   return ok(res, result.data, result.cached ? 200 : 201, { cached: result.cached, kycApproved: await approvedKyc(id) });
 }));
 
+v1ClientRouter.post("/deposits/:id/proof", requireCsrf, asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  const client = await verifiedClient(id);
+  const deposit = await prisma.deposit.findFirst({ where: { id: String(req.params.id), clientId: id } });
+  if (!deposit) throw new ApiError(404, "Deposit was not found", "DEPOSIT_NOT_FOUND");
+  if (!["UNDER_REVIEW", "IN_REVIEW", "PENDING", "FLAGGED"].includes(deposit.status)) {
+    throw new ApiError(409, "This deposit is not open for proof resubmission", "DEPOSIT_PROOF_NOT_OPEN");
+  }
+  const input = z.object({
+    evidenceFileId: z.string().optional(),
+    transactionHash: z.string().trim().min(8).max(200).optional(),
+    externalReference: z.string().trim().max(120).optional(),
+    proofData: z.record(z.string(), z.unknown()).default({})
+  }).parse(req.body);
+  const depositMethods = await getDepositMethodsSetting();
+  const configuredMethod = findDepositMethod(depositMethods, deposit.method, deposit.rail);
+  if (!configuredMethod) throw new ApiError(422, "The original deposit route is no longer available. Contact support.", "DEPOSIT_METHOD_UNAVAILABLE");
+  const proofFields: Record<string, string[]> = {};
+  const nextReference = input.externalReference || deposit.externalReference || undefined;
+  const nextHash = input.transactionHash || deposit.transactionHash || undefined;
+  const nextEvidence = input.evidenceFileId || deposit.evidenceFileId || undefined;
+  if (configuredMethod.requireReference && !nextReference) proofFields.externalReference = ["Transfer reference is required for this deposit route"];
+  if (configuredMethod.requireTransactionHash && !nextHash) proofFields.transactionHash = ["Transaction hash is required for this deposit route"];
+  if (configuredMethod.requireReceiptUpload && !nextEvidence) proofFields.evidenceFileId = ["Receipt or transfer proof upload is required for this deposit route"];
+  const collectedProof = collectDepositProofData(configuredMethod, input.proofData);
+  Object.assign(proofFields, collectedProof.fields);
+  if (Object.keys(proofFields).length) throw new ApiError(422, "Complete the required deposit proof fields", "DEPOSIT_PROOF_INCOMPLETE", proofFields);
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.deposit.update({
+      where: { id: deposit.id },
+      data: {
+        evidenceFileId: nextEvidence,
+        transactionHash: nextHash,
+        externalReference: nextReference,
+        proofData: collectedProof.values as Prisma.InputJsonObject,
+        status: "IN_REVIEW",
+        reviewNote: "Proof resubmitted through the client portal",
+        submittedAt: new Date()
+      }
+    });
+    await notifyClientTx(tx, { clientId: id, email: client.email, category: "Wallet", title: "Deposit proof resubmitted", body: `Deposit ${row.reference} is back in operations review.`, actionUrl: `deposit.html?deposit=${row.id}`, entity: { type: "Deposit", id: row.id } });
+    await notifyAdminTx(tx, {
+      clientId: id,
+      category: "Wallet",
+      eventKey: "deposit.proof_resubmitted",
+      severity: "INFO",
+      title: "Deposit proof resubmitted",
+      body: `${client.name} (${client.accountNumber}) resubmitted proof for ${row.reference}.`,
+      actionUrl: `deposit-review.html?id=${row.id}`,
+      entity: { type: "Deposit", id: row.id },
+      metadata: { clientId: id, accountNumber: client.accountNumber, reference: row.reference, depositId: row.id },
+      dedupeKey: `deposit.proof_resubmitted:${row.id}:${Date.now()}`
+    });
+    return row;
+  });
+  return ok(res, updated);
+}));
+
 v1ClientRouter.post("/withdrawals", requireCsrf, asyncHandler(async (req, res) => {
   const id = clientId(req);
   const client = await verifiedClient(id);

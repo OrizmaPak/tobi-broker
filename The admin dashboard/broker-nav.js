@@ -575,6 +575,16 @@
     return configuredDepositMethods().find(function (method) { return method.id === id; }) || null;
   }
 
+  function depositMethodForDeposit(deposit) {
+    const methods = configuredDepositMethods();
+    const rail = String(deposit && deposit.rail ? deposit.rail : "").toLowerCase();
+    const type = String(deposit && deposit.method ? deposit.method : "").toUpperCase();
+    return methods.find(function (method) {
+      if (type && method.type !== type) return false;
+      return method.id.toLowerCase() === rail || method.name.toLowerCase() === rail;
+    }) || methods.find(function (method) { return !type || method.type === type; }) || null;
+  }
+
   function depositMethodTone(method) {
     if (!method || method.status === "DISABLED") return "danger";
     if (method.status === "COMING_SOON" || method.enabled === false) return "warning";
@@ -652,8 +662,9 @@
     }).join("") : '<div class="broker-empty-route">' + emptyText + '</div>') + '</div></section>';
   }
 
-  function depositSubmissionBody(method) {
+  function depositSubmissionBody(method, deposit) {
     const isCrypto = method.type === "CRYPTO";
+    const isResubmission = Boolean(deposit && deposit.id);
     const title = isCrypto ? escapeHtml(method.name || method.currency || "Crypto funding") + " on " + escapeHtml(method.network || "network") : escapeHtml(depositMethodDestination(method));
     const note = isCrypto
       ? "Submit a transfer only after sending it to BullPort's reviewed funding wallet."
@@ -670,33 +681,34 @@
       { label: "Account number", value: escapeHtml(method.accountNumber || "-") },
       { label: "Sort / SWIFT", value: escapeHtml([method.sortCode, method.swift].filter(Boolean).join(" / ") || "-") }
     ];
-    return '<div class="broker-deposit-proof-modal"><div class="broker-deposit-proof-intro"><span>' + (isCrypto ? "Crypto funding" : "Bank transfer") + '</span><p>' + note + ' Finance reviews the proof before wallet credit.</p></div><div class="broker-deposit-proof-layout"><aside class="broker-deposit-proof-card"><small>Funding destination</small><strong>' + title + '</strong>' + keyValueRows(destinationRows) + '<div class="broker-deposit-proof-note"><span>Posting window</span><p>' + timeline + '</p></div><div class="broker-deposit-proof-note"><span>Required proof</span><p>' + escapeHtml(depositProofSummary(method)) + '</p></div><p class="broker-deposit-proof-instructions">' + escapeHtml(method.proofInstructions || method.instructions || "Use your BullPort account reference, then submit proof.") + '</p></aside><div class="broker-deposit-proof-form"><input type="hidden" name="depositMethodId" value="' + escapeHtml(method.id) + '"><input type="hidden" name="depositMethodType" value="' + escapeHtml(method.type) + '"><div class="broker-form-grid">' + depositProofFields(method) + '</div></div></div></div>';
+    return '<div class="broker-deposit-proof-modal"><div class="broker-deposit-proof-intro"><span>' + (isResubmission ? "Proof resubmission" : isCrypto ? "Crypto funding" : "Bank transfer") + '</span><p>' + (isResubmission ? "Operations requested fresh proof for " + escapeHtml(deposit.reference || "this deposit") + "." : note) + ' Finance reviews the proof before wallet credit.</p></div><div class="broker-deposit-proof-layout"><aside class="broker-deposit-proof-card"><small>Funding destination</small><strong>' + title + '</strong>' + keyValueRows(destinationRows) + '<div class="broker-deposit-proof-note"><span>Posting window</span><p>' + timeline + '</p></div><div class="broker-deposit-proof-note"><span>Required proof</span><p>' + escapeHtml(depositProofSummary(method)) + '</p></div>' + (deposit && deposit.reviewNote ? '<div class="broker-deposit-proof-note"><span>Operations note</span><p>' + escapeHtml(deposit.reviewNote) + '</p></div>' : '') + '<p class="broker-deposit-proof-instructions">' + escapeHtml(method.proofInstructions || method.instructions || "Use your BullPort account reference, then submit proof.") + '</p></aside><div class="broker-deposit-proof-form"><input type="hidden" name="depositMethodId" value="' + escapeHtml(method.id) + '"><input type="hidden" name="depositMethodType" value="' + escapeHtml(method.type) + '">' + (isResubmission ? '<input type="hidden" name="depositResubmitId" value="' + escapeHtml(deposit.id) + '">' : '') + '<div class="broker-form-grid">' + depositProofFields(method, deposit) + '</div></div></div></div>';
   }
 
-  function depositProofFields(method) {
+  function depositProofFields(method, deposit) {
     const fields = [];
-    fields.push(modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"'));
-    if (method.requireReference !== false) fields.push(modalField(method.type === "BANK" ? "Bank transfer reference" : "Transfer reference", "externalReference", "text", "", 'required maxlength="120"'));
-    if (method.requireTransactionHash === true) fields.push(modalField("Transaction hash", "transactionHash", "text", "", 'required minlength="8" maxlength="200"'));
+    const isResubmission = Boolean(deposit && deposit.id);
+    if (!isResubmission) fields.push(modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"'));
+    if (method.requireReference !== false) fields.push(modalField(method.type === "BANK" ? "Bank transfer reference" : "Transfer reference", "externalReference", "text", deposit?.externalReference || "", 'required maxlength="120"'));
+    if (method.requireTransactionHash === true) fields.push(modalField("Transaction hash", "transactionHash", "text", deposit?.transactionHash || "", 'required minlength="8" maxlength="200"'));
     (method.proofFields || []).forEach(function (field) {
-      fields.push(depositProofField(field));
+      fields.push(depositProofField(field, deposit && deposit.proofData ? deposit.proofData[field.id] : ""));
     });
     if (method.requireReceiptUpload === true) fields.push('<label class="broker-form-field"><span>Receipt / screenshot</span><input name="depositProofFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="text-xs text-muted-foreground">Accepted formats: PDF, JPG and PNG. Maximum file size: 5 MB.</p>');
     return fields.join("");
   }
 
-  function depositProofField(field) {
+  function depositProofField(field, value) {
     const name = "proof_" + field.id;
     const required = field.required !== false ? "required" : "";
     const help = field.helpText ? '<small>' + escapeHtml(field.helpText) + '</small>' : "";
     if (field.type === "SELECT") {
-      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>'; }).join("") + '</select>' + help + '</label>';
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '" ' + (String(value || "") === String(option) ? "selected" : "") + '>' + escapeHtml(option) + '</option>'; }).join("") + '</select>' + help + '</label>';
     }
     if (field.type === "TEXTAREA") {
-      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '></textarea>' + help + '</label>';
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + escapeHtml(value || "") + '</textarea>' + help + '</label>';
     }
     const type = field.type === "NUMBER" ? "number" : field.type === "EMAIL" ? "email" : field.type === "TEL" ? "tel" : field.type === "DATE" ? "date" : "text";
-    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + type + '" value="" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
+    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + type + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
   }
 
   function depositProofData(method) {
@@ -729,15 +741,22 @@
 
   function submittedDepositRows() {
     const deposits = (appState.data && Array.isArray(appState.data.deposits)) ? appState.data.deposits : [];
+    const targetId = new URLSearchParams(location.search).get("deposit") || "";
     return deposits.map(function (row) {
+      const needsProof = String(row.status || "").toUpperCase() === "UNDER_REVIEW";
+      const action = needsProof
+        ? '<button type="button" data-broker-action="deposit-proof-resubmit" data-broker-deposit-id="' + escapeHtml(row.id || "") + '" class="font-semibold text-primary">Resubmit proof</button>'
+        : '<span class="text-xs text-muted-foreground">No action</span>';
+      const reference = '<span id="deposit-' + escapeHtml(row.id || "") + '" class="' + (targetId && row.id === targetId ? "broker-deposit-target" : "") + '">' + escapeHtml(row.reference || "-") + '</span>';
       return [
         formatDate(row.submittedAt || row.createdAt),
-        row.reference || "-",
-        row.method || "-",
-        row.rail || "-",
+        reference,
+        escapeHtml(row.method || "-"),
+        escapeHtml(row.rail || "-"),
         depositAmountPill(row.amount, row.status),
         row.evidenceFileId ? "Uploaded" : "Not uploaded",
-        depositStatusPill(row.status)
+        depositStatusPill(row.status),
+        action
       ];
     });
   }
@@ -1314,8 +1333,21 @@
     renderPage();
     patchChromeUI();
     bindActions();
+    focusDepositTarget();
     patchApiStatus();
     if (message) toast(message, tone || "success");
+  }
+
+  function focusDepositTarget() {
+    if (currentFile() !== "deposit.html") return;
+    const targetId = new URLSearchParams(location.search).get("deposit");
+    if (!targetId) return;
+    const target = document.getElementById("deposit-" + targetId);
+    const row = target && target.closest ? (target.closest("tr") || target) : target;
+    if (!row) return;
+    setTimeout(function () {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
   }
 
   function notificationToastTone(row) {
@@ -1614,7 +1646,7 @@
         })) + "</div>" +
         "</div>" +
         section("Submitted deposits", "Track every funding request submitted from this portal, including reference, proof upload and review status.", submittedDepositRows().length ? table(
-          ["Submitted", "Reference", "Method", "Route", "Amount", "Proof", "Status"],
+          ["Submitted", "Reference", "Method", "Route", "Amount", "Proof", "Status", "Action"],
           submittedDepositRows()
         ) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No deposit request has been submitted yet.</div>');
     }
@@ -2317,6 +2349,7 @@
     }
 
     main.innerHTML = shell(meta.title, meta.subtitle, body);
+    focusDepositTarget();
     clearBootScreen();
   }
 
@@ -2667,6 +2700,21 @@
     await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey(keyPrefix) }, body: JSON.stringify(body) }, false);
   }
 
+  async function submitDepositProofResubmission() {
+    const depositId = modalValue("depositResubmitId");
+    const method = depositMethodById(modalValue("depositMethodId"));
+    if (!depositId) throw new Error("This deposit request could not be identified.");
+    if (!method) throw new Error("This deposit route is not available. Refresh and try again.");
+    const evidenceFileId = await uploadDepositProofIfPresent(method);
+    const body = {
+      externalReference: modalValue("externalReference") || undefined,
+      transactionHash: modalValue("transactionHash") || undefined,
+      proofData: depositProofData(method),
+      evidenceFileId: evidenceFileId || undefined
+    };
+    await apiRequest("/api/v1/client/deposits/" + encodeURIComponent(depositId) + "/proof", { method: "POST", headers: { "Idempotency-Key": requestKey("deposit-proof") }, body: JSON.stringify(body) }, false);
+  }
+
   function modalField(label, name, type, value, extra) {
     return '<label class="broker-form-field"><span>' + label + '</span><input name="' + name + '" type="' + (type || "text") + '" value="' + (value || "") + '" ' + (extra || "") + '></label>';
   }
@@ -2994,6 +3042,14 @@
         if (!bankMethod) { toast("No active bank funding route is currently available.", "warning"); return; }
         showModal("Submit bank transfer", depositSubmissionBody(bankMethod), '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-bank-confirm">Submit bank transfer</button>', "deposit");
         return;
+      case "deposit-proof-resubmit":
+        const depositId = node.getAttribute("data-broker-deposit-id") || "";
+        const deposits = (appState.data && Array.isArray(appState.data.deposits)) ? appState.data.deposits : [];
+        const deposit = deposits.find(function (item) { return item.id === depositId; });
+        const resubmitMethod = deposit ? depositMethodForDeposit(deposit) : null;
+        if (!deposit || !resubmitMethod) { toast("This deposit route could not be loaded. Refresh and try again.", "warning"); return; }
+        showModal("Resubmit deposit proof", depositSubmissionBody(resubmitMethod, deposit), '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-proof-confirm">Send fresh proof</button>', "deposit");
+        return;
       case "deposit-bank-confirm":
         try {
           await submitDepositRequest("BANK", "bank-deposit");
@@ -3012,6 +3068,13 @@
           closeModal();
           await refreshLiveView("Crypto transfer submitted for confirmation.", "success");
         } catch (error) { toast((error && error.message) || "Could not submit the crypto transfer.", "warning"); }
+        return;
+      case "deposit-proof-confirm":
+        try {
+          await submitDepositProofResubmission();
+          closeModal();
+          await refreshLiveView("Fresh deposit proof submitted for operations review.", "success");
+        } catch (error) { toast((error && error.message) || "Could not resubmit the deposit proof.", "warning"); }
         return;
       case "beneficiary-add":
         openBeneficiaryModal(withdrawalMethodById(node.getAttribute("data-broker-method-id")) || configuredWithdrawalMethods()[0]);
@@ -3367,6 +3430,7 @@
       + " .broker-notification-menu{position:absolute;z-index:130;width:min(380px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-notification-head{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-notification-head strong{display:block;font-size:15px;font-weight:850}.broker-notification-head span{display:block;margin-top:2px;color:#64748b;font-size:12px}.broker-notification-head>div:last-child{display:flex;align-items:center;gap:10px}.broker-notification-head a,.broker-notification-head button{border:0;background:transparent;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;text-decoration:none;cursor:pointer}"
       + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em,.broker-notification-item small{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal;line-height:1.4}.broker-notification-item small{color:#334155}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
+      + " .broker-deposit-target{display:inline-flex;border-radius:999px;background:rgba(22,163,74,.12);padding:4px 8px;color:#15803d;font-weight:900;box-shadow:0 0 0 3px rgba(22,163,74,.08)}"
       + " .broker-user-menu{position:absolute;z-index:130;width:min(320px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:grid;grid-template-columns:36px 1fr;gap:10px;align-items:center;width:100%;border:0;border-radius:12px;background:transparent;padding:10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item i{display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:10px;background:#eef8f0;color:#16a34a}.broker-user-item svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-user-item span{display:block}.broker-user-item strong{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger i{background:#fef2f2;color:#b91c1c}.broker-user-item.is-danger strong{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
       + " .broker-deposit-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.broker-deposit-column{min-width:0;border:1px solid rgba(148,163,184,.24);border-radius:18px;background:linear-gradient(180deg,rgba(248,250,252,.74),rgba(255,255,255,.58));padding:14px}.broker-deposit-column-head{padding:4px 4px 13px}.broker-deposit-column-head h2{margin:0;color:#101713;font-size:16px;font-weight:900}.broker-deposit-column-head p{margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.5}.broker-deposit-routes{display:grid;gap:12px}.broker-empty-route{border:1px dashed rgba(148,163,184,.35);border-radius:14px;background:rgba(255,255,255,.64);padding:15px;color:#64748b;font-size:13px}.broker-deposit-column .broker-funding-route summary{min-height:118px}.dark .broker-deposit-column{border-color:rgba(148,163,184,.18);background:linear-gradient(180deg,rgba(15,23,18,.58),rgba(15,23,42,.36))}.dark .broker-deposit-column-head h2{color:#f8fafc}.dark .broker-deposit-column-head p,.dark .broker-empty-route{color:#94a3b8}.dark .broker-empty-route{background:rgba(15,23,18,.38)}"

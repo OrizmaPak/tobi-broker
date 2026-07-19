@@ -466,7 +466,7 @@ v1AdminCoreRouter.post("/money/deposits/:id/request-proof", financeRoles, asyncH
   const deposit = await prisma.deposit.findUnique({ where: { id: String(req.params.id) } });
   if (!deposit) throw new ApiError(404, "Deposit was not found", "DEPOSIT_NOT_FOUND");
   const row = await prisma.$transaction(async (tx) => {
-    await notifyClientTx(tx, { clientId: deposit.clientId, category: "Wallet", title: "Deposit evidence required", body: input.note, actionUrl: "deposit.html", entity: { type: "Deposit", id: deposit.id } });
+    await notifyClientTx(tx, { clientId: deposit.clientId, category: "Wallet", title: "Deposit evidence required", body: input.note, actionUrl: `deposit.html?deposit=${deposit.id}`, entity: { type: "Deposit", id: deposit.id } });
     return tx.deposit.update({ where: { id: deposit.id }, data: { status: "UNDER_REVIEW", reviewNote: input.note } });
   });
   await writeAudit("requestDepositProof", "Deposit", row.id, undefined, { req, reason: input.note });
