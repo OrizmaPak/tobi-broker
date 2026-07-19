@@ -1560,6 +1560,8 @@
           else if (action === "deposit-method-new") openDepositMethodEditor(node.dataset.methodType);
           else if (action === "deposit-method-view") openDepositMethodViewer(node.dataset.methodId);
           else if (action === "deposit-method-edit") openDepositMethodEditor(null, node.dataset.methodId);
+          else if (action === "deposit-proof-field-add") addDepositProofFieldRow();
+          else if (action === "deposit-proof-field-remove") removeDepositProofFieldRow(node);
           else if (action === "deposit-method-save") await submitDepositMethod();
           else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
           else if (action === "withdrawal-method-new") openWithdrawalMethodEditor(node.dataset.methodType);
@@ -1864,7 +1866,8 @@
     const methodType = current?.type || type || "BANK";
     const methodName = methodType === "CRYPTO" ? "Crypto" : "Bank transfer";
     const common = '<input type="hidden" name="methodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="methodType" value="' + methodType + '"><input type="hidden" name="methodName" value="' + escapeHtml(methodName) + '"><label>Payment method<input value="' + escapeHtml(methodName) + '" readonly aria-readonly="true"></label><label>Description<textarea name="methodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="methodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="methodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="COMING_SOON" ' + (current?.status === "COMING_SOON" ? "selected" : "") + '>Coming soon</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label>';
-    const proof = '<div class="modal-fieldset"><strong>Client proof requirements</strong><label class="modal-check"><input name="requireReference" type="checkbox" ' + (current ? current.requireReference !== false ? "checked" : "" : methodType === "BANK" ? "checked" : "") + '> Require transfer reference</label><label class="modal-check"><input name="requireTransactionHash" type="checkbox" ' + (current ? current.requireTransactionHash === true ? "checked" : "" : methodType === "CRYPTO" ? "checked" : "") + '> Require transaction hash</label><label class="modal-check"><input name="requireReceiptUpload" type="checkbox" ' + (current ? current.requireReceiptUpload === true ? "checked" : "" : "checked") + '> Require receipt / screenshot upload</label><label>Proof instructions<textarea name="proofInstructions" maxlength="500">' + escapeHtml(current?.proofInstructions || (methodType === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : "Enter the bank transfer reference and upload the receipt or payment screenshot.")) + '</textarea></label></div>' + depositProofFieldBuilder(current?.proofFields || []);
+    const proofFields = current?.proofFields || defaultDepositProofFields(methodType);
+    const proof = '<div class="modal-fieldset"><strong>Client proof requirements</strong><label class="modal-check"><input name="requireReference" type="checkbox" ' + (current ? current.requireReference !== false ? "checked" : "" : methodType === "BANK" ? "checked" : "") + '> Require transfer reference</label><label class="modal-check"><input name="requireTransactionHash" type="checkbox" ' + (current ? current.requireTransactionHash === true ? "checked" : "" : methodType === "CRYPTO" ? "checked" : "") + '> Require transaction hash</label><label class="modal-check"><input name="requireReceiptUpload" type="checkbox" ' + (current ? current.requireReceiptUpload === true ? "checked" : "" : "checked") + '> Require receipt / screenshot upload</label><label>Proof instructions<textarea name="proofInstructions" maxlength="500">' + escapeHtml(current?.proofInstructions || (methodType === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : "Enter the bank transfer reference and upload the receipt or payment screenshot.")) + '</textarea></label></div>' + depositProofFieldBuilder(proofFields);
     const fields = methodType === "CRYPTO"
       ? common + '<label>Network<input name="cryptoNetwork" maxlength="80" value="' + escapeHtml(current?.network || "TRC20") + '"></label><label>Wallet address<input name="cryptoAddress" maxlength="240" value="' + escapeHtml(current?.address || "") + '"></label><label>Tag or memo<input name="cryptoMemo" maxlength="120" value="' + escapeHtml(current?.tagOrMemo || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "After chain and finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Submit the transaction hash after sending funds.") + '</textarea></label>' + proof
       : common + '<label>Bank name<input name="bankName" maxlength="120" value="' + escapeHtml(current?.bankName || "") + '"></label><label>Account name<input name="accountName" maxlength="160" value="' + escapeHtml(current?.accountName || "BullPort Client Funding") + '"></label><label>Account number<input name="accountNumber" maxlength="80" value="' + escapeHtml(current?.accountNumber || "") + '"></label><label>Sort code<input name="sortCode" maxlength="40" value="' + escapeHtml(current?.sortCode || "") + '"></label><label>IBAN<input name="iban" maxlength="80" value="' + escapeHtml(current?.iban || "") + '"></label><label>SWIFT<input name="swift" maxlength="40" value="' + escapeHtml(current?.swift || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "Within 1 business day after finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Use the client account number as payment reference.") + '</textarea></label>' + proof;
@@ -1881,9 +1884,10 @@
     const checked = (name) => Boolean(modal?.querySelector('[name="' + name + '"]')?.checked);
     if (!value("methodName")) { toast("Enter a method name."); return; }
     const proofFields = [];
-    for (let index = 0; index < 20; index += 1) {
+    modal?.querySelectorAll("[data-deposit-proof-field]").forEach((row) => {
+      const index = row.dataset.proofIndex;
       const labelValue = value("proofFieldLabel" + index);
-      if (!labelValue) continue;
+      if (!labelValue) return;
       const key = value("proofFieldId" + index) || slugify(labelValue, "field");
       proofFields.push({
         id: key.replace(/^field-/, "").replace(/-/g, "").replace(/^[0-9]/, "field$&") || key,
@@ -1894,7 +1898,7 @@
         helpText: value("proofFieldHelp" + index) || undefined,
         options: value("proofFieldOptions" + index) ? value("proofFieldOptions" + index).split(",").map((item) => item.trim()).filter(Boolean) : []
       });
-    }
+    });
     const method = methodType === "CRYPTO"
       ? {
           id, type: "CRYPTO", name: value("methodName"), description: value("methodDescription"), enabled: status !== "DISABLED", status, currency: value("methodCurrency") || "USDT",
@@ -1953,21 +1957,37 @@
   }
 
   function depositProofFieldBuilder(fields) {
-    const rows = Array.from({ length: Math.max(6, (fields || []).length + 2) }).map((_, index) => {
-      const field = (fields || [])[index] || {};
-      const type = field.type || "TEXT";
-      const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
-      return '<div class="withdrawal-field-row">' +
-        '<label>Field key<input name="proofFieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="senderName"></label>' +
-        '<label>Label<input name="proofFieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Sender name"></label>' +
-        '<label>Type<select name="proofFieldType' + index + '">' + options + '</select></label>' +
-        '<label>Options<input name="proofFieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
-        '<label>Placeholder<input name="proofFieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
-        '<label>Help text<input name="proofFieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '"></label>' +
-        '<label class="checkbox-row"><input name="proofFieldRequired' + index + '" type="checkbox" ' + (field.required === true ? "checked" : "") + '> Required</label>' +
-      '</div>';
-    }).join("");
-    return '<div class="withdrawal-field-builder"><div class="builder-head"><strong>Custom proof fields</strong><span>These fields appear on the client deposit modal and on the admin transaction review.</span></div>' + rows + '</div>';
+    const rows = (fields && fields.length ? fields : []).map((field, index) => depositProofFieldRow(field, index)).join("");
+    return '<div class="withdrawal-field-builder" data-deposit-proof-builder><div class="builder-head"><div><strong>Custom proof fields</strong><span>These fields appear on the client deposit modal and on the admin transaction review.</span></div><button class="btn" type="button" data-action="deposit-proof-field-add">Add custom proof</button></div><div data-deposit-proof-list>' + rows + '</div></div>';
+  }
+
+  function depositProofFieldRow(field, index) {
+    field = field || {};
+    const type = field.type || "TEXT";
+    const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
+    return '<div class="withdrawal-field-row" data-deposit-proof-field data-proof-index="' + index + '">' +
+      '<label>Field key<input name="proofFieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="senderName"></label>' +
+      '<label>Label<input name="proofFieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Sender name"></label>' +
+      '<label>Type<select name="proofFieldType' + index + '">' + options + '</select></label>' +
+      '<label>Options<input name="proofFieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
+      '<label>Placeholder<input name="proofFieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
+      '<label>Help text<input name="proofFieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '"></label>' +
+      '<label class="checkbox-row"><input name="proofFieldRequired' + index + '" type="checkbox" ' + (field.required === true ? "checked" : "") + '> Required</label>' +
+      '<button class="btn danger" type="button" data-action="deposit-proof-field-remove">Remove</button>' +
+    '</div>';
+  }
+
+  function addDepositProofFieldRow() {
+    const list = document.querySelector("[data-deposit-proof-list]");
+    if (!list) return;
+    const rows = list.querySelectorAll("[data-deposit-proof-field]");
+    const nextIndex = rows.length ? Math.max(...Array.from(rows).map((row) => Number(row.dataset.proofIndex || 0))) + 1 : 0;
+    list.insertAdjacentHTML("beforeend", depositProofFieldRow({ required: true }, nextIndex));
+    bindActions();
+  }
+
+  function removeDepositProofFieldRow(node) {
+    node.closest("[data-deposit-proof-field]")?.remove();
   }
 
   function openWithdrawalMethodEditor(type, id) {

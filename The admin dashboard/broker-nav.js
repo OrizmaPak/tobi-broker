@@ -540,8 +540,8 @@
   function fallbackDepositMethods() {
     return {
       methods: [
-        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot." },
-        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available." },
+        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot.", proofFields: defaultDepositProofFields("BANK") },
+        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available.", proofFields: defaultDepositProofFields("CRYPTO") },
         { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant debit and credit card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta.", requireReference: false, requireTransactionHash: false, requireReceiptUpload: false, proofInstructions: "Card proof is not required until instant funding is enabled." }
       ]
     };
@@ -552,6 +552,23 @@
       ? appState.data.depositMethods
       : fallbackDepositMethods();
     return value.methods.filter(function (method) { return method && method.status !== "DISABLED"; });
+  }
+
+  function defaultDepositProofFields(type) {
+    if (type === "BANK") {
+      return [
+        { id: "senderName", label: "Sender name", type: "TEXT", required: true, placeholder: "Name on the sending account", options: [] },
+        { id: "senderBank", label: "Sending bank", type: "TEXT", required: false, placeholder: "Bank funds came from", options: [] },
+        { id: "transferDate", label: "Transfer date", type: "DATE", required: true, options: [] }
+      ];
+    }
+    if (type === "CRYPTO") {
+      return [
+        { id: "sentAsset", label: "Asset sent", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
+        { id: "sourceWallet", label: "Source wallet", type: "TEXT", required: false, placeholder: "Optional sending wallet address", options: [] }
+      ];
+    }
+    return [];
   }
 
   function depositMethodById(id) {
@@ -622,6 +639,9 @@
     const items = [];
     if (method.requireReference !== false) items.push("reference");
     if (method.requireTransactionHash === true) items.push("transaction hash");
+    (method.proofFields || []).forEach(function (field) {
+      if (field && field.label) items.push(field.label + (field.required === false ? " (optional)" : ""));
+    });
     if (method.requireReceiptUpload === true) items.push("receipt upload");
     return items.length ? items.join(", ") : "No proof required";
   }
