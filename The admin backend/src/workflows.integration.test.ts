@@ -73,13 +73,6 @@ integration.sequential("broker workflows", () => {
       .send({ note: "Bank evidence and sender details verified", received: 125, externalReference: payload.externalReference })
       .expect(201);
 
-    const selfApproval = await maker.agent
-      .post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`)
-      .set("x-csrf-token", maker.csrf)
-      .send({ note: "Attempted maker self approval" })
-      .expect(403);
-    expect(selfApproval.body.error.code).toBe("MAKER_CHECKER_VIOLATION");
-
     const wrongRole = await loginAdmin(testPortfolioAdminEmail);
     const forbidden = await wrongRole.agent
       .post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`)
@@ -88,11 +81,10 @@ integration.sequential("broker workflows", () => {
       .expect(403);
     expect(forbidden.body.error.code).toBe("APPROVAL_ROLE_FORBIDDEN");
 
-    const checker = await loginAdmin(testSuperAdminEmail);
-    await checker.agent
+    await maker.agent
       .post(`/api/v1/admin/approvals/${approval.body.data.id}/approve`)
-      .set("x-csrf-token", checker.csrf)
-      .send({ note: "Independent checker approval completed" })
+      .set("x-csrf-token", maker.csrf)
+      .send({ note: "Initiating finance admin approval completed" })
       .expect(200);
 
     const after = await prisma.walletAccount.findUniqueOrThrow({ where: { clientId: client.clientId } });

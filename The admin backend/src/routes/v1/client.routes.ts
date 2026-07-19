@@ -12,7 +12,7 @@ import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalM
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
 import { debitClientCashTx, placeWalletHoldTx, releaseWalletHoldTx } from "../../services/ledger.service";
-import { markAllNotificationsRead, markNotificationRead, notificationInbox, notifyClient, notifyKycReviewReadyTx } from "../../services/notification.service";
+import { markAllNotificationsRead, markNotificationRead, notificationInbox, notifyAdminTx, notifyClient, notifyClientTx, notifyKycReviewReadyTx } from "../../services/notification.service";
 
 export const v1ClientRouter = Router();
 v1ClientRouter.use(requireClient);
@@ -299,16 +299,31 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
   const collectedProof = collectDepositProofData(configuredMethod, input.proofData);
   Object.assign(proofFields, collectedProof.fields);
   if (Object.keys(proofFields).length) throw new ApiError(422, "Complete the required deposit proof fields", "DEPOSIT_PROOF_INCOMPLETE", proofFields);
-  const result = await idempotentMutation(req, id, "POST:/client/deposits", async (tx) => tx.deposit.create({
-    data: {
-      reference: reference("DEP"), clientId: id, method: input.method, rail: configuredMethod.name,
-      amount: input.amount, currency: input.currency, evidenceFileId: input.evidenceFileId,
-      proofData: collectedProof.values as Prisma.InputJsonObject,
-      transactionHash: input.transactionHash, externalReference: input.externalReference,
-      status: "IN_REVIEW", reviewNote: "Submitted through the client portal"
-    }
-  }));
-  if (!result.cached) await notifyClient({ clientId: id, email: client.email, category: "Wallet", title: "Deposit submitted", body: `Deposit ${String((result.data as { reference: string }).reference)} is awaiting operations review.`, actionUrl: "transactions.html" });
+  const result = await idempotentMutation(req, id, "POST:/client/deposits", async (tx) => {
+    const deposit = await tx.deposit.create({
+      data: {
+        reference: reference("DEP"), clientId: id, method: input.method, rail: configuredMethod.name,
+        amount: input.amount, currency: input.currency, evidenceFileId: input.evidenceFileId,
+        proofData: collectedProof.values as Prisma.InputJsonObject,
+        transactionHash: input.transactionHash, externalReference: input.externalReference,
+        status: "IN_REVIEW", reviewNote: "Submitted through the client portal"
+      }
+    });
+    await notifyClientTx(tx, { clientId: id, email: client.email, category: "Wallet", title: "Deposit submitted", body: `Deposit ${deposit.reference} is awaiting operations review.`, actionUrl: "transactions.html", entity: { type: "Deposit", id: deposit.id } });
+    await notifyAdminTx(tx, {
+      clientId: id,
+      category: "Wallet",
+      eventKey: "deposit.created",
+      severity: "INFO",
+      title: "Deposit submitted",
+      body: `${client.name} (${client.accountNumber}) submitted ${deposit.currency} ${deposit.amount} via ${deposit.rail || deposit.method}.`,
+      actionUrl: `deposit-review.html?id=${deposit.id}`,
+      entity: { type: "Deposit", id: deposit.id },
+      metadata: { clientId: id, accountNumber: client.accountNumber, reference: deposit.reference, amount: String(deposit.amount), currency: deposit.currency, method: deposit.method, rail: deposit.rail },
+      dedupeKey: `deposit.created:${deposit.id}`
+    });
+    return deposit;
+  });
   return ok(res, result.data, result.cached ? 200 : 201, { cached: result.cached, kycApproved: await approvedKyc(id) });
 }));
 

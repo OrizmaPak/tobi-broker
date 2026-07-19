@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireClient } from "../middleware/auth";
 import { ApiError, asyncHandler, ok } from "../lib/http";
 import { prisma } from "../lib/prisma";
-import { notifyClient } from "../services/notification.service";
+import { notifyAdminTx, notifyClient, notifyClientTx } from "../services/notification.service";
 
 export const clientPortalRouter = Router();
 
@@ -217,23 +217,40 @@ clientPortalRouter.get("/instruments", asyncHandler(async (_req, res) => {
 clientPortalRouter.post("/deposits", asyncHandler(async (req, res) => {
   const input = moneyActionSchema.parse(req.body);
   const clientId = activeClientId(req);
-  const deposit = await prisma.deposit.create({
-    data: {
-      reference: reference("DEP"),
+  const deposit = await prisma.$transaction(async (tx) => {
+    const created = await tx.deposit.create({
+      data: {
+        reference: reference("DEP"),
+        clientId,
+        method: input.method ?? "Bank transfer",
+        rail: input.rail ?? "Manual transfer",
+        amount: input.amount,
+        status: "PENDING",
+        reviewNote: "Client submitted funding request from dashboard."
+      }
+    });
+    const client = await tx.client.findUnique({ where: { id: clientId }, select: { name: true, accountNumber: true, email: true } });
+    await notifyClientTx(tx, {
       clientId,
-      method: input.method ?? "Bank transfer",
-      rail: input.rail ?? "Manual transfer",
-      amount: input.amount,
-      status: "PENDING",
-      reviewNote: "Client submitted funding request from dashboard."
-    }
-  });
-
-  await notifyClient({
-    clientId,
-    category: "Wallet",
-    title: "Deposit request submitted",
-    body: `${deposit.method} funding request ${deposit.reference} is pending operations review.`
+      email: client?.email,
+      category: "Wallet",
+      title: "Deposit request submitted",
+      body: `${created.method} funding request ${created.reference} is pending operations review.`,
+      entity: { type: "Deposit", id: created.id }
+    });
+    await notifyAdminTx(tx, {
+      clientId,
+      category: "Wallet",
+      eventKey: "deposit.created",
+      severity: "INFO",
+      title: "Deposit submitted",
+      body: `${client?.name || "Client"} (${client?.accountNumber || clientId}) submitted USD ${created.amount} via ${created.rail || created.method}.`,
+      actionUrl: `deposit-review.html?id=${created.id}`,
+      entity: { type: "Deposit", id: created.id },
+      metadata: { clientId, accountNumber: client?.accountNumber, reference: created.reference, amount: String(created.amount), currency: "USD", method: created.method, rail: created.rail },
+      dedupeKey: `deposit.created:${created.id}`
+    });
+    return created;
   });
 
   return ok(res, deposit, 201);

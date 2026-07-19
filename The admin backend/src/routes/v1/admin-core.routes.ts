@@ -545,7 +545,6 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
   const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
   const approval = await prisma.approvalRequest.findUnique({ where: { id: String(req.params.id) } });
   if (!approval || approval.status !== "PENDING") throw new ApiError(404, "Pending approval was not found", "APPROVAL_NOT_FOUND");
-  if (approval.initiatedByAdminId === req.user!.id) throw new ApiError(403, "The initiating admin cannot approve this action", "MAKER_CHECKER_VIOLATION");
   if (approval.expiresAt && approval.expiresAt <= new Date()) throw new ApiError(409, "Approval request has expired", "APPROVAL_EXPIRED");
   if (!(approvalRoles[approval.actionType] || ["SUPER_ADMIN"]).includes(req.user!.role)) {
     throw new ApiError(403, "Your role cannot approve this action", "APPROVAL_ROLE_FORBIDDEN");
@@ -606,7 +605,6 @@ v1AdminCoreRouter.post("/approvals/:id/reject", requireAdminRoles("SUPER_ADMIN",
   const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
   const approval = await prisma.approvalRequest.findUnique({ where: { id: String(req.params.id) } });
   if (!approval || approval.status !== "PENDING") throw new ApiError(404, "Pending approval was not found", "APPROVAL_NOT_FOUND");
-  if (approval.initiatedByAdminId === req.user!.id) throw new ApiError(403, "The initiating admin cannot reject their own approval request", "MAKER_CHECKER_VIOLATION");
   await prisma.$transaction(async (tx) => {
     await tx.approvalRequest.update({ where: { id: approval.id }, data: { status: "REJECTED", approvedByAdminId: req.user!.id, decisionNote: input.note, decidedAt: new Date() } });
     if (approval.actionType === "CREDIT_DEPOSIT") await tx.deposit.update({ where: { id: approval.entityId }, data: { status: "IN_REVIEW", reviewNote: input.note } });

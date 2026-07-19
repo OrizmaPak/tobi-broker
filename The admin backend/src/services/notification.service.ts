@@ -224,6 +224,9 @@ export async function notifyClientsMissingKycRequirementTx(tx: NotificationTx, r
 
 export async function notificationInbox(input: NotificationInboxRecipient & { limit?: number }) {
   const limit = Math.min(Math.max(input.limit || 20, 1), 100);
+  if (input.recipientType === ADMIN_NOTIFICATION_RECIPIENT_TYPE && input.recipientId === ADMIN_NOTIFICATION_RECIPIENT_ID) {
+    await backfillMissingAdminDepositNotifications();
+  }
   const where = { recipientType: input.recipientType, recipientId: input.recipientId };
   const [notifications, unreadCount] = await Promise.all([
     prisma.notification.findMany({
@@ -235,6 +238,46 @@ export async function notificationInbox(input: NotificationInboxRecipient & { li
     prisma.notification.count({ where: { ...where, readAt: null } })
   ]);
   return { unreadCount, notifications };
+}
+
+export async function backfillMissingAdminDepositNotifications(limit = 50) {
+  const deposits = await prisma.deposit.findMany({
+    where: {
+      status: { in: ["PENDING", "IN_REVIEW", "UNDER_REVIEW"] }
+    },
+    include: { client: { select: { id: true, name: true, accountNumber: true } } },
+    orderBy: { createdAt: "desc" },
+    take: limit
+  });
+  const existing = deposits.length
+    ? await prisma.notification.findMany({
+      where: {
+        recipientType: "ADMIN",
+        recipientId: ADMIN_NOTIFICATION_RECIPIENT_ID,
+        eventKey: "deposit.created",
+        entityType: "Deposit",
+        entityId: { in: deposits.map((deposit) => deposit.id) }
+      },
+      select: { entityId: true }
+    })
+    : [];
+  const notifiedDepositIds = new Set(existing.map((row) => row.entityId).filter(Boolean));
+  const missingDeposits = deposits.filter((deposit) => !notifiedDepositIds.has(deposit.id));
+  for (const deposit of missingDeposits) {
+    await notifyAdmin({
+      clientId: deposit.clientId,
+      category: "Wallet",
+      eventKey: "deposit.created",
+      severity: "INFO",
+      title: "Deposit submitted",
+      body: `${deposit.client?.name || "Client"} (${deposit.client?.accountNumber || deposit.clientId}) submitted ${deposit.currency} ${deposit.amount} via ${deposit.rail || deposit.method}.`,
+      actionUrl: `deposit-review.html?id=${deposit.id}`,
+      entity: { type: "Deposit", id: deposit.id },
+      metadata: { clientId: deposit.clientId, accountNumber: deposit.client?.accountNumber, reference: deposit.reference, amount: String(deposit.amount), currency: deposit.currency, method: deposit.method, rail: deposit.rail },
+      dedupeKey: `deposit.created:${deposit.id}`
+    });
+  }
+  return missingDeposits.length;
 }
 
 export async function markNotificationRead(input: NotificationInboxRecipient & { id: string }) {
