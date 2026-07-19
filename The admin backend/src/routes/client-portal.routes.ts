@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireClient } from "../middleware/auth";
 import { ApiError, asyncHandler, ok } from "../lib/http";
 import { prisma } from "../lib/prisma";
+import { notifyClient } from "../services/notification.service";
 
 export const clientPortalRouter = Router();
 
@@ -72,7 +73,7 @@ async function snapshot(clientId: string) {
       investments: { include: { product: true }, orderBy: { updatedAt: "desc" } },
       payouts: { orderBy: { payoutDate: "desc" }, take: 20 },
       tickets: { orderBy: { updatedAt: "desc" }, take: 20 },
-      notifications: { orderBy: { createdAt: "desc" }, take: 20 }
+      notifications: { where: { recipientType: "CLIENT" }, orderBy: { createdAt: "desc" }, take: 20 }
     }
   });
 
@@ -228,13 +229,11 @@ clientPortalRouter.post("/deposits", asyncHandler(async (req, res) => {
     }
   });
 
-  await prisma.notification.create({
-    data: {
-      clientId,
-      category: "Wallet",
-      title: "Deposit request submitted",
-      body: `${deposit.method} funding request ${deposit.reference} is pending operations review.`
-    }
+  await notifyClient({
+    clientId,
+    category: "Wallet",
+    title: "Deposit request submitted",
+    body: `${deposit.method} funding request ${deposit.reference} is pending operations review.`
   });
 
   return ok(res, deposit, 201);
@@ -284,13 +283,11 @@ clientPortalRouter.post("/withdrawals", asyncHandler(async (req, res) => {
     return created;
   });
 
-  await prisma.notification.create({
-    data: {
-      clientId,
-      category: "Wallet",
-      title: "Withdrawal submitted for review",
-      body: `${withdrawal.reference} is now waiting for finance approval.`
-    }
+  await notifyClient({
+    clientId,
+    category: "Wallet",
+    title: "Withdrawal submitted for review",
+    body: `${withdrawal.reference} is now waiting for finance approval.`
   });
 
   return ok(res, withdrawal, 201);
@@ -323,13 +320,11 @@ clientPortalRouter.post("/kyc/submit", asyncHandler(async (req, res) => {
         }
       });
 
-  await prisma.notification.create({
-    data: {
-      clientId,
-      category: "KYC",
-      title: "KYC submitted",
-      body: "Compliance has received your verification documents for review."
-    }
+  await notifyClient({
+    clientId,
+    category: "KYC",
+    title: "KYC submitted",
+    body: "Compliance has received your verification documents for review."
   });
 
   return ok(res, review);
@@ -384,13 +379,11 @@ clientPortalRouter.post("/investments", asyncHandler(async (req, res) => {
     return created;
   });
 
-  await prisma.notification.create({
-    data: {
-      clientId,
-      category: "Investment",
-      title: "Portfolio subscription active",
-      body: `${product.name} has been added to your active investments.`
-    }
+  await notifyClient({
+    clientId,
+    category: "Investment",
+    title: "Portfolio subscription active",
+    body: `${product.name} has been added to your active investments.`
   });
 
   return ok(res, investment, 201);
@@ -410,4 +403,3 @@ clientPortalRouter.post("/support/tickets", asyncHandler(async (req, res) => {
   });
   return ok(res, ticket, 201);
 }));
-

@@ -9,7 +9,7 @@ import { createMfaSecret, decryptSecret, encryptSecret, randomCode, randomToken,
 import { ApiError, asyncHandler, hashValue, ok } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireClient, requireCsrf } from "../../middleware/auth";
-import { notifyClient } from "../../services/notification.service";
+import { notifyClient, notifyClientTx } from "../../services/notification.service";
 import { clearSessionCookies, createSession, revokeSession, rotateSession } from "../../services/session.service";
 
 export const v1AuthRouter = Router();
@@ -93,6 +93,19 @@ v1AuthRouter.post("/client/register", authLimiter, asyncHandler(async (req, res)
         tokenHash: hashValue(rawVerificationToken),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
       }
+    });
+    const kycCase = await tx.kycCase.findFirst({ where: { clientId: created.id }, orderBy: { createdAt: "desc" } });
+    await notifyClientTx(tx, {
+      clientId: created.id,
+      email: created.email,
+      eventKey: "kyc.onboarding.required",
+      category: "Onboarding",
+      severity: "WARNING",
+      title: "Complete KYC verification",
+      body: "Submit your identity and address documents to unlock withdrawals, investing, and trading.",
+      actionUrl: "kyc.html",
+      entity: { type: kycCase ? "KycCase" : "Client", id: kycCase?.id || created.id },
+      dedupeKey: `kyc.onboarding.required:${created.id}`
     });
     return created;
   });

@@ -7,6 +7,7 @@ import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/a
 import { writeAudit } from "../../services/audit.service";
 import { buildKycChecklist, KYC_UPLOAD_MODES, summarizeKycChecklist } from "../../services/kyc.service";
 import { captureWalletHoldTx, creditClientCashTx, debitClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
+import { notifyClientTx, notifyClientsMissingKycRequirementTx } from "../../services/notification.service";
 
 export const v1AdminCoreRouter = Router();
 v1AdminCoreRouter.use(requireAdmin);
@@ -43,6 +44,28 @@ const approvalRoles: Record<string, string[]> = {
   POST_DISTRIBUTION: ["SUPER_ADMIN", "FINANCE", "PORTFOLIO_MANAGER"]
 };
 
+const APPROVAL_SETTINGS_KEY = "operations.approvals";
+
+type ApprovalPolicy = {
+  makerChecker?: boolean;
+  depositCredits?: boolean;
+  autoApproveDeposits?: boolean;
+};
+
+function approvalPolicyValue(value: Prisma.JsonValue | null | undefined): ApprovalPolicy {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ApprovalPolicy : {};
+}
+
+function jsonObjectValue(value: Prisma.JsonValue | null | undefined): Record<string, Prisma.JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Prisma.JsonValue> : {};
+}
+
+async function depositAutoApprovalEnabled() {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: APPROVAL_SETTINGS_KEY } });
+  const policy = approvalPolicyValue(setting?.value);
+  return policy.autoApproveDeposits === true || policy.depositCredits === false || policy.makerChecker === false;
+}
+
 async function createApproval(input: { actionType: string; entityType: string; entityId: string; payload?: Prisma.InputJsonObject; adminId: string }) {
   const existing = await prisma.approvalRequest.findFirst({ where: { actionType: input.actionType, entityType: input.entityType, entityId: input.entityId, status: "PENDING" } });
   if (existing) return existing;
@@ -57,6 +80,50 @@ async function createApproval(input: { actionType: string; entityType: string; e
       expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
     }
   });
+}
+
+type DepositForCredit = Prisma.DepositGetPayload<{ include: { client: true } }>;
+
+async function creditDepositTx(tx: Prisma.TransactionClient, deposit: DepositForCredit, input: {
+  note: string;
+  received?: Prisma.Decimal.Value;
+  externalReference?: string | null;
+  initiatedBy: string;
+  approvedBy: string;
+}) {
+  const [kycCase, legacy] = await Promise.all([
+    tx.kycCase.findFirst({ where: { clientId: deposit.clientId, status: "APPROVED", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
+    tx.kycReview.findFirst({ where: { clientId: deposit.clientId, status: "APPROVED" } })
+  ]);
+  if (!kycCase && !legacy) throw new ApiError(403, "KYC must be approved before a deposit can be credited", "KYC_REQUIRED");
+
+  const received = input.received || deposit.received || deposit.amount;
+  const externalReference = input.externalReference || deposit.externalReference || deposit.transactionHash || undefined;
+  const ledger = await creditClientCashTx(tx, {
+    clientId: deposit.clientId,
+    amount: received,
+    type: "DEPOSIT",
+    description: `Deposit ${deposit.reference}`,
+    currency: deposit.currency,
+    idempotencyKey: `credit:${deposit.id}`,
+    externalReference,
+    initiatedBy: input.initiatedBy,
+    approvedBy: input.approvedBy
+  });
+  const entity = await tx.deposit.update({
+    where: { id: deposit.id },
+    data: {
+      status: "CREDITED",
+      reviewNote: input.note,
+      received,
+      externalReference,
+      approvedAt: new Date(),
+      creditedAt: new Date(),
+      ledgerTransactionId: ledger.id
+    }
+  });
+  await notifyClientTx(tx, { clientId: deposit.clientId, category: "Wallet", title: "Deposit credited", body: `${deposit.reference} has been credited to your wallet.`, actionUrl: "transactions.html", entity: { type: "Deposit", id: deposit.id } });
+  return entity;
 }
 
 v1AdminCoreRouter.get("/overview", operationalRoles, asyncHandler(async (_req, res) => {
@@ -138,7 +205,7 @@ v1AdminCoreRouter.get("/clients/:id", operationalRoles, asyncHandler(async (req,
       orders: { include: { instrument: true, fills: true }, orderBy: { submittedAt: "desc" } }, positions: { include: { instrument: true } },
       payouts: { orderBy: { payoutDate: "desc" } }, riskAlerts: { orderBy: { createdAt: "desc" } },
       tickets: { include: { messages: true }, orderBy: { updatedAt: "desc" } }, notes: { orderBy: { createdAt: "desc" } },
-      notifications: { orderBy: { createdAt: "desc" }, take: 30 }, reports: { orderBy: { createdAt: "desc" } }
+      notifications: { where: { recipientType: "CLIENT" }, orderBy: { createdAt: "desc" }, take: 30 }, reports: { orderBy: { createdAt: "desc" } }
     }
   });
   if (!row) throw new ApiError(404, "Client was not found", "CLIENT_NOT_FOUND");
@@ -198,10 +265,15 @@ v1AdminCoreRouter.post("/kyc/requirements", complianceRoles, asyncHandler(async 
   }).parse(req.body);
   const baseCode = input.documentType.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60) || "DOCUMENT";
   const existing = await prisma.kycDocumentRequirement.findUnique({ where: { code: baseCode } });
-  const row = await prisma.kycDocumentRequirement.create({
-    data: { ...input, code: existing ? `${baseCode}_${Date.now().toString(36).toUpperCase()}` : baseCode, createdByAdminId: req.user!.id }
+  let notifiedClients = 0;
+  const row = await prisma.$transaction(async (tx) => {
+    const created = await tx.kycDocumentRequirement.create({
+      data: { ...input, code: existing ? `${baseCode}_${Date.now().toString(36).toUpperCase()}` : baseCode, createdByAdminId: req.user!.id }
+    });
+    if (created.isActive && created.isRequired) notifiedClients = await notifyClientsMissingKycRequirementTx(tx, created);
+    return created;
   });
-  await writeAudit("createKycRequirement", "KycDocumentRequirement", row.id, { code: row.code, uploadMode: row.uploadMode }, { req, after: row });
+  await writeAudit("createKycRequirement", "KycDocumentRequirement", row.id, { code: row.code, uploadMode: row.uploadMode, notifiedClients }, { req, after: row });
   return ok(res, row, 201);
 }));
 
@@ -216,8 +288,18 @@ v1AdminCoreRouter.patch("/kyc/requirements/:id", complianceRoles, asyncHandler(a
   }).refine((value) => Object.keys(value).length > 0, "At least one requirement field must be supplied").parse(req.body);
   const before = await prisma.kycDocumentRequirement.findUnique({ where: { id: String(req.params.id) } });
   if (!before) throw new ApiError(404, "KYC document requirement was not found", "KYC_REQUIREMENT_NOT_FOUND");
-  const row = await prisma.kycDocumentRequirement.update({ where: { id: before.id }, data: input });
-  await writeAudit("updateKycRequirement", "KycDocumentRequirement", row.id, input as Prisma.InputJsonObject, { req, before, after: row });
+  let notifiedClients = 0;
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.kycDocumentRequirement.update({ where: { id: before.id }, data: input });
+    const becameRequired = before.isRequired === false && updated.isRequired === true;
+    const becameActive = before.isActive === false && updated.isActive === true;
+    const uploadModeExpanded = Boolean(input.uploadMode && input.uploadMode !== before.uploadMode);
+    if (updated.isActive && updated.isRequired && (becameRequired || becameActive || uploadModeExpanded)) {
+      notifiedClients = await notifyClientsMissingKycRequirementTx(tx, updated);
+    }
+    return updated;
+  });
+  await writeAudit("updateKycRequirement", "KycDocumentRequirement", row.id, { ...(input as Prisma.InputJsonObject), notifiedClients }, { req, before, after: row });
   return ok(res, row);
 }));
 
@@ -247,15 +329,21 @@ v1AdminCoreRouter.post("/kyc/:id/documents/:documentId/decision", complianceRole
       include: { requirement: true }
     });
     await tx.kycCase.update({ where: { id: before.caseId }, data: { status: "IN_REVIEW", assignedReviewer: req.user!.name } });
-    await tx.notification.create({
-      data: {
+    if (input.status === "REJECTED") {
+      await notifyClientTx(tx, {
         clientId: before.kycCase.clientId,
+        email: before.kycCase.client.email,
+        eventKey: "kyc.document.rejected",
         category: "KYC",
-        title: input.status === "VERIFIED" ? "KYC document accepted" : "KYC document needs attention",
-        body: input.status === "VERIFIED" ? `${before.requirement?.documentType || before.type} was accepted.` : input.note,
-        actionUrl: "kyc.html"
-      }
-    });
+        severity: "WARNING",
+        title: "KYC document needs attention",
+        body: `${before.requirement?.documentType || before.type} ${before.side.toLowerCase()} was rejected: ${input.note}`,
+        actionUrl: "kyc.html",
+        entity: { type: "KycDocument", id: before.id },
+        metadata: { caseId: before.caseId, documentType: before.requirement?.documentType || before.type, side: before.side },
+        dedupeKey: `kyc.document.rejected:${before.id}`
+      });
+    }
     return updated;
   });
   await writeAudit("reviewKycDocument", "KycDocument", document.id, { status: input.status, note: input.note }, { req, reason: input.note || "Document accepted", before, after: document });
@@ -277,7 +365,38 @@ v1AdminCoreRouter.post("/kyc/:id/decision", complianceRoles, asyncHandler(async 
     const row = await tx.kycCase.update({ where: { id: kycCase.id }, data: { status: input.status, assignedReviewer: req.user!.name, approvedAt: input.status === "APPROVED" ? new Date() : null, expiresAt: input.status === "APPROVED" ? input.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null, decisions: { create: { status: input.status, reviewerId: req.user!.id, note: input.note } } } });
     await tx.kycReview.updateMany({ where: { clientId: kycCase.clientId }, data: { status: input.status, reviewer: req.user!.name, decisionNote: input.note } });
     await tx.client.update({ where: { id: kycCase.clientId }, data: { status: input.status === "APPROVED" ? "ACTIVE" : input.status === "REJECTED" ? "RESTRICTED" : "PENDING" } });
-    await tx.notification.create({ data: { clientId: kycCase.clientId, category: "KYC", title: `KYC ${input.status.toLowerCase().replace(/_/g, " ")}`, body: input.note, actionUrl: "kyc.html" } });
+    const decisionNotification = {
+      APPROVED: {
+        eventKey: "kyc.final_approved",
+        severity: "SUCCESS" as const,
+        title: "KYC approved",
+        body: "Your account verification has been approved.",
+        actionUrl: "dashboard.html"
+      },
+      REJECTED: {
+        eventKey: "kyc.final_rejected",
+        severity: "CRITICAL" as const,
+        title: "KYC rejected",
+        body: input.note,
+        actionUrl: "kyc.html"
+      },
+      RESUBMISSION_REQUIRED: {
+        eventKey: "kyc.resubmission_required",
+        severity: "WARNING" as const,
+        title: "KYC resubmission required",
+        body: input.note,
+        actionUrl: "kyc.html"
+      }
+    }[input.status];
+    await notifyClientTx(tx, {
+      clientId: kycCase.clientId,
+      email: kycCase.client.email,
+      category: "KYC",
+      entity: { type: "KycCase", id: kycCase.id },
+      metadata: { status: input.status, overrideIncomplete: input.overrideIncomplete, summary },
+      dedupeKey: `kyc.final:${input.status}:${kycCase.id}:${hashValue(input.note)}`,
+      ...decisionNotification
+    });
     return row;
   });
   await writeAudit("kycDecision", "KycCase", updated.id, { status: input.status, overrideIncomplete: input.overrideIncomplete, summary }, { req, reason: input.note, before: kycCase, after: updated });
@@ -313,9 +432,20 @@ v1AdminCoreRouter.get("/money/withdrawals", financeRoles, asyncHandler(async (re
 
 v1AdminCoreRouter.post("/money/deposits/:id/request-approval", financeRoles, asyncHandler(async (req, res) => {
   const input = z.object({ note: z.string().trim().min(5).max(1000), received: moneySchema.optional(), externalReference: z.string().trim().max(120).optional() }).parse(req.body);
-  const row = await prisma.deposit.findUnique({ where: { id: String(req.params.id) } });
+  const row = await prisma.deposit.findUnique({ where: { id: String(req.params.id) }, include: { client: true } });
   if (!row) throw new ApiError(404, "Deposit was not found", "DEPOSIT_NOT_FOUND");
   if (!["PENDING", "IN_REVIEW", "UNDER_REVIEW", "FLAGGED"].includes(row.status)) throw new ApiError(409, "Deposit cannot enter approval from its current state", "INVALID_DEPOSIT_STATE");
+  if (await depositAutoApprovalEnabled()) {
+    const entity = await prisma.$transaction(async (tx) => creditDepositTx(tx, row, {
+      note: input.note,
+      received: input.received,
+      externalReference: input.externalReference || null,
+      initiatedBy: req.user!.id,
+      approvedBy: "AUTO_APPROVAL"
+    }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await writeAudit("autoApproveDeposit", "Deposit", row.id, { setting: APPROVAL_SETTINGS_KEY }, { req, reason: input.note, before: row, after: entity });
+    return ok(res, { autoApproved: true, entity }, 201);
+  }
   const approval = await createApproval({ actionType: "CREDIT_DEPOSIT", entityType: "Deposit", entityId: row.id, payload: { note: input.note, received: input.received || Number(row.amount), externalReference: input.externalReference || null }, adminId: req.user!.id });
   await prisma.deposit.update({ where: { id: row.id }, data: { status: "AWAITING_APPROVAL", reviewNote: input.note, received: input.received, externalReference: input.externalReference, approvalRequestId: approval.id } });
   return ok(res, approval, 201);
@@ -333,7 +463,7 @@ v1AdminCoreRouter.post("/money/deposits/:id/request-proof", financeRoles, asyncH
   const deposit = await prisma.deposit.findUnique({ where: { id: String(req.params.id) } });
   if (!deposit) throw new ApiError(404, "Deposit was not found", "DEPOSIT_NOT_FOUND");
   const row = await prisma.$transaction(async (tx) => {
-    await tx.notification.create({ data: { clientId: deposit.clientId, category: "Wallet", title: "Deposit evidence required", body: input.note, actionUrl: "deposit.html" } });
+    await notifyClientTx(tx, { clientId: deposit.clientId, category: "Wallet", title: "Deposit evidence required", body: input.note, actionUrl: "deposit.html", entity: { type: "Deposit", id: deposit.id } });
     return tx.deposit.update({ where: { id: deposit.id }, data: { status: "UNDER_REVIEW", reviewNote: input.note } });
   });
   await writeAudit("requestDepositProof", "Deposit", row.id, undefined, { req, reason: input.note });
@@ -368,7 +498,7 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/hold", financeRoles, asyncHandler
   if (!withdrawal) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   if (["PAID", "REJECTED", "CANCELLED", "FAILED"].includes(withdrawal.status)) throw new ApiError(409, "This withdrawal can no longer be held", "INVALID_WITHDRAWAL_STATE");
   const row = await prisma.$transaction(async (tx) => {
-    await tx.notification.create({ data: { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal review extended", body: input.note, actionUrl: "withdraw.html" } });
+    await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal review extended", body: input.note, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
     return tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "HELD", reviewNote: input.note } });
   });
   await writeAudit("holdWithdrawal", "Withdrawal", row.id, undefined, { req, reason: input.note });
@@ -380,7 +510,7 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/request-information", financeRole
   const withdrawal = await prisma.withdrawal.findUnique({ where: { id: String(req.params.id) } });
   if (!withdrawal) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   const row = await prisma.$transaction(async (tx) => {
-    await tx.notification.create({ data: { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal information required", body: input.note, actionUrl: "withdraw.html" } });
+    await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal information required", body: input.note, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
     return tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "UNDER_REVIEW", reviewNote: input.note } });
   });
   await writeAudit("requestWithdrawalInformation", "Withdrawal", row.id, undefined, { req, reason: input.note });
@@ -395,7 +525,7 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/settle", financeRoles, asyncHandl
   if (row.status !== "APPROVED" || !row.holdReference) throw new ApiError(409, "Withdrawal must complete maker-checker approval before settlement", "WITHDRAWAL_NOT_APPROVED");
   const updated = await prisma.$transaction(async (tx) => {
     const ledger = await captureWalletHoldTx(tx, row.holdReference!, { clientId: row.clientId, description: `Withdrawal ${row.reference}`, externalReference: input.externalReference, idempotencyKey: `settle:${row.id}`, initiatedBy: req.user!.id, approvedBy: req.user!.id });
-    await tx.notification.create({ data: { clientId: row.clientId, category: "Wallet", title: "Withdrawal paid", body: `${row.reference} has been settled.`, actionUrl: "transactions.html" } });
+    await notifyClientTx(tx, { clientId: row.clientId, category: "Wallet", title: "Withdrawal paid", body: `${row.reference} has been settled.`, actionUrl: "transactions.html", entity: { type: "Withdrawal", id: row.id } });
     return tx.withdrawal.update({ where: { id: row.id }, data: { status: "PAID", externalReference: input.externalReference, ledgerTransactionId: ledger.id, paidAt: new Date(), reviewNote: input.note } });
   });
   await writeAudit("settleWithdrawal", "Withdrawal", row.id, { externalReference: input.externalReference }, { req, reason: input.note });
@@ -423,19 +553,19 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
     if (approval.actionType === "CREDIT_DEPOSIT") {
       const deposit = await tx.deposit.findUnique({ where: { id: approval.entityId }, include: { client: true } });
       if (!deposit || deposit.status !== "AWAITING_APPROVAL") throw new ApiError(409, "Deposit is not awaiting approval", "INVALID_DEPOSIT_STATE");
-      const [kycCase, legacy] = await Promise.all([
-        tx.kycCase.findFirst({ where: { clientId: deposit.clientId, status: "APPROVED", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
-        tx.kycReview.findFirst({ where: { clientId: deposit.clientId, status: "APPROVED" } })
-      ]);
-      if (!kycCase && !legacy) throw new ApiError(403, "KYC must be approved before a deposit can be credited", "KYC_REQUIRED");
-      const ledger = await creditClientCashTx(tx, { clientId: deposit.clientId, amount: deposit.received || deposit.amount, type: "DEPOSIT", description: `Deposit ${deposit.reference}`, currency: deposit.currency, idempotencyKey: `credit:${deposit.id}`, externalReference: deposit.externalReference || deposit.transactionHash || undefined, initiatedBy: approval.initiatedByAdminId, approvedBy: req.user!.id });
-      entity = await tx.deposit.update({ where: { id: deposit.id }, data: { status: "CREDITED", approvedAt: new Date(), creditedAt: new Date(), ledgerTransactionId: ledger.id } });
-      await tx.notification.create({ data: { clientId: deposit.clientId, category: "Wallet", title: "Deposit credited", body: `${deposit.reference} has been credited to your wallet.`, actionUrl: "transactions.html" } });
+      const payload = jsonObjectValue(approval.payload);
+      entity = await creditDepositTx(tx, deposit, {
+        note: input.note,
+        received: typeof payload.received === "number" || typeof payload.received === "string" ? payload.received : undefined,
+        externalReference: typeof payload.externalReference === "string" ? payload.externalReference : null,
+        initiatedBy: approval.initiatedByAdminId,
+        approvedBy: req.user!.id
+      });
     } else if (approval.actionType === "APPROVE_WITHDRAWAL") {
       const withdrawal = await tx.withdrawal.findUnique({ where: { id: approval.entityId } });
       if (!withdrawal || withdrawal.status !== "AWAITING_APPROVAL") throw new ApiError(409, "Withdrawal is not awaiting approval", "INVALID_WITHDRAWAL_STATE");
       entity = await tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "APPROVED", approvedAt: new Date() } });
-      await tx.notification.create({ data: { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal approved", body: `${withdrawal.reference} is approved and awaiting external settlement.`, actionUrl: "withdraw.html" } });
+      await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal approved", body: `${withdrawal.reference} is approved and awaiting external settlement.`, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
     } else if (approval.actionType === "PUBLISH_PRODUCT") {
       entity = await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "PUBLISHED", publishedAt: new Date(), version: { increment: 1 } } });
       await tx.portfolioProductVersion.updateMany({ where: { productId: approval.entityId, status: { in: ["REVIEW", "PENDING_APPROVAL"] } }, data: { status: "PUBLISHED", approvedBy: req.user!.id, publishedAt: new Date() } });
@@ -456,7 +586,7 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
         }
         await tx.distributionItem.update({ where: { id: item.id }, data: { status: "POSTED", ledgerTransactionId: ledgerId } });
         await tx.payout.create({ data: { reference: reference("PAY"), clientId: item.clientId, distributionItemId: item.id, source: batch.product?.name || batch.reference, amount: item.netAmount, mode: item.mode, status: "CREDITED", payoutDate: new Date() } });
-        await tx.notification.create({ data: { clientId: item.clientId, category: "Distribution", title: `${batch.type.toLowerCase()} posted`, body: `${batch.currency} ${item.netAmount} was ${item.mode === "REINVEST" ? "reinvested" : "credited to your wallet"}.`, actionUrl: "dividends.html" } });
+        await notifyClientTx(tx, { clientId: item.clientId, category: "Distribution", title: `${batch.type.toLowerCase()} posted`, body: `${batch.currency} ${item.netAmount} was ${item.mode === "REINVEST" ? "reinvested" : "credited to your wallet"}.`, actionUrl: "dividends.html", entity: { type: "DistributionItem", id: item.id } });
       }
       entity = await tx.distributionBatch.update({ where: { id: batch.id }, data: { status: "POSTED", approvedBy: req.user!.id, approvedAt: new Date(), postedAt: new Date() } });
     } else {

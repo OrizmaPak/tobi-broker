@@ -5,6 +5,7 @@ import { z } from "zod";
 import { env } from "../config/env";
 import { ApiError, asyncHandler, ok } from "../lib/http";
 import { prisma } from "../lib/prisma";
+import { notifyClientTx } from "../services/notification.service";
 
 export const authRouter = Router();
 
@@ -112,13 +113,16 @@ authRouter.post("/client/register", asyncHandler(async (req, res) => {
       }
     });
 
-    await tx.notification.create({
-      data: {
-        clientId: created.id,
-        category: "Onboarding",
-        title: "Complete KYC verification",
-        body: "Submit your identity and address documents before withdrawals or advanced access."
-      }
+    await notifyClientTx(tx, {
+      clientId: created.id,
+      category: "Onboarding",
+      eventKey: "kyc.onboarding.required",
+      severity: "WARNING",
+      title: "Complete KYC verification",
+      body: "Submit your identity and address documents before withdrawals or advanced access.",
+      actionUrl: "kyc.html",
+      entity: { type: "Client", id: created.id },
+      dedupeKey: `kyc.onboarding.required:${created.id}`
     });
 
     return created;

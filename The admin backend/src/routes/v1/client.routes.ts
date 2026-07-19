@@ -7,10 +7,11 @@ import { prisma } from "../../lib/prisma";
 import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
+import { findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
 import { debitClientCashTx, placeWalletHoldTx, releaseWalletHoldTx } from "../../services/ledger.service";
-import { notifyClient } from "../../services/notification.service";
+import { markAllNotificationsRead, markNotificationRead, notificationInbox, notifyClient, notifyKycReviewReadyTx } from "../../services/notification.service";
 
 export const v1ClientRouter = Router();
 v1ClientRouter.use(requireClient);
@@ -125,7 +126,7 @@ v1ClientRouter.post("/kyc/start", requireCsrf, asyncHandler(async (req, res) => 
 
 v1ClientRouter.post("/kyc/submit", requireCsrf, asyncHandler(async (req, res) => {
   const id = clientId(req);
-  await verifiedClient(id);
+  const client = await verifiedClient(id);
   const input = z.object({
     level: z.string().trim().min(2).max(40).default("Standard"),
     questionnaire: z.record(z.string(), z.unknown()).default({})
@@ -148,20 +149,32 @@ v1ClientRouter.post("/kyc/submit", requireCsrf, asyncHandler(async (req, res) =>
         .map((upload) => [`${requirement.code}.${upload.side}`, [`${requirement.documentType} ${upload.side.toLowerCase()} is required`]])));
     throw new ApiError(422, "Upload every required KYC document before submitting", "KYC_DOCUMENTS_INCOMPLETE", fields);
   }
-  const kycCase = await prisma.kycCase.update({
-    where: { id: latest.id },
-    data: { status: "SUBMITTED", level: input.level, submittedAt: new Date(), riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score }
+  const requiredDocumentIds = checklist
+    .filter((requirement) => requirement.isRequired)
+    .flatMap((requirement) => requirement.uploads.map((upload) => upload.document!.id));
+  const kycCase = await prisma.$transaction(async (tx) => {
+    const row = await tx.kycCase.update({
+      where: { id: latest.id },
+      data: { status: "SUBMITTED", level: input.level, submittedAt: new Date(), riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score }
+    });
+    await tx.client.update({ where: { id }, data: { riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score, riskLevel } });
+    const existingReview = await tx.kycReview.findFirst({ where: { clientId: id }, orderBy: { updatedAt: "desc" } });
+    if (existingReview) {
+      await tx.kycReview.update({ where: { id: existingReview.id }, data: { status: "IN_REVIEW", decisionNote: "Submitted through the client portal" } });
+    } else {
+      await tx.kycReview.create({ data: { clientId: id, requirement: "Identity and address verification", status: "IN_REVIEW", decisionNote: "Submitted through the client portal" } });
+    }
+    await notifyKycReviewReadyTx(tx, {
+      caseId: row.id,
+      clientId: id,
+      clientName: client.name,
+      accountNumber: client.accountNumber,
+      level: input.level,
+      requiredDocumentIds,
+      summary: summary as Prisma.InputJsonObject
+    });
+    return row;
   });
-  await prisma.$transaction([
-    prisma.client.update({ where: { id }, data: { riskQuestionnaire: input.questionnaire as Prisma.InputJsonObject, suitabilityScore: score, riskLevel } }),
-    prisma.kycReview.upsert({
-      where: { id: (await prisma.kycReview.findFirst({ where: { clientId: id }, orderBy: { updatedAt: "desc" } }))?.id || "new-review" },
-      update: { status: "IN_REVIEW", decisionNote: "Submitted through the client portal" },
-      create: { clientId: id, requirement: "Identity and address verification", status: "IN_REVIEW", decisionNote: "Submitted through the client portal" }
-    })
-  ]);
-  const client = await prisma.client.findUniqueOrThrow({ where: { id } });
-  await notifyClient({ clientId: id, email: client.email, category: "KYC", title: "KYC submitted", body: "Your verification case is now awaiting compliance review.", actionUrl: "kyc.html" });
   return ok(res, kycCase, 201);
 }));
 
@@ -240,10 +253,13 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
     externalReference: z.string().trim().max(120).optional()
   }).parse(req.body);
   if (input.method === "CARD") throw new ApiError(503, "Card funding is not currently enabled", "CARD_FUNDING_UNAVAILABLE");
+  const depositMethods = await getDepositMethodsSetting();
+  const configuredMethod = findDepositMethod(depositMethods, input.method, input.rail);
+  if (!configuredMethod) throw new ApiError(422, "This deposit route is not currently available", "DEPOSIT_METHOD_UNAVAILABLE");
   if (input.method === "CRYPTO" && !input.transactionHash) throw new ApiError(422, "A blockchain transaction hash is required", "TRANSACTION_HASH_REQUIRED");
   const result = await idempotentMutation(req, id, "POST:/client/deposits", async (tx) => tx.deposit.create({
     data: {
-      reference: reference("DEP"), clientId: id, method: input.method, rail: input.rail,
+      reference: reference("DEP"), clientId: id, method: input.method, rail: configuredMethod.name,
       amount: input.amount, currency: input.currency, evidenceFileId: input.evidenceFileId,
       transactionHash: input.transactionHash, externalReference: input.externalReference,
       status: "IN_REVIEW", reviewNote: "Submitted through the client portal"
@@ -472,14 +488,23 @@ v1ClientRouter.get("/risk", asyncHandler(async (req, res) => {
 }));
 
 v1ClientRouter.get("/notifications", asyncHandler(async (req, res) => {
-  const rows = await prisma.notification.findMany({ where: { clientId: clientId(req) }, orderBy: { createdAt: "desc" }, take: 100 });
+  const id = clientId(req);
+  const rows = await prisma.notification.findMany({ where: { recipientType: "CLIENT", recipientId: id, clientId: id }, orderBy: { createdAt: "desc" }, take: 100 });
   return ok(res, rows);
 }));
 
+v1ClientRouter.get("/notifications/inbox", asyncHandler(async (req, res) => {
+  return ok(res, await notificationInbox({ recipientType: "CLIENT", recipientId: clientId(req), limit: Number(req.query.limit) || 20 }));
+}));
+
+v1ClientRouter.post("/notifications/read-all", requireCsrf, asyncHandler(async (req, res) => {
+  return ok(res, await markAllNotificationsRead({ recipientType: "CLIENT", recipientId: clientId(req) }));
+}));
+
 v1ClientRouter.post("/notifications/:id/read", requireCsrf, asyncHandler(async (req, res) => {
-  const row = await prisma.notification.findFirst({ where: { id: String(req.params.id), clientId: clientId(req) } });
+  const row = await markNotificationRead({ recipientType: "CLIENT", recipientId: clientId(req), id: String(req.params.id) });
   if (!row) throw new ApiError(404, "Notification was not found", "NOTIFICATION_NOT_FOUND");
-  return ok(res, await prisma.notification.update({ where: { id: row.id }, data: { readAt: new Date() } }));
+  return ok(res, row);
 }));
 
 v1ClientRouter.get("/reports", asyncHandler(async (req, res) => {

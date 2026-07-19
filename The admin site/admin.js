@@ -56,6 +56,7 @@
     notifications: [],
     adminUsers: [],
     settingsRows: [],
+    depositMethods: { methods: [] },
     tasks: [],
     instruments: [],
     reports: [],
@@ -137,6 +138,12 @@
     apiMessage: "Checking secure session",
     pendingLogin: null,
     mfaSetup: null,
+    adminNotifications: [],
+    adminNotificationUnreadCount: 0,
+    adminNotificationTimer: null,
+    adminNotificationPollInFlight: false,
+    adminNotificationInitialised: false,
+    seenAdminNotificationIds: {},
     pendingApproval: null,
     pendingRecord: null
   };
@@ -189,6 +196,97 @@
     return value;
   }
 
+  function defaultDepositMethods() {
+    return {
+      methods: [
+        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use the client account number as payment reference." },
+        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash." },
+        { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta." }
+      ]
+    };
+  }
+
+  function slugify(value, prefix) {
+    const slug = String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 56);
+    return (prefix || "method") + "-" + (slug || Date.now().toString(36));
+  }
+
+  function normalizeDepositMethods(value) {
+    const fallback = defaultDepositMethods();
+    const methods = Array.isArray(value?.methods) ? value.methods : fallback.methods;
+    return {
+      methods: methods.map((method) => ({
+        ...method,
+        id: method.id || slugify(method.name, String(method.type || "method").toLowerCase()),
+        type: ["BANK", "CRYPTO", "CARD"].includes(method.type) ? method.type : "BANK",
+        name: method.name || "Funding method",
+        description: method.description || "",
+        enabled: method.enabled !== false,
+        status: method.status || (method.enabled === false ? "DISABLED" : "ACTIVE"),
+        currency: method.currency || "USD"
+      }))
+    };
+  }
+
+  function depositMethodsSettingRow() {
+    return data.settingsRows.find((row) => row.key === "deposit.methods") || { key: "deposit.methods", value: data.depositMethods, description: "Accepted client wallet funding routes including bank, crypto and card availability." };
+  }
+
+  function depositMethodsValue() {
+    data.depositMethods = normalizeDepositMethods(depositMethodsSettingRow().value || data.depositMethods);
+    return data.depositMethods;
+  }
+
+  function depositMethodDestination(method) {
+    if (method.type === "BANK") return [method.bankName || "-", method.accountName || "-", method.accountNumber || "-"].filter(Boolean).join(" / ");
+    if (method.type === "CRYPTO") return [method.network || "-", method.address || "-"].filter(Boolean).join(" / ");
+    return Array.isArray(method.networks) ? method.networks.join(", ") : "Card networks";
+  }
+
+  function relativeTime(value) {
+    if (!value) return "Recently";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Recently";
+    const diff = Date.now() - date.getTime();
+    const minutes = Math.max(1, Math.round(diff / 60000));
+    if (minutes < 60) return minutes + " min ago";
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return hours + " hr ago";
+    return date.toLocaleDateString();
+  }
+
+  function notificationRowsFromPayload(payload) {
+    if (Array.isArray(payload)) return { rows: payload, unreadCount: null };
+    if (payload && typeof payload === "object") {
+      return {
+        rows: Array.isArray(payload.notifications) ? payload.notifications : [],
+        unreadCount: typeof payload.unreadCount === "number" ? payload.unreadCount : null
+      };
+    }
+    return { rows: [], unreadCount: null };
+  }
+
+  function mapAdminNotification(row) {
+    return {
+      id: row?.id || "",
+      title: row?.title || "Admin notification",
+      body: row?.body || "",
+      category: row?.category || "Operations",
+      severity: row?.severity || "INFO",
+      actionUrl: row?.actionUrl || "notifications.html",
+      client: row?.client || null,
+      createdAt: row?.createdAt || null,
+      readAt: row?.readAt || null,
+      state: row?.readAt ? "Read" : "New",
+      time: relativeTime(row?.createdAt)
+    };
+  }
+
+  function unreadNotificationCount(rows, explicitCount) {
+    if (typeof explicitCount === "number") return explicitCount;
+    return rows.filter((row) => !row.readAt && row.state !== "Read").length;
+  }
+
   function unwrap(result) {
     if (!result || result.ok === false) return null;
     return result.data || null;
@@ -236,6 +334,53 @@
     } catch (error) {
       appState.apiMessage = error?.message || "A role-restricted dataset could not be loaded.";
       return null;
+    }
+  }
+
+  function rememberAdminNotifications(rows) {
+    rows.forEach((row) => {
+      if (row?.id) appState.seenAdminNotificationIds[row.id] = true;
+    });
+  }
+
+  function notificationToastMessage(rows) {
+    if (rows.length === 1) return rows[0].title || "New admin notification";
+    return rows.length + " new admin notifications";
+  }
+
+  async function loadAdminNotificationInbox(showToast) {
+    if (!appState.admin || appState.adminNotificationPollInFlight) return;
+    appState.adminNotificationPollInFlight = true;
+    try {
+      const payload = await api("/api/v1/admin/notifications/inbox?limit=20");
+      const parsed = notificationRowsFromPayload(payload);
+      const fresh = parsed.rows.filter((row) => row?.id && !row.readAt && !appState.seenAdminNotificationIds[row.id]);
+      appState.adminNotifications = parsed.rows.map(mapAdminNotification);
+      appState.adminNotificationUnreadCount = unreadNotificationCount(appState.adminNotifications, parsed.unreadCount);
+      rememberAdminNotifications(parsed.rows);
+      updateAdminNotificationBell();
+      refreshOpenAdminNotificationMenu();
+      if (showToast && appState.adminNotificationInitialised && fresh.length) {
+        toast(notificationToastMessage(fresh.map(mapAdminNotification)));
+      }
+      appState.adminNotificationInitialised = true;
+    } catch (error) {
+      if (error?.status === 401) stopAdminNotificationPolling();
+    } finally {
+      appState.adminNotificationPollInFlight = false;
+    }
+  }
+
+  function startAdminNotificationPolling() {
+    if (!appState.admin || appState.adminNotificationTimer) return;
+    loadAdminNotificationInbox(false);
+    appState.adminNotificationTimer = window.setInterval(() => loadAdminNotificationInbox(true), 10000);
+  }
+
+  function stopAdminNotificationPolling() {
+    if (appState.adminNotificationTimer) {
+      window.clearInterval(appState.adminNotificationTimer);
+      appState.adminNotificationTimer = null;
     }
   }
 
@@ -485,7 +630,10 @@
     if (Array.isArray(reports)) data.reports = reports.map((row) => [row.name, label(row.type), row.format, row.period, label(row.status), row.id]);
     if (Array.isArray(notifications)) data.notifications = notifications;
     if (Array.isArray(adminUsers)) data.adminUsers = adminUsers;
-    if (Array.isArray(settingsRows)) data.settingsRows = settingsRows;
+    if (Array.isArray(settingsRows)) {
+      data.settingsRows = settingsRows;
+      data.depositMethods = normalizeDepositMethods(depositMethodsSettingRow().value);
+    }
     if (Array.isArray(tasks)) data.tasks = tasks;
 
     data.queues = [
@@ -703,8 +851,11 @@
   }
 
   function approvalsPage() {
+    const approvalSetting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {} };
+    const approvalValue = approvalSetting.value && typeof approvalSetting.value === "object" && !Array.isArray(approvalSetting.value) ? approvalSetting.value : {};
+    const autoApproveDeposits = approvalValue.autoApproveDeposits === true || approvalValue.depositCredits === false || approvalValue.makerChecker === false;
     const rows = data.approvals.map((row) => [row.action, row.entity, row.entityId, row.maker + " (" + row.makerRole + ")", row.createdAt, row.expiresAt, badge(row.status), '<div class="action-row"><button class="btn primary" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="approve">Approve</button><button class="btn" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="reject">Reject</button></div>']);
-    return section("Pending maker-checker requests", "The initiating admin cannot decide their own request. Role boundaries are enforced again by the API.", filterableTable("Search action, maker, entity...", ["Action", "Entity", "Record ID", "Initiated by", "Created", "Expires", "Status", "Decision"], rows)) + section("Decision controls", "Approval is the second operational signature. Deposit credits, withdrawal release, publication, and distribution posting occur atomically only after this step.", details([["Separation of duties", "Maker cannot be checker"], ["Financial mutation", "Atomic and idempotent"], ["Failed decision", "No ledger change"], ["Audit", "Admin, role, note, request ID, and timestamp"]]));
+    return section("Deposit approval mode", "Choose whether reviewed deposits wait for a second admin or credit immediately.", details([["Auto-approve deposits", autoApproveDeposits ? "Enabled" : "Disabled"], ["Deposit credit action", autoApproveDeposits ? "Credits immediately" : "Creates approval request"]]) + '<div class="action-row" style="margin-top:14px"><button class="btn ' + (autoApproveDeposits ? "danger" : "primary") + '" type="button" data-action="approval-setting-toggle" data-auto-approve-deposits="' + (!autoApproveDeposits) + '">' + (autoApproveDeposits ? "Disable auto-approve deposits" : "Enable auto-approve deposits") + '</button></div>') + section("Pending maker-checker requests", "The initiating admin cannot decide their own request. Role boundaries are enforced again by the API.", filterableTable("Search action, maker, entity...", ["Action", "Entity", "Record ID", "Initiated by", "Created", "Expires", "Status", "Decision"], rows)) + section("Decision controls", "Approval is the second operational signature. Deposit credits, withdrawal release, publication, and distribution posting occur atomically only after this step.", details([["Separation of duties", "Maker cannot be checker"], ["Financial mutation", "Atomic and idempotent"], ["Failed decision", "No ledger change"], ["Audit", "Admin, role, note, request ID, and timestamp"]]));
   }
 
   function productsPage() {
@@ -857,8 +1008,28 @@
     return section("Admin users and roles", "Active staff identities and enforced role boundaries.", table(["Admin", "Email", "Role", "MFA", "Last login", "Status"], data.adminUsers.map((row) => [row.name, row.email, label(row.role), row.mfa?.enabledAt ? "Enabled" : "Enrollment required", row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : "Never", badge(row.isActive ? "Active" : "Inactive")])), modalButton("Invite admin", "admin-user", "primary"));
   }
 
+  function depositSettingsPanel() {
+    const setting = depositMethodsValue();
+    const rows = setting.methods.map((method) => [
+      badge(method.type, method.type === "CARD" ? "warning" : method.type === "CRYPTO" ? "info" : "success"),
+      '<strong>' + escapeHtml(method.name) + '</strong><br><span class="muted">' + escapeHtml(method.description || "No description") + '</span>',
+      escapeHtml(depositMethodDestination(method)),
+      badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
+      '<div class="action-row"><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
+    ]);
+    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + table(["Type", "Method", "Destination", "Status", "Action"], rows));
+  }
+
   function settingsPage() {
-    return section("Platform settings", "Shared backend-controlled capability, accounting, approval, and risk configuration.", table(["Key", "Value", "Description", "Updated", "Action"], data.settingsRows.map((row) => [row.key, '<code>' + JSON.stringify(row.value) + '</code>', row.description || "-", row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-", '<button class="btn" type="button" data-action="setting-edit" data-setting-key="' + row.key + '">Edit</button>'])));
+    const approvalSetting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {} };
+    const approvalValue = approvalSetting.value && typeof approvalSetting.value === "object" && !Array.isArray(approvalSetting.value) ? approvalSetting.value : {};
+    const autoApproveDeposits = approvalValue.autoApproveDeposits === true || approvalValue.depositCredits === false || approvalValue.makerChecker === false;
+    const approvalPanel = section("Approval settings", "Control which money operations require a second admin decision.", details([
+      ["Auto-approve deposits", autoApproveDeposits ? "Enabled" : "Disabled"],
+      ["Deposit credit approval", autoApproveDeposits ? "Skipped after finance review" : "Requires maker-checker"],
+      ["Withdrawal approval", approvalValue.withdrawals === false ? "Disabled" : "Required"]
+    ]) + '<div class="action-row" style="margin-top:14px"><button class="btn ' + (autoApproveDeposits ? "danger" : "primary") + '" type="button" data-action="approval-setting-toggle" data-setting-key="operations.approvals" data-auto-approve-deposits="' + (!autoApproveDeposits) + '">' + (autoApproveDeposits ? "Disable auto-approve deposits" : "Enable auto-approve deposits") + '</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="operations.approvals">Edit JSON</button></div>');
+    return depositSettingsPanel() + approvalPanel + section("Platform settings", "Shared backend-controlled capability, accounting, approval, and risk configuration.", table(["Key", "Value", "Description", "Updated", "Action"], data.settingsRows.map((row) => [row.key, '<code>' + JSON.stringify(row.value) + '</code>', row.description || "-", row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-", '<button class="btn" type="button" data-action="setting-edit" data-setting-key="' + row.key + '">Edit</button>'])));
   }
 
   function bodyFor(file) {
@@ -939,6 +1110,74 @@
     });
   }
 
+  function adminNotificationButton() {
+    const unread = Math.max(0, Number(appState.adminNotificationUnreadCount || 0));
+    return '<button class="notification-button" type="button" data-action="admin-notifications-toggle" aria-label="Notifications" aria-haspopup="menu" aria-expanded="' + (document.getElementById("admin-notification-menu") ? "true" : "false") + '">' + svg("bell") + (unread ? '<span data-admin-notification-count>' + (unread > 99 ? "99+" : String(unread)) + '</span>' : "") + "</button>";
+  }
+
+  function updateAdminNotificationBell() {
+    const unread = Math.max(0, Number(appState.adminNotificationUnreadCount || 0));
+    document.querySelectorAll('[data-action="admin-notifications-toggle"]').forEach((button) => {
+      let badgeNode = button.querySelector("[data-admin-notification-count]");
+      if (!unread) {
+        if (badgeNode) badgeNode.remove();
+        button.setAttribute("title", "Notifications");
+        return;
+      }
+      if (!badgeNode) {
+        badgeNode = document.createElement("span");
+        badgeNode.setAttribute("data-admin-notification-count", "");
+        button.appendChild(badgeNode);
+      }
+      badgeNode.textContent = unread > 99 ? "99+" : String(unread);
+      button.setAttribute("title", unread + " unread notification" + (unread === 1 ? "" : "s"));
+    });
+  }
+
+  function closeAdminNotificationMenu() {
+    document.getElementById("admin-notification-menu")?.remove();
+    document.querySelectorAll('[data-action="admin-notifications-toggle"]').forEach((button) => button.setAttribute("aria-expanded", "false"));
+  }
+
+  function refreshOpenAdminNotificationMenu() {
+    const menu = document.getElementById("admin-notification-menu");
+    if (!menu) return;
+    const button = document.querySelector('[data-action="admin-notifications-toggle"]');
+    if (!button) return;
+    menu.remove();
+    showAdminNotificationMenu(button);
+  }
+
+  function showAdminNotificationMenu(button) {
+    const existing = document.getElementById("admin-notification-menu");
+    if (existing) {
+      closeAdminNotificationMenu();
+      return;
+    }
+    const rows = appState.adminNotifications.slice(0, 6);
+    const unread = Math.max(0, Number(appState.adminNotificationUnreadCount || unreadNotificationCount(rows)));
+    const rect = button.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "admin-notification-menu";
+    menu.className = "admin-notification-menu";
+    menu.setAttribute("role", "menu");
+    menu.style.top = Math.round(rect.bottom + 12 + window.scrollY) + "px";
+    menu.style.right = Math.max(16, Math.round(window.innerWidth - rect.right)) + "px";
+    menu.innerHTML = '<div class="admin-notification-head"><div><strong>Notifications</strong><span>' + unread + ' unread - shared admin inbox</span></div><div><button type="button" data-action="admin-notifications-read-all">Read all</button><a href="notifications.html">View all</a></div></div>' +
+      '<div class="admin-notification-list">' + (rows.length ? rows.map((row) => '<button type="button" role="menuitem" class="admin-notification-item" data-action="admin-notification-open" data-notification-id="' + escapeHtml(row.id) + '" data-notification-url="' + escapeHtml(row.actionUrl || "notifications.html") + '"><span class="admin-notification-dot ' + (row.state === "New" ? "is-new" : "") + '"></span><span><strong>' + row.title + '</strong><em>' + row.category + ' - ' + row.time + '</em>' + (row.client?.name ? '<small>' + row.client.name + '</small>' : '') + (row.body ? '<small>' + row.body + '</small>' : '') + '</span></button>').join("") : '<div class="admin-notification-empty">No admin notifications yet.</div>') + '</div>';
+    document.body.appendChild(menu);
+    button.setAttribute("aria-expanded", "true");
+    bindActions();
+    setTimeout(() => document.addEventListener("click", outsideAdminNotificationClick, { once: true }), 0);
+  }
+
+  function outsideAdminNotificationClick(event) {
+    const menu = document.getElementById("admin-notification-menu");
+    const toggle = event.target?.closest?.('[data-action="admin-notifications-toggle"]');
+    if (menu && !menu.contains(event.target) && !toggle) closeAdminNotificationMenu();
+    else if (menu) document.addEventListener("click", outsideAdminNotificationClick, { once: true });
+  }
+
   async function submitAdminLogin(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -960,6 +1199,7 @@
       appState.pendingLogin = null;
       await loadBackendData();
       render();
+      startAdminNotificationPolling();
     } catch (error) {
       renderAdminLogin(error.message || "Sign in failed.", error.code === "MFA_REQUIRED" || Boolean(credentials.mfaCode));
     } finally {
@@ -977,6 +1217,7 @@
       appState.pendingLogin = null;
       await loadBackendData();
       render();
+      startAdminNotificationPolling();
     } catch (error) {
       const node = document.querySelector(".auth-error") || document.createElement("p");
       node.className = "auth-error";
@@ -994,7 +1235,7 @@
     document.title = meta[0] + " | BullPort Admin";
     const apiState = appState.apiOnline ? '<span class="api-status live">API connected</span>' : '<span class="api-status fallback">API unavailable</span>';
     const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label><button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><button class="avatar" type="button" data-action="admin-logout" title="Sign out" aria-label="Sign out">' + initials + '</button></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><button class="avatar" type="button" data-action="admin-logout" title="Sign out" aria-label="Sign out">' + initials + '</button></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
     bindFilters();
   }
@@ -1017,7 +1258,8 @@
     return [
       "admin-logout", "approval-confirm", "kyc-requirement-save",
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
-      "task-status", "report-download", "setting-save", "decision"
+      "task-status", "report-download", "deposit-method-save",
+      "deposit-method-toggle", "setting-save", "decision"
     ].includes(action);
   }
 
@@ -1060,8 +1302,32 @@
           if (action === "goto-queues") location.href = "queues.html";
           else if (action === "goto-clients") location.href = "clients.html";
           else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
+          else if (action === "admin-notifications-toggle") showAdminNotificationMenu(node);
+          else if (action === "admin-notifications-read-all") {
+            await api("/api/v1/admin/notifications/read-all", { method: "POST", body: "{}" });
+            closeAdminNotificationMenu();
+            await loadAdminNotificationInbox(false);
+            if (currentFile() === "notifications.html") {
+              await loadBackendData();
+              render();
+            }
+            toast("Admin notifications marked as read.");
+          }
+          else if (action === "admin-notification-open") {
+            const id = node.dataset.notificationId || "";
+            const url = node.dataset.notificationUrl || "notifications.html";
+            if (id) {
+              try {
+                await api("/api/v1/admin/notifications/" + encodeURIComponent(id) + "/read", { method: "POST", body: "{}" });
+                await loadAdminNotificationInbox(false);
+              } catch {}
+            }
+            closeAdminNotificationMenu();
+            location.href = url;
+          }
           else if (action === "admin-logout") {
             try { await api("/api/v1/auth/admin/logout", { method: "POST", body: "{}" }); } catch {}
+            stopAdminNotificationPolling();
             appState.admin = null;
             appState.apiOnline = false;
             renderAdminLogin("You have signed out.", false);
@@ -1079,6 +1345,11 @@
           else if (action === "record-confirm") await submitRecordDecision();
           else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
+          else if (action === "deposit-method-new") openDepositMethodEditor(node.dataset.methodType);
+          else if (action === "deposit-method-edit") openDepositMethodEditor(null, node.dataset.methodId);
+          else if (action === "deposit-method-save") await submitDepositMethod();
+          else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
+          else if (action === "approval-setting-toggle") await toggleDepositAutoApproval(node.dataset.autoApproveDeposits === "true");
           else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
           else if (action === "setting-save") await submitSetting(node.dataset.settingKey);
           else if (action === "open-modal") openModal(node.dataset.modal || "task");
@@ -1332,6 +1603,64 @@
     }
   }
 
+  async function saveDepositMethods(value) {
+    const description = "Accepted client wallet funding routes including bank, crypto and card availability.";
+    await api("/api/v1/admin/settings/deposit.methods", { method: "PUT", body: JSON.stringify({ value: normalizeDepositMethods(value), description }) });
+    await loadBackendData();
+  }
+
+  function openDepositMethodEditor(type, id) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const setting = depositMethodsValue();
+    const current = setting.methods.find((method) => method.id === id);
+    const methodType = current?.type || type || "BANK";
+    const common = '<input type="hidden" name="methodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="methodType" value="' + methodType + '"><label>Method name<input name="methodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "USDT" : "Bank transfer")) + '"></label><label>Description<textarea name="methodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="methodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="methodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="COMING_SOON" ' + (current?.status === "COMING_SOON" ? "selected" : "") + '>Coming soon</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label>';
+    const fields = methodType === "CRYPTO"
+      ? common + '<label>Network<input name="cryptoNetwork" maxlength="80" value="' + escapeHtml(current?.network || "TRC20") + '"></label><label>Wallet address<input name="cryptoAddress" maxlength="240" value="' + escapeHtml(current?.address || "") + '"></label><label>Tag or memo<input name="cryptoMemo" maxlength="120" value="' + escapeHtml(current?.tagOrMemo || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "After chain and finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Submit the transaction hash after sending funds.") + '</textarea></label>'
+      : common + '<label>Bank name<input name="bankName" maxlength="120" value="' + escapeHtml(current?.bankName || "") + '"></label><label>Account name<input name="accountName" maxlength="160" value="' + escapeHtml(current?.accountName || "BullPort Client Funding") + '"></label><label>Account number<input name="accountNumber" maxlength="80" value="' + escapeHtml(current?.accountNumber || "") + '"></label><label>Sort code<input name="sortCode" maxlength="40" value="' + escapeHtml(current?.sortCode || "") + '"></label><label>IBAN<input name="iban" maxlength="80" value="' + escapeHtml(current?.iban || "") + '"></label><label>SWIFT<input name="swift" maxlength="40" value="' + escapeHtml(current?.swift || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "Within 1 business day after finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Use the client account number as payment reference.") + '</textarea></label>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Deposit settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto route" : "bank account") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + fields + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="deposit-method-save">Save method</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitDepositMethod() {
+    const modal = document.querySelector(".modal");
+    const value = (name) => modal?.querySelector('[name="' + name + '"]')?.value.trim() || "";
+    const methodType = value("methodType") || "BANK";
+    const status = value("methodStatus") || "ACTIVE";
+    const id = value("methodId") || slugify(value("methodName"), methodType.toLowerCase());
+    if (!value("methodName")) { toast("Enter a method name."); return; }
+    const method = methodType === "CRYPTO"
+      ? {
+          id, type: "CRYPTO", name: value("methodName"), description: value("methodDescription"), enabled: status !== "DISABLED", status, currency: value("methodCurrency") || "USDT",
+          network: value("cryptoNetwork"), address: value("cryptoAddress"), tagOrMemo: value("cryptoMemo") || undefined, postingWindow: value("postingWindow"), instructions: value("methodInstructions")
+        }
+      : {
+          id, type: "BANK", name: value("methodName"), description: value("methodDescription"), enabled: status !== "DISABLED", status, currency: value("methodCurrency") || "USD",
+          bankName: value("bankName"), accountName: value("accountName"), accountNumber: value("accountNumber"), sortCode: value("sortCode") || undefined, iban: value("iban") || undefined, swift: value("swift") || undefined, postingWindow: value("postingWindow"), instructions: value("methodInstructions")
+        };
+    if (method.type === "BANK" && (!method.bankName || !method.accountName || !method.accountNumber)) { toast("Bank name, account name and account number are required."); return; }
+    if (method.type === "CRYPTO" && (!method.network || !method.address)) { toast("Crypto network and address are required."); return; }
+    const setting = depositMethodsValue();
+    const next = setting.methods.filter((item) => item.id !== id).concat(method);
+    await saveDepositMethods({ methods: next });
+    closeModal();
+    render();
+    toast("Deposit method saved.");
+  }
+
+  async function toggleDepositMethod(id) {
+    const setting = depositMethodsValue();
+    const next = setting.methods.map((method) => {
+      if (method.id !== id) return method;
+      const enabled = method.enabled === false || method.status === "DISABLED";
+      return { ...method, enabled, status: enabled ? (method.type === "CARD" ? "COMING_SOON" : "ACTIVE") : "DISABLED" };
+    });
+    await saveDepositMethods({ methods: next });
+    render();
+    toast("Deposit method updated.");
+  }
+
   function openSettingEditor(key) {
     const root = document.querySelector("[data-modal-root]");
     const setting = data.settingsRows.find((row) => row.key === key);
@@ -1354,6 +1683,29 @@
       toast("Platform setting updated.");
     } catch (error) {
       toast(error?.message || "The setting could not be updated.");
+    }
+  }
+
+  async function toggleDepositAutoApproval(enabled) {
+    try {
+      const setting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {}, description: "Sensitive operation approval policy, including deposit auto-approval." };
+      const current = setting.value && typeof setting.value === "object" && !Array.isArray(setting.value) ? setting.value : {};
+      const value = {
+        makerChecker: true,
+        withdrawals: true,
+        depositCredits: true,
+        distributions: true,
+        productPublishing: true,
+        ledgerAdjustments: true,
+        ...current,
+        autoApproveDeposits: enabled
+      };
+      await api("/api/v1/admin/settings/operations.approvals", { method: "PUT", body: JSON.stringify({ value, description: setting.description }) });
+      await loadBackendData();
+      render();
+      toast("Deposit auto-approval " + (enabled ? "enabled." : "disabled."));
+    } catch (error) {
+      toast(error?.message || "Deposit auto-approval could not be updated.");
     }
   }
 
@@ -1476,6 +1828,7 @@
       appState.admin = await api("/api/v1/auth/admin/me", { skipRefresh: false });
       await loadBackendData();
       render();
+      startAdminNotificationPolling();
     } catch (error) {
       appState.admin = null;
       appState.apiOnline = false;

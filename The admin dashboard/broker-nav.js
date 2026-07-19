@@ -267,6 +267,11 @@
     loadPromise: null,
     lastSync: null,
     data: null,
+    notificationTimer: null,
+    notificationPollInFlight: false,
+    notificationInitialised: false,
+    notificationUnreadCount: 0,
+    seenNotificationIds: {},
     loginMfaRequired: false,
     mfaSetup: null
   };
@@ -532,6 +537,75 @@
     return value;
   }
 
+  function fallbackDepositMethods() {
+    return {
+      methods: [
+        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference." },
+        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash." },
+        { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant debit and credit card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta." }
+      ]
+    };
+  }
+
+  function configuredDepositMethods() {
+    const value = appState.data && appState.data.depositMethods && Array.isArray(appState.data.depositMethods.methods)
+      ? appState.data.depositMethods
+      : fallbackDepositMethods();
+    return value.methods.filter(function (method) { return method && method.status !== "DISABLED"; });
+  }
+
+  function depositMethodById(id) {
+    return configuredDepositMethods().find(function (method) { return method.id === id; }) || null;
+  }
+
+  function depositMethodTone(method) {
+    if (!method || method.status === "DISABLED") return "danger";
+    if (method.status === "COMING_SOON" || method.enabled === false) return "warning";
+    return method.type === "CRYPTO" ? "info" : "success";
+  }
+
+  function depositMethodDestination(method) {
+    if (method.type === "BANK") return [method.bankName, method.accountName, method.accountNumber].filter(Boolean).join(" / ");
+    if (method.type === "CRYPTO") return [method.network, method.address].filter(Boolean).join(" / ");
+    return Array.isArray(method.networks) ? method.networks.join(", ") : "Card networks";
+  }
+
+  function depositRouteCard(method, index, isOpen) {
+    const code = String(index + 1).padStart(2, "0");
+    const status = method.status === "COMING_SOON" || method.enabled === false ? "Coming soon" : "Available";
+    const buttonClass = method.status === "COMING_SOON" || method.enabled === false
+      ? "inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground"
+      : "inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground";
+    let detail = "";
+    let action = "deposit-card";
+    let buttonText = "Coming soon";
+    if (method.type === "BANK") {
+      action = "deposit-bank";
+      buttonText = "Submit bank transfer";
+      detail = keyValueRows([
+        { label: "Bank", value: escapeHtml(method.bankName || "-") },
+        { label: "Account name", value: escapeHtml(method.accountName || "-") },
+        { label: "Account number", value: escapeHtml(method.accountNumber || "-") },
+        { label: "Sort / IBAN / SWIFT", value: escapeHtml([method.sortCode, method.iban, method.swift].filter(Boolean).join(" / ") || "-") },
+        { label: "Posting window", value: escapeHtml(method.postingWindow || "Within 1 business day after confirmation") },
+        { label: "Reference", value: escapeHtml(DEMO.client.accountNo) }
+      ]) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Use your BullPort account reference, then submit the amount and transfer reference for confirmation.") + '</div>';
+    } else if (method.type === "CRYPTO") {
+      action = "deposit-crypto";
+      buttonText = "Submit crypto transfer";
+      detail = keyValueRows([
+        { label: "Asset", value: escapeHtml(method.name || method.currency || "Crypto") },
+        { label: "Network", value: escapeHtml(method.network || "-") },
+        { label: "Wallet address", value: '<span class="broker-address">' + escapeHtml(method.address || "-") + "</span>" },
+        { label: "Tag or memo", value: escapeHtml(method.tagOrMemo || "Not required") },
+        { label: "Posting rule", value: escapeHtml(method.postingWindow || "After chain and finance confirmation") }
+      ]) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Submit the transaction hash after sending funds to this wallet.") + '</div>';
+    } else {
+      detail = '<div class="broker-card-logos" aria-label="Supported card networks">' + (method.networks || ["VISA", "Mastercard", "Verve", "AmEx"]).map(function (network) { return "<span>" + escapeHtml(network) + "</span>"; }).join("") + '</div><div class="broker-funding-note">' + escapeHtml(method.description || "Card funding is reserved for the next release.") + "</div>";
+    }
+    return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || depositMethodDestination(method)) + '</small></span>' + badge(status, depositMethodTone(method)) + '</summary><div class="broker-funding-detail">' + detail + '<button type="button" data-broker-action="' + action + '" data-broker-method-id="' + escapeHtml(method.id) + '" class="' + buttonClass + '">' + buttonText + '</button></div></details>';
+  }
+
   function numberValue(value) {
     const next = Number(value);
     return Number.isFinite(next) ? next : 0;
@@ -559,6 +633,60 @@
     const hours = Math.round(minutes / 60);
     if (hours < 24) return hours + " hr ago";
     return formatDate(value);
+  }
+
+  function notificationRowsFromPayload(payload) {
+    if (Array.isArray(payload)) return { rows: payload, unreadCount: null };
+    if (payload && typeof payload === "object") {
+      return {
+        rows: Array.isArray(payload.notifications) ? payload.notifications : [],
+        unreadCount: typeof payload.unreadCount === "number" ? payload.unreadCount : null
+      };
+    }
+    return { rows: [], unreadCount: null };
+  }
+
+  function mapNotificationRow(row) {
+    const createdAt = row && row.createdAt ? row.createdAt : null;
+    const state = row && row.state ? row.state : (row && row.readAt ? "Read" : "New");
+    return {
+      id: row && row.id ? row.id : "",
+      category: row && row.category ? row.category : "Account",
+      title: row && row.title ? row.title : "Account notification",
+      body: row && row.body ? row.body : "",
+      actionUrl: row && row.actionUrl ? row.actionUrl : "notifications.html",
+      eventKey: row && row.eventKey ? row.eventKey : "",
+      severity: row && row.severity ? row.severity : "INFO",
+      createdAt: createdAt,
+      readAt: row && row.readAt ? row.readAt : null,
+      time: row && row.time ? row.time : relativeTime(createdAt),
+      state: state
+    };
+  }
+
+  function unreadNotificationCount(rows, explicitCount) {
+    if (typeof explicitCount === "number") return explicitCount;
+    return rows.filter(function (row) {
+      return row.state === "New" || (!row.state && !row.readAt);
+    }).length;
+  }
+
+  function rememberNotificationRows(rows) {
+    rows.forEach(function (row) {
+      if (row && row.id) appState.seenNotificationIds[row.id] = true;
+    });
+  }
+
+  function setNotificationRows(rows, explicitUnreadCount) {
+    const mapped = (rows || []).map(mapNotificationRow);
+    replaceList(DEMO.notifications, mapped);
+    appState.notificationUnreadCount = unreadNotificationCount(mapped, explicitUnreadCount);
+    const state = getState();
+    state.notifications = DEMO.notifications.slice();
+    saveState(state);
+    if (appState.data) appState.data.notifications = rows || [];
+    updateNotificationBell();
+    refreshOpenNotificationMenu();
   }
 
   function productAssets(name) {
@@ -631,7 +759,8 @@
     const instruments = cloneList(data.instruments);
     const payouts = cloneList(data.payouts);
     const distributions = cloneList(data.distributions);
-    const notifications = cloneList(data.notifications);
+    const notificationPayload = notificationRowsFromPayload(data.notifications);
+    const notifications = cloneList(notificationPayload.rows);
     const reports = cloneList(data.reports);
     const tickets = cloneList(data.supportTickets);
     const kycReviews = cloneList(data.kycReviews);
@@ -790,15 +919,9 @@
         { item: "Bank settlement review", state: "Not Started" }
       ]);
     }
-    replaceList(DEMO.notifications, notifications.map(function (row) {
-      return {
-        id: row.id,
-        category: row.category,
-        title: row.title,
-        time: relativeTime(row.createdAt),
-        state: row.readAt ? "Read" : "New"
-      };
-    }));
+    setNotificationRows(notifications, notificationPayload.unreadCount);
+    rememberNotificationRows(notifications);
+    appState.notificationInitialised = true;
 
     const state = getState();
     state.walletBalance = numberValue(metrics.walletBalance);
@@ -940,6 +1063,7 @@
         appState.apiMessage = "API live";
         appState.apiLoaded = true;
         appState.lastSync = new Date();
+        startClientNotificationPolling();
         return true;
       } catch (error) {
         appState.apiOnline = false;
@@ -965,6 +1089,51 @@
     bindActions();
     patchApiStatus();
     if (message) toast(message, tone || "success");
+  }
+
+  function notificationToastTone(row) {
+    const severity = String(row && row.severity ? row.severity : "").toUpperCase();
+    if (severity === "SUCCESS") return "success";
+    if (severity === "WARNING" || severity === "CRITICAL") return "warning";
+    return "info";
+  }
+
+  async function pollClientNotifications(showToast) {
+    if (isAuthPage() || appState.notificationPollInFlight) return;
+    appState.notificationPollInFlight = true;
+    try {
+      const payload = await apiRequest("/api/v1/client/notifications/inbox?limit=20", { method: "GET" }, false);
+      const parsed = notificationRowsFromPayload(payload);
+      const fresh = parsed.rows.filter(function (row) {
+        return row && row.id && !row.readAt && !appState.seenNotificationIds[row.id];
+      });
+      setNotificationRows(parsed.rows, parsed.unreadCount);
+      rememberNotificationRows(parsed.rows);
+      if (showToast && appState.notificationInitialised && fresh.length) {
+        const first = mapNotificationRow(fresh[0]);
+        toast(fresh.length === 1 ? first.title : fresh.length + " new notifications", notificationToastTone(first));
+      }
+      appState.notificationInitialised = true;
+    } catch (error) {
+      if (error && error.status === 401) stopClientNotificationPolling();
+    } finally {
+      appState.notificationPollInFlight = false;
+    }
+  }
+
+  function startClientNotificationPolling() {
+    if (isAuthPage() || appState.notificationTimer) return;
+    pollClientNotifications(false);
+    appState.notificationTimer = window.setInterval(function () {
+      pollClientNotifications(true);
+    }, 10000);
+  }
+
+  function stopClientNotificationPolling() {
+    if (appState.notificationTimer) {
+      window.clearInterval(appState.notificationTimer);
+      appState.notificationTimer = null;
+    }
   }
 
   function authFormFromNode(node) {
@@ -1191,22 +1360,14 @@
     const isDeposit = mode === "deposit";
     const state = getState();
     if (isDeposit) {
-      const bankDetails = keyValueRows([
-        { label: "Account name", value: "BullPort Client Funding" },
-        { label: "Bank reference", value: DEMO.client.accountNo },
-        { label: "Posting window", value: "Within 1 business day after finance confirmation" },
-        { label: "Status after submission", value: "Pending operations review" }
-      ]);
-      const depositMethods = '<div class="broker-funding-grid">'
-        + '<details class="broker-funding-route is-primary" open><summary><span><em>01</em><strong>Bank transfer</strong><small>Best for portfolio funding and larger deposits.</small></span>' + badge("Available", "success") + '</summary><div class="broker-funding-detail">' + bankDetails + '<div class="broker-funding-note">Transfer with your BullPort reference, then submit the amount and reference for confirmation.</div><button type="button" data-broker-action="deposit-bank" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Submit bank transfer</button></div></details>'
-        + '<details class="broker-funding-route"><summary><span><em>02</em><strong>Pay with card</strong><small>Instant debit and credit card funding will be enabled later.</small></span>' + badge("Coming soon", "warning") + '</summary><div class="broker-funding-detail"><div class="broker-card-logos" aria-label="Supported card networks"><span>VISA</span><span>Mastercard</span><span>Verve</span><span>AmEx</span></div><div class="broker-funding-note">Card funding is reserved for the next release. The button is intentionally disabled for this beta.</div><button type="button" data-broker-action="deposit-card" class="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground">Coming soon</button></div></details>'
-        + '<details class="broker-funding-route"><summary><span><em>03</em><strong>Fund with crypto</strong><small>Use supported digital assets and submit the transaction hash.</small></span>' + badge("Instant route", "info") + '</summary><div class="broker-funding-detail">' + keyValueRows([
-          { label: "Supported rails", value: "USDT (TRC20), BTC, ETH" },
-          { label: "Required proof", value: "Transaction hash" },
-          { label: "Posting rule", value: "Credited after chain confirmation and finance review" },
-          { label: "Wallet status", value: "Reviewed funding wallet" }
-        ]) + '<button type="button" data-broker-action="deposit-crypto" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Submit crypto transfer</button></div></details>'
-        + "</div>";
+      const methods = configuredDepositMethods().sort(function (a, b) {
+        const order = { BANK: 1, CARD: 2, CRYPTO: 3 };
+        return (order[a.type] || 9) - (order[b.type] || 9);
+      });
+      const primaryRoute = methods.find(function (method) { return method.type === "BANK" && method.enabled !== false && method.status === "ACTIVE"; }) || methods[0];
+      const depositMethods = '<div class="broker-funding-grid">' + methods.map(function (method, index) {
+        return depositRouteCard(method, index, method.id === primaryRoute.id);
+      }).join("") + "</div>";
       return '' +
         section("Choose funding method", "Select one route and open only the details you need. Bank and crypto submissions remain pending until reviewed.", depositMethods) +
         '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
@@ -1214,7 +1375,7 @@
           { label: "Pending confirmation", value: money(state.pendingDeposit) },
           { label: "Available wallet balance", value: money(state.walletBalance) },
           { label: "Base currency", value: DEMO.client.currency },
-          { label: "Primary route", value: "Bank transfer" }
+          { label: "Primary route", value: primaryRoute ? escapeHtml(primaryRoute.name) : "No active route" }
         ])) + "</div>" +
         '<div class="xl:col-span-5">' + section("Recent funding activity", "Latest deposits and wallet credits.", miniList(state.transactions.filter(function (row) { return row.type === "Deposit" || row.type === "Dividend"; }).slice(0, 3), function (row) {
           return '<div class="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div><p class="text-sm font-semibold">' + row.reference + '</p><p class="mt-1 text-sm text-muted-foreground">' + row.type + ' - ' + row.date + '</p></div><div class="text-right"><p class="text-sm font-semibold">' + row.amount + '</p>' + badge(row.status, statusTone(row.status)) + '</div></div>';
@@ -2030,6 +2191,37 @@
     });
   }
 
+  function updateNotificationBell() {
+    const unread = Math.max(0, Number(appState.notificationUnreadCount || 0));
+    document.querySelectorAll('button[aria-label="Notifications"]').forEach(function (button) {
+      const staticDot = button.querySelector(".bg-destructive:not([data-broker-notification-count])");
+      if (staticDot) staticDot.hidden = unread === 0;
+      let badgeNode = button.querySelector("[data-broker-notification-count]");
+      if (!unread) {
+        if (badgeNode) badgeNode.remove();
+        button.setAttribute("title", "Notifications");
+        return;
+      }
+      if (!badgeNode) {
+        badgeNode = document.createElement("span");
+        badgeNode.setAttribute("data-broker-notification-count", "true");
+        badgeNode.className = "broker-notification-count";
+        button.appendChild(badgeNode);
+      }
+      badgeNode.textContent = unread > 99 ? "99+" : String(unread);
+      button.setAttribute("title", unread + " unread notification" + (unread === 1 ? "" : "s"));
+    });
+  }
+
+  function refreshOpenNotificationMenu() {
+    const menu = document.getElementById("broker-notification-menu");
+    if (!menu) return;
+    const button = document.querySelector('[data-broker-action="notifications-toggle"]');
+    if (!button) return;
+    menu.remove();
+    showNotificationMenu(button);
+  }
+
   function patchChromeUI() {
     replaceExactText("span,div,p,h1,h2,h3,a,button", "Aigars S.", DEMO.client.name);
     replaceExactText("span,div,p,h1,h2,h3,a,button", "Admin", "Client");
@@ -2064,6 +2256,7 @@
       button.setAttribute("aria-haspopup", "menu");
       button.setAttribute("aria-expanded", document.getElementById("broker-notification-menu") ? "true" : "false");
     });
+    updateNotificationBell();
   }
 
   function ensureToastRoot() {
@@ -2116,7 +2309,9 @@
       closeNotificationMenu();
       return;
     }
-    const rows = (getState().notifications || []).slice(0, 5);
+    const state = getState();
+    const rows = (state.notifications || []).slice(0, 5);
+    const unread = Math.max(0, Number(appState.notificationUnreadCount || unreadNotificationCount(rows)));
     const menu = document.createElement("div");
     const rect = button.getBoundingClientRect();
     menu.id = "broker-notification-menu";
@@ -2124,9 +2319,9 @@
     menu.setAttribute("role", "menu");
     menu.style.top = Math.round(rect.bottom + 12 + window.scrollY) + "px";
     menu.style.right = Math.max(16, Math.round(window.innerWidth - rect.right)) + "px";
-    menu.innerHTML = '<div class="broker-notification-head"><div><strong>Notifications</strong><span>' + rows.length + ' recent alerts</span></div><a href="notifications.html">View all</a></div>'
+    menu.innerHTML = '<div class="broker-notification-head"><div><strong>Notifications</strong><span>' + unread + ' unread - ' + rows.length + ' recent</span></div><div><button type="button" data-broker-action="notifications-read-all">Read all</button><a href="notifications.html">View all</a></div></div>'
       + '<div class="broker-notification-list">' + (rows.length ? rows.map(function (row) {
-        return '<button type="button" role="menuitem" data-broker-action="notification-open" data-broker-notification-id="' + (row.id || "") + '" class="broker-notification-item"><span class="broker-notification-dot ' + (row.state === "New" ? "is-new" : "") + '"></span><span><strong>' + row.title + '</strong><em>' + row.category + ' · ' + row.time + '</em></span></button>';
+        return '<button type="button" role="menuitem" data-broker-action="notification-open" data-broker-notification-id="' + (row.id || "") + '" data-broker-notification-url="' + (row.actionUrl || "notifications.html") + '" class="broker-notification-item"><span class="broker-notification-dot ' + (row.state === "New" ? "is-new" : "") + '"></span><span><strong>' + row.title + '</strong><em>' + row.category + ' - ' + row.time + '</em>' + (row.body ? '<small>' + row.body + '</small>' : '') + '</span></button>';
       }).join("") : '<div class="broker-notification-empty">No notifications yet.</div>') + '</div>';
     document.body.appendChild(menu);
     button.setAttribute("aria-expanded", "true");
@@ -2459,6 +2654,7 @@
       case "auth-logout":
         closeUserMenu();
         closeNotificationMenu();
+        stopClientNotificationPolling();
         try {
           await apiRequest("/api/v1/auth/client/logout", { method: "POST", body: "{}" }, false);
         } catch (error) {
@@ -2680,15 +2876,39 @@
       case "notification-read":
         try {
           await apiRequest("/api/v1/client/notifications/" + encodeURIComponent(node.getAttribute("data-broker-notification-id") || "") + "/read", { method: "POST", body: "{}" }, false);
-          await refreshLiveView("Notification marked as read.", "success");
+          await pollClientNotifications(false);
+          if (currentFile() === "notifications.html") {
+            renderPage();
+            patchChromeUI();
+            bindActions();
+          }
+          toast("Notification marked as read.", "success");
         } catch (error) { toast((error && error.message) || "Could not update the notification.", "warning"); }
+        return;
+      case "notifications-read-all":
+        try {
+          await apiRequest("/api/v1/client/notifications/read-all", { method: "POST", body: "{}" }, false);
+          await pollClientNotifications(false);
+          if (currentFile() === "notifications.html") {
+            renderPage();
+            patchChromeUI();
+            bindActions();
+          }
+          toast("Notifications marked as read.", "success");
+        } catch (error) { toast((error && error.message) || "Could not update notifications.", "warning"); }
         return;
       case "notifications-toggle":
         showNotificationMenu(node);
         return;
       case "notification-open":
+        if (node.getAttribute("data-broker-notification-id")) {
+          try {
+            await apiRequest("/api/v1/client/notifications/" + encodeURIComponent(node.getAttribute("data-broker-notification-id") || "") + "/read", { method: "POST", body: "{}" }, false);
+            await pollClientNotifications(false);
+          } catch (error) {}
+        }
         closeNotificationMenu();
-        navigateTo("notifications.html");
+        navigateTo(node.getAttribute("data-broker-notification-url") || "notifications.html");
         return;
       case "user-menu-toggle":
         showUserMenu(node);
@@ -2787,10 +3007,11 @@
       + " .broker-toast-default,.broker-toast-info{background:#0f172a}"
       + " .broker-toast-success{background:#15803d}"
       + " .broker-toast-warning{background:#b45309}"
+      + " .broker-notification-count{position:absolute;right:-4px;top:-5px;min-width:17px;height:17px;border-radius:999px;background:#dc2626;color:#fff;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;font-size:10px;font-weight:900;line-height:1;box-shadow:0 0 0 2px #fff}"
       + " .broker-action-loading{display:inline-flex!important;align-items:center;justify-content:center;gap:8px;pointer-events:none;white-space:nowrap}.broker-button-spinner{width:1em;height:1em;border:2px solid currentColor;border-right-color:transparent;border-radius:999px;flex:none;animation:broker-button-spin .72s linear infinite}.broker-button-loading-text{display:inline-flex;align-items:center}@keyframes broker-button-spin{to{transform:rotate(360deg)}}"
       + " .broker-notification-menu{position:absolute;z-index:130;width:min(380px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
-      + " .broker-notification-head{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-notification-head strong{display:block;font-size:15px;font-weight:850}.broker-notification-head span{display:block;margin-top:2px;color:#64748b;font-size:12px}.broker-notification-head a{color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;text-decoration:none}"
-      + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
+      + " .broker-notification-head{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-notification-head strong{display:block;font-size:15px;font-weight:850}.broker-notification-head span{display:block;margin-top:2px;color:#64748b;font-size:12px}.broker-notification-head>div:last-child{display:flex;align-items:center;gap:10px}.broker-notification-head a,.broker-notification-head button{border:0;background:transparent;color:#16a34a;font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;text-decoration:none;cursor:pointer}"
+      + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em,.broker-notification-item small{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal;line-height:1.4}.broker-notification-item small{color:#334155}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
       + " .broker-user-menu{position:absolute;z-index:130;width:min(320px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:grid;grid-template-columns:36px 1fr;gap:10px;align-items:center;width:100%;border:0;border-radius:12px;background:transparent;padding:10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item i{display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:10px;background:#eef8f0;color:#16a34a}.broker-user-item svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-user-item span{display:block}.broker-user-item strong{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger i{background:#fef2f2;color:#b91c1c}.broker-user-item.is-danger strong{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
       + " .broker-funding-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.broker-funding-route{overflow:hidden;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(248,250,252,.76));box-shadow:0 14px 34px rgba(15,23,42,.06)}.broker-funding-route.is-primary{border-color:rgba(34,197,94,.24);background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(240,253,244,.82))}.broker-funding-route summary{display:flex;min-height:132px;cursor:pointer;list-style:none;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.broker-funding-route summary::-webkit-details-marker{display:none}.broker-funding-route summary span{min-width:0}.broker-funding-route summary em{display:inline-flex;height:28px;width:28px;align-items:center;justify-content:center;border-radius:999px;background:#eef8f0;color:#15803d;font-size:11px;font-style:normal;font-weight:900}.broker-funding-route summary strong{display:block;margin-top:14px;color:#101713;font-size:16px;font-weight:850}.broker-funding-route summary small{display:block;margin-top:7px;color:#64748b;font-size:12px;line-height:1.45}.broker-funding-detail{border-top:1px solid rgba(148,163,184,.2);padding:16px 18px 18px}.broker-funding-note{margin:12px 0;border-radius:12px;background:rgba(15,23,42,.04);padding:11px 12px;color:#475569;font-size:12px;line-height:1.5}.broker-card-logos{display:flex;flex-wrap:wrap;gap:8px}.broker-card-logos span{display:inline-flex;height:34px;align-items:center;border:1px solid rgba(148,163,184,.28);border-radius:10px;background:#fff;padding:0 12px;color:#0f172a;font-size:11px;font-weight:900;letter-spacing:.04em}.dark .broker-funding-route{border-color:rgba(148,163,184,.18);background:linear-gradient(135deg,rgba(15,23,18,.84),rgba(15,23,42,.56))}.dark .broker-funding-route.is-primary{border-color:rgba(74,222,128,.24);background:linear-gradient(135deg,rgba(15,23,18,.88),rgba(20,83,45,.24))}.dark .broker-funding-route summary strong{color:#f8fafc}.dark .broker-funding-route summary small,.dark .broker-funding-note{color:#94a3b8}.dark .broker-funding-note{background:rgba(255,255,255,.05)}.dark .broker-card-logos span{border-color:rgba(148,163,184,.22);background:rgba(15,23,18,.8);color:#e2e8f0}@media (max-width:1100px){.broker-funding-grid{grid-template-columns:1fr}.broker-funding-route summary{min-height:auto}}"

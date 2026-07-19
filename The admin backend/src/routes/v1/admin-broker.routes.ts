@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
 import { captureWalletHoldTx, creditClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
+import { notifyClientTx } from "../../services/notification.service";
 
 export const v1AdminBrokerRouter = Router();
 v1AdminBrokerRouter.use(requireAdmin);
@@ -240,7 +241,7 @@ v1AdminBrokerRouter.post("/orders/:id/reject", tradingRoles, asyncHandler(async 
   if (!order || !["PENDING_REVIEW", "APPROVED"].includes(order.status)) throw new ApiError(409, "Order cannot be rejected from its current state", "INVALID_ORDER_STATE");
   const row = await prisma.$transaction(async (tx) => {
     if (order.holdReference) await releaseWalletHoldTx(tx, order.holdReference);
-    await tx.notification.create({ data: { clientId: order.clientId, category: "Trading", title: "Order request rejected", body: input.reason, actionUrl: "orders.html" } });
+    await notifyClientTx(tx, { clientId: order.clientId, category: "Trading", title: "Order request rejected", body: input.reason, actionUrl: "orders.html", entity: { type: "Order", id: order.id } });
     return tx.order.update({ where: { id: order.id }, data: { status: "REJECTED", rejectionReason: input.reason } });
   });
   await writeAudit("rejectOrder", "Order", row.id, undefined, { req, reason: input.reason });
@@ -284,7 +285,7 @@ v1AdminBrokerRouter.post("/orders/:id/fill", tradingRoles, asyncHandler(async (r
     }
     const fill = await tx.tradeFill.create({ data: { orderId: order.id, quantity: input.quantity, price: input.price, fee, executedAt: input.executedAt, externalReference: input.externalReference } });
     const updated = await tx.order.update({ where: { id: order.id }, data: { status: "SETTLED", settledAt: new Date() }, include: { client: true, instrument: true, fills: true } });
-    await tx.notification.create({ data: { clientId: order.clientId, category: "Trading", title: "Order settled", body: `${order.instrument.symbol} order ${order.reference} was recorded by the internal order desk.`, actionUrl: "orders.html" } });
+    await notifyClientTx(tx, { clientId: order.clientId, category: "Trading", title: "Order settled", body: `${order.instrument.symbol} order ${order.reference} was recorded by the internal order desk.`, actionUrl: "orders.html", entity: { type: "Order", id: order.id } });
     return { order: updated, fill, ledgerId };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   await writeAudit("settleOrder", "Order", order.id, { price: input.price, quantity: input.quantity, fee: input.fee }, { req, reason: input.note });
@@ -305,7 +306,7 @@ v1AdminBrokerRouter.post("/options/applications/:id/decision", complianceRoles, 
   if (!application) throw new ApiError(404, "Options application was not found", "OPTIONS_APPLICATION_NOT_FOUND");
   const row = await prisma.$transaction(async (tx) => {
     const updated = await tx.optionsApplication.update({ where: { id: application.id }, data: { status: input.status, reviewerId: req.user!.id, decisionNote: input.note, decidedAt: new Date() } });
-    await tx.notification.create({ data: { clientId: application.clientId, category: "Options", title: `Options access ${input.status.toLowerCase()}`, body: input.note, actionUrl: "options-access.html" } });
+    await notifyClientTx(tx, { clientId: application.clientId, category: "Options", title: `Options access ${input.status.toLowerCase()}`, body: input.note, actionUrl: "options-access.html", entity: { type: "OptionsApplication", id: application.id } });
     return updated;
   });
   await writeAudit("optionsAccessDecision", "OptionsApplication", row.id, { status: input.status }, { req, reason: input.note });

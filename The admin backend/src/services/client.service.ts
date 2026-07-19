@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { ApiError } from "../lib/http";
 import { prisma } from "../lib/prisma";
+import { clientVisibleDepositMethods, getDepositMethodsSetting } from "./deposit-method.service";
 
 export function money(value: unknown) {
   return Number(value ?? 0);
@@ -41,7 +42,7 @@ export async function clientDashboard(clientId: string) {
       investments: { include: { product: true }, orderBy: { updatedAt: "desc" } },
       payouts: { orderBy: { payoutDate: "desc" }, take: 12 },
       distributionItems: { include: { batch: true }, orderBy: { createdAt: "desc" }, take: 20 },
-      notifications: { orderBy: { createdAt: "desc" }, take: 12 },
+      notifications: { where: { recipientType: "CLIENT" }, orderBy: { createdAt: "desc" }, take: 12 },
       riskAlerts: { where: { status: { in: ["OPEN", "IN_REVIEW"] } }, orderBy: [{ severity: "desc" }, { createdAt: "desc" }], take: 10 }
     }
   });
@@ -153,13 +154,13 @@ export async function clientSnapshot(clientId: string) {
       optionsApplications: { orderBy: { updatedAt: "desc" }, take: 1 },
       riskAlerts: { where: { status: { in: ["OPEN", "IN_REVIEW"] } }, orderBy: [{ severity: "desc" }, { createdAt: "desc" }] },
       tickets: { include: { messages: { orderBy: { createdAt: "asc" } } }, orderBy: { updatedAt: "desc" }, take: 30 },
-      notifications: { orderBy: { createdAt: "desc" }, take: 50 },
+      notifications: { where: { recipientType: "CLIENT" }, orderBy: { createdAt: "desc" }, take: 50 },
       reports: { orderBy: { createdAt: "desc" }, take: 50 }
     }
   });
   if (!client) throw new ApiError(404, "Client was not found", "CLIENT_NOT_FOUND");
 
-  const [products, instruments, optionContracts, globalReports, capabilities] = await Promise.all([
+  const [products, instruments, optionContracts, globalReports, capabilities, depositMethods] = await Promise.all([
     prisma.portfolioProduct.findMany({
       where: { status: "PUBLISHED" },
       include: { allocations: { where: { effectiveTo: null }, include: { instrument: true } }, feeRules: { where: { active: true } } },
@@ -168,7 +169,8 @@ export async function clientSnapshot(clientId: string) {
     prisma.instrument.findMany({ where: { status: { notIn: ["INACTIVE", "SUSPENDED", "HIDDEN"] } }, orderBy: { symbol: "asc" } }),
     prisma.optionContract.findMany({ where: { status: "ACTIVE", expiry: { gt: new Date() } }, include: { underlying: true }, orderBy: { expiry: "asc" }, take: 50 }),
     prisma.reportExport.findMany({ where: { clientId: null }, orderBy: { createdAt: "desc" }, take: 20 }),
-    prisma.systemSetting.findUnique({ where: { key: "platform.capabilities" } })
+    prisma.systemSetting.findUnique({ where: { key: "platform.capabilities" } }),
+    getDepositMethodsSetting()
   ]);
 
   const cashAccount = client.wallet?.ledgerAccounts[0];
@@ -252,6 +254,7 @@ export async function clientSnapshot(clientId: string) {
     notifications: client.notifications,
     reports: [...client.reports, ...globalReports],
     supportTickets: client.tickets,
-    capabilities: capabilities?.value || null
+    capabilities: capabilities?.value || null,
+    depositMethods: clientVisibleDepositMethods(depositMethods)
   };
 }

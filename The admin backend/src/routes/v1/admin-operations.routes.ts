@@ -6,7 +6,8 @@ import { ApiError, asyncHandler, ok, pageInput, pageMeta, reference } from "../.
 import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
-import { notifyClient } from "../../services/notification.service";
+import { DEPOSIT_METHODS_SETTING_KEY, getDepositMethodsSetting, upsertDepositMethodsSetting } from "../../services/deposit-method.service";
+import { ADMIN_NOTIFICATION_RECIPIENT_ID, markAllNotificationsRead, markNotificationRead, notificationInbox, notifyClient } from "../../services/notification.service";
 
 export const v1AdminOperationsRouter = Router();
 v1AdminOperationsRouter.use(requireAdmin);
@@ -16,6 +17,35 @@ const supportRoles = requireAdminRoles("SUPER_ADMIN", "SUPPORT", "COMPLIANCE", "
 const reportRoles = requireAdminRoles("SUPER_ADMIN", "AUDITOR", "FINANCE", "COMPLIANCE", "PORTFOLIO_MANAGER");
 const superAdmin = requireAdminRoles("SUPER_ADMIN");
 const readRoles = requireAdminRoles("SUPER_ADMIN", "COMPLIANCE", "FINANCE", "PORTFOLIO_MANAGER", "SUPPORT", "AUDITOR");
+const APPROVAL_SETTINGS_KEY = "operations.approvals";
+const DEFAULT_APPROVAL_POLICY = {
+  makerChecker: true,
+  withdrawals: true,
+  depositCredits: true,
+  autoApproveDeposits: false,
+  distributions: true,
+  productPublishing: true,
+  ledgerAdjustments: true
+};
+
+async function ensureApprovalPolicySetting(adminId?: string) {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: APPROVAL_SETTINGS_KEY } });
+  const current = setting?.value && typeof setting.value === "object" && !Array.isArray(setting.value)
+    ? setting.value as Record<string, unknown>
+    : {};
+  const value = { ...DEFAULT_APPROVAL_POLICY, ...current };
+  if (setting && Object.keys(DEFAULT_APPROVAL_POLICY).every((key) => key in current)) return setting;
+  return prisma.systemSetting.upsert({
+    where: { key: APPROVAL_SETTINGS_KEY },
+    update: { value: value as never, updatedBy: adminId },
+    create: {
+      key: APPROVAL_SETTINGS_KEY,
+      value: value as never,
+      description: "Sensitive operation approval policy, including deposit auto-approval.",
+      updatedBy: adminId
+    }
+  });
+}
 
 v1AdminOperationsRouter.get("/support/tickets", supportRoles, asyncHandler(async (req, res) => {
   const { page, limit, skip } = pageInput(req.query);
@@ -106,6 +136,20 @@ v1AdminOperationsRouter.get("/notifications", readRoles, asyncHandler(async (_re
   return ok(res, await prisma.notification.findMany({ include: { client: { select: { accountNumber: true, name: true, email: true } }, deliveries: true }, orderBy: { createdAt: "desc" }, take: 500 }));
 }));
 
+v1AdminOperationsRouter.get("/notifications/inbox", readRoles, asyncHandler(async (req, res) => {
+  return ok(res, await notificationInbox({ recipientType: "ADMIN", recipientId: ADMIN_NOTIFICATION_RECIPIENT_ID, limit: Number(req.query.limit) || 20 }));
+}));
+
+v1AdminOperationsRouter.post("/notifications/read-all", readRoles, asyncHandler(async (_req, res) => {
+  return ok(res, await markAllNotificationsRead({ recipientType: "ADMIN", recipientId: ADMIN_NOTIFICATION_RECIPIENT_ID }));
+}));
+
+v1AdminOperationsRouter.post("/notifications/:id/read", readRoles, asyncHandler(async (req, res) => {
+  const row = await markNotificationRead({ recipientType: "ADMIN", recipientId: ADMIN_NOTIFICATION_RECIPIENT_ID, id: String(req.params.id) });
+  if (!row) throw new ApiError(404, "Notification was not found", "NOTIFICATION_NOT_FOUND");
+  return ok(res, row);
+}));
+
 v1AdminOperationsRouter.post("/notifications", requireAdminRoles("SUPER_ADMIN", "SUPPORT", "COMPLIANCE", "FINANCE"), asyncHandler(async (req, res) => {
   const input = z.object({ clientId: z.string().optional(), audience: z.enum(["ONE", "ALL", "PENDING_KYC", "ACTIVE_INVESTORS"]).default("ONE"), title: z.string().trim().min(3).max(160), body: z.string().trim().min(5).max(4000), category: z.string().trim().min(2).max(80), actionUrl: z.string().max(240).optional(), email: z.boolean().default(true) }).parse(req.body);
   let clients;
@@ -148,13 +192,20 @@ v1AdminOperationsRouter.patch("/admin-users/:id", superAdmin, asyncHandler(async
 }));
 
 v1AdminOperationsRouter.get("/settings", superAdmin, asyncHandler(async (_req, res) => {
+  await getDepositMethodsSetting();
+  await ensureApprovalPolicySetting(_req.user!.id);
   const rows = await prisma.systemSetting.findMany({ where: { isSecret: false }, orderBy: { key: "asc" } });
   return ok(res, rows);
 }));
 
 v1AdminOperationsRouter.put("/settings/:key", superAdmin, asyncHandler(async (req, res) => {
   const input = z.object({ value: z.unknown(), description: z.string().max(500).optional() }).parse(req.body);
-  const row = await prisma.systemSetting.upsert({ where: { key: String(req.params.key) }, update: { value: input.value as never, description: input.description, updatedBy: req.user!.id }, create: { key: String(req.params.key), value: input.value as never, description: input.description, updatedBy: req.user!.id } });
+  const key = String(req.params.key);
+  const row = key === DEPOSIT_METHODS_SETTING_KEY
+    ? await upsertDepositMethodsSetting(input.value, req.user!.id, input.description || "Accepted client wallet funding routes including bank, crypto and card availability.")
+    : key === APPROVAL_SETTINGS_KEY
+      ? await prisma.systemSetting.upsert({ where: { key }, update: { value: { ...DEFAULT_APPROVAL_POLICY, ...(typeof input.value === "object" && input.value !== null && !Array.isArray(input.value) ? input.value : {}) } as never, description: input.description, updatedBy: req.user!.id }, create: { key, value: { ...DEFAULT_APPROVAL_POLICY, ...(typeof input.value === "object" && input.value !== null && !Array.isArray(input.value) ? input.value : {}) } as never, description: input.description || "Sensitive operation approval policy, including deposit auto-approval.", updatedBy: req.user!.id } })
+    : await prisma.systemSetting.upsert({ where: { key }, update: { value: input.value as never, description: input.description, updatedBy: req.user!.id }, create: { key, value: input.value as never, description: input.description, updatedBy: req.user!.id } });
   await writeAudit("updateSystemSetting", "SystemSetting", row.id, { key: row.key }, { req });
   return ok(res, row);
 }));

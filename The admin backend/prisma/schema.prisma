@@ -235,6 +235,18 @@ enum DeliveryStatus {
   SKIPPED
 }
 
+enum NotificationRecipientType {
+  CLIENT
+  ADMIN
+}
+
+enum NotificationSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  CRITICAL
+}
+
 enum RiskAlertStatus {
   OPEN
   IN_REVIEW
@@ -1148,18 +1160,29 @@ model SupportMessage {
 }
 
 model Notification {
-  id         String                 @id @default(cuid())
-  clientId   String?
-  title      String
-  body       String
-  category   String
-  actionUrl  String?
-  readAt     DateTime?
-  createdAt  DateTime               @default(now())
-  client     Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  deliveries NotificationDelivery[]
+  id            String                    @id @default(cuid())
+  clientId      String?
+  recipientType NotificationRecipientType @default(CLIENT)
+  recipientId   String
+  eventKey      String?
+  severity      NotificationSeverity      @default(INFO)
+  title         String
+  body          String
+  category      String
+  actionUrl     String?
+  entityType    String?
+  entityId      String?
+  metadata      Json?
+  dedupeKey     String?                   @unique
+  readAt        DateTime?
+  createdAt     DateTime                  @default(now())
+  client        Client?                   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  deliveries    NotificationDelivery[]
 
   @@index([clientId, readAt, createdAt])
+  @@index([recipientType, recipientId, readAt, createdAt])
+  @@index([eventKey, createdAt])
+  @@index([entityType, entityId])
 }
 
 model NotificationDelivery {
