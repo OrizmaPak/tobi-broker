@@ -780,9 +780,7 @@
           cooldownHours: 24,
           instructions: "Add the bank details exactly as they appear on the receiving bank account.",
           fields: [
-            { id: "bankName", label: "Bank name", type: "TEXT", required: true, placeholder: "Receiving bank" },
             { id: "accountName", label: "Account name", type: "TEXT", required: true, placeholder: "Name on bank account" },
-            { id: "accountNumber", label: "Account number / IBAN", type: "TEXT", required: true, placeholder: "Account number or IBAN" },
             { id: "sortCode", label: "Sort code / routing number", type: "TEXT", required: false, placeholder: "Optional local bank code" },
             { id: "bankCountry", label: "Bank country", type: "TEXT", required: true, placeholder: "United Kingdom" }
           ]
@@ -813,7 +811,15 @@
     const value = appState.data && appState.data.withdrawalMethods && Array.isArray(appState.data.withdrawalMethods.methods)
       ? appState.data.withdrawalMethods
       : fallbackWithdrawalMethods();
-    return value.methods.filter(function (method) { return method && method.enabled !== false && method.status !== "DISABLED"; });
+    return value.methods.filter(function (method) { return method && method.enabled !== false && method.status !== "DISABLED"; }).map(function (method) {
+      if (method.type !== "BANK") return method;
+      return {
+        ...method,
+        fields: (method.fields || []).filter(function (field) {
+          return field.id !== "bankName" && field.id !== "accountNumber";
+        })
+      };
+    });
   }
 
   function withdrawalMethodById(id) {
@@ -836,14 +842,16 @@
   function withdrawalMethodCard(method, index, isOpen) {
     const code = String(index + 1).padStart(2, "0");
     const fields = method.fields || [];
-    const required = fields.filter(function (field) { return field.required !== false; }).length;
+    const fixedRequired = method.type === "BANK" ? 2 : 0;
+    const required = fields.filter(function (field) { return field.required !== false; }).length + fixedRequired;
+    const totalFields = fields.length + fixedRequired;
     const verified = verifiedBeneficiariesByType(method.type);
     const pending = beneficiariesByType(method.type).filter(function (item) { return item.status !== "VERIFIED"; });
     const detail = keyValueRows([
       { label: "Currency", value: escapeHtml(method.currency || "-") },
       { label: "Review window", value: escapeHtml(method.reviewWindow || "Operations review") },
       { label: "Cooling-off", value: String(method.cooldownHours || (method.type === "CRYPTO" ? 48 : 24)) + " hours after adding destination" },
-      { label: "Required fields", value: String(required) + " of " + String(fields.length) }
+      { label: "Required fields", value: String(required) + " of " + String(totalFields) }
     ]) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Add and verify a destination before requesting a withdrawal.") + '</div><div class="flex flex-wrap gap-2"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(method.id) + '" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add ' + (method.type === "CRYPTO" ? "crypto wallet" : "bank account") + '</button><button type="button" data-broker-action="' + (method.type === "CRYPTO" ? "withdraw-crypto" : "withdraw-bank") + '" class="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">' + (verified.length ? "Request withdrawal" : "Use after verification") + '</button></div>';
     return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || "Configured withdrawal destination workflow") + '</small></span>' + badge(verified.length ? verified.length + " verified" : pending.length ? "Pending review" : "Setup needed", verified.length ? "success" : pending.length ? "warning" : "info") + '</summary><div class="broker-funding-detail">' + detail + '</div></details>';
   }
@@ -2752,11 +2760,18 @@
     if (!method) { toast("No active withdrawal setup is available for this route.", "warning"); return; }
     const fields = method.fields || [];
     const defaultLabel = method.type === "CRYPTO" ? "Primary crypto wallet" : "Primary bank account";
-    showModal("Add " + (method.type === "CRYPTO" ? "crypto wallet" : "bank account"), '<p>' + escapeHtml(method.description || "Add destination details for admin review.") + '</p><div class="broker-form-grid"><input type="hidden" name="beneficiaryType" value="' + escapeHtml(method.type) + '"><input type="hidden" name="beneficiaryMethodId" value="' + escapeHtml(method.id) + '">' + modalField("Destination label", "beneficiaryLabel", "text", defaultLabel, 'required maxlength="80"') + fields.map(withdrawalVerificationField).join("") + '<p class="text-xs text-muted-foreground">' + escapeHtml(method.instructions || "The destination remains pending until BullPort verifies it.") + '</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="beneficiary-confirm">Submit for review</button>');
+    const fixedBankFields = method.type === "BANK"
+      ? modalField("Bank name", "verify_bankName", "text", "", 'required maxlength="100"') + modalField("Bank account number", "verify_accountNumber", "text", "", 'required maxlength="80"')
+      : "";
+    showModal("Add " + (method.type === "CRYPTO" ? "crypto wallet" : "bank account"), '<p>' + escapeHtml(method.description || "Add destination details for admin review.") + '</p><div class="broker-form-grid"><input type="hidden" name="beneficiaryType" value="' + escapeHtml(method.type) + '"><input type="hidden" name="beneficiaryMethodId" value="' + escapeHtml(method.id) + '">' + modalField("Destination label", "beneficiaryLabel", "text", defaultLabel, 'required maxlength="80"') + fixedBankFields + fields.map(withdrawalVerificationField).join("") + '<p class="text-xs text-muted-foreground">' + escapeHtml(method.instructions || "The destination remains pending until BullPort verifies it.") + '</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="beneficiary-confirm">Submit for review</button>');
   }
 
   function modalVerificationData(method) {
     const data = {};
+    if (method && method.type === "BANK") {
+      data.bankName = modalValue("verify_bankName");
+      data.accountNumber = modalValue("verify_accountNumber");
+    }
     (method.fields || []).forEach(function (field) {
       data[field.id] = modalValue("verify_" + field.id);
     });

@@ -240,9 +240,7 @@
           cooldownHours: 24,
           instructions: "Add the bank details exactly as they appear on the receiving bank account.",
           fields: [
-            { id: "bankName", label: "Bank name", type: "TEXT", required: true, placeholder: "Receiving bank" },
             { id: "accountName", label: "Account name", type: "TEXT", required: true, placeholder: "Name on bank account" },
-            { id: "accountNumber", label: "Account number / IBAN", type: "TEXT", required: true, placeholder: "Account number or IBAN" },
             { id: "sortCode", label: "Sort code / routing number", type: "TEXT", required: false, placeholder: "Optional local bank code" },
             { id: "bankCountry", label: "Bank country", type: "TEXT", required: true, placeholder: "United Kingdom" }
           ]
@@ -337,7 +335,9 @@
         status: method.status === "DISABLED" ? "DISABLED" : "ACTIVE",
         currency: method.currency || (method.type === "CRYPTO" ? "USDT" : "USD"),
         cooldownHours: Number(method.cooldownHours ?? (method.type === "CRYPTO" ? 48 : 24)),
-        fields: Array.isArray(method.fields) ? method.fields.map((field) => ({
+        fields: (Array.isArray(method.fields) ? method.fields : []).filter((field) => {
+          return method.type !== "BANK" || (field.id !== "bankName" && field.id !== "accountNumber");
+        }).map((field) => ({
           id: field.id || slugify(field.label, "field"),
           label: field.label || "Verification field",
           type: ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].includes(field.type) ? field.type : "TEXT",
@@ -345,7 +345,7 @@
           placeholder: field.placeholder || "",
           helpText: field.helpText || "",
           options: Array.isArray(field.options) ? field.options : []
-        })) : []
+        }))
       }))
     };
   }
@@ -369,8 +369,10 @@
   }
 
   function withdrawalFieldSummary(method) {
-    const required = (method.fields || []).filter((field) => field.required !== false).length;
-    return (method.fields || []).length + " field" + ((method.fields || []).length === 1 ? "" : "s") + " / " + required + " required";
+    const fixed = method.type === "BANK" ? 2 : 0;
+    const total = (method.fields || []).length + fixed;
+    const required = (method.fields || []).filter((field) => field.required !== false).length + fixed;
+    return total + " field" + (total === 1 ? "" : "s") + " / " + required + " required";
   }
 
   function depositMethodDestination(method) {
@@ -1621,7 +1623,8 @@
       "admin-logout", "approval-confirm", "kyc-requirement-save",
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
       "task-status", "report-download", "deposit-method-save",
-      "deposit-method-toggle", "deposit-category-toggle", "setting-save", "decision"
+      "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
+      "withdrawal-method-toggle", "setting-save", "decision"
     ].includes(action);
   }
 
@@ -1720,6 +1723,8 @@
           else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
           else if (action === "withdrawal-method-new") openWithdrawalMethodEditor(node.dataset.methodType);
           else if (action === "withdrawal-method-edit") openWithdrawalMethodEditor(null, node.dataset.methodId);
+          else if (action === "withdrawal-field-add") addWithdrawalFieldRow();
+          else if (action === "withdrawal-field-remove") removeWithdrawalFieldRow(node);
           else if (action === "withdrawal-method-save") await submitWithdrawalMethod();
           else if (action === "withdrawal-method-toggle") await toggleWithdrawalMethod(node.dataset.methodId);
           else if (action === "approval-setting-toggle") await toggleDepositAutoApproval(node.dataset.autoApproveDeposits === "true");
@@ -2107,22 +2112,42 @@
     await loadBackendData();
   }
 
-  function withdrawalFieldBuilder(fields) {
-    const rows = Array.from({ length: Math.max(8, (fields || []).length + 2) }).map((_, index) => {
-      const field = (fields || [])[index] || {};
-      const type = field.type || "TEXT";
-      const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
-      return '<div class="withdrawal-field-row">' +
-        '<label>Field key<input name="fieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="accountNumber"></label>' +
-        '<label>Label<input name="fieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Account number"></label>' +
-        '<label>Type<select name="fieldType' + index + '">' + options + '</select></label>' +
-        '<label>Options<input name="fieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
-        '<label>Placeholder<input name="fieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
-        '<label>Help text<input name="fieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '"></label>' +
-        '<label class="checkbox-row"><input name="fieldRequired' + index + '" type="checkbox" ' + (field.required !== false ? "checked" : "") + '> Required</label>' +
-      '</div>';
-    }).join("");
-    return '<div class="withdrawal-field-builder"><div class="builder-head"><strong>Verification fields</strong><span>Leave unused rows blank. Required rows are enforced in the client portal.</span></div>' + rows + '</div>';
+  function withdrawalFieldBuilder(fields, methodType) {
+    const safeFields = (fields || []).filter((field) => methodType !== "BANK" || (field.id !== "bankName" && field.id !== "accountNumber"));
+    const fixed = methodType === "BANK"
+      ? '<div class="modal-fieldset"><strong>Permanent bank fields</strong><p class="muted">Bank name and bank account number are always requested in the client portal and cannot be removed.</p></div>'
+      : "";
+    const rows = safeFields.map((field, index) => withdrawalFieldRow(field, index)).join("");
+    return fixed + '<div class="withdrawal-field-builder" data-withdrawal-field-builder><div class="builder-head"><div><strong>Custom verification fields</strong><span>These fields appear when a client adds a withdrawal destination and on the admin review page.</span></div><button class="btn" type="button" data-action="withdrawal-field-add">Add custom field</button></div><div data-withdrawal-field-list>' + rows + '</div></div>';
+  }
+
+  function withdrawalFieldRow(field, index) {
+    field = field || {};
+    const type = field.type || "TEXT";
+    const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
+    return '<div class="withdrawal-field-row" data-withdrawal-field data-field-index="' + index + '">' +
+      '<label>Field key<input name="fieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="accountName"></label>' +
+      '<label>Label<input name="fieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Account name"></label>' +
+      '<label>Type<select name="fieldType' + index + '">' + options + '</select></label>' +
+      '<label>Options<input name="fieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
+      '<label>Placeholder<input name="fieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
+      '<label>Description<input name="fieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '" placeholder="Explain why this is requested"></label>' +
+      '<label class="checkbox-row"><input name="fieldRequired' + index + '" type="checkbox" ' + (field.required !== false ? "checked" : "") + '> Required</label>' +
+      '<button class="btn danger" type="button" data-action="withdrawal-field-remove">Remove</button>' +
+    '</div>';
+  }
+
+  function addWithdrawalFieldRow() {
+    const list = document.querySelector("[data-withdrawal-field-list]");
+    if (!list) return;
+    const rows = list.querySelectorAll("[data-withdrawal-field]");
+    const nextIndex = rows.length ? Math.max(...Array.from(rows).map((row) => Number(row.dataset.fieldIndex || 0))) + 1 : 0;
+    list.insertAdjacentHTML("beforeend", withdrawalFieldRow({ required: true }, nextIndex));
+    bindActions();
+  }
+
+  function removeWithdrawalFieldRow(node) {
+    node.closest("[data-withdrawal-field]")?.remove();
   }
 
   function depositProofFieldBuilder(fields) {
@@ -2166,7 +2191,7 @@
     const current = setting.methods.find((method) => method.id === id);
     const methodType = current?.type || type || "BANK";
     const common = '<input type="hidden" name="withdrawalMethodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="withdrawalMethodType" value="' + methodType + '"><label>Method name<input name="withdrawalMethodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "Crypto withdrawal" : "Bank withdrawal")) + '"></label><label>Description<textarea name="withdrawalMethodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="withdrawalMethodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="withdrawalMethodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Review window<input name="withdrawalReviewWindow" maxlength="160" value="' + escapeHtml(current?.reviewWindow || (methodType === "CRYPTO" ? "Enhanced review before release" : "Same business day after finance review")) + '"></label><label>Cooling-off hours<input name="withdrawalCooldownHours" type="number" min="0" max="720" value="' + escapeHtml(String(current?.cooldownHours ?? (methodType === "CRYPTO" ? 48 : 24))) + '"></label><label>Client instructions<textarea name="withdrawalInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "") + '</textarea></label>';
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Withdrawal settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto form" : "bank form") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + common + withdrawalFieldBuilder(current?.fields || defaultWithdrawalMethods().methods.find((method) => method.type === methodType)?.fields || []) + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="withdrawal-method-save">Save withdrawal form</button></div></section></div>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Withdrawal settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto form" : "bank form") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + common + withdrawalFieldBuilder(current?.fields || defaultWithdrawalMethods().methods.find((method) => method.type === methodType)?.fields || [], methodType) + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="withdrawal-method-save">Save withdrawal form</button></div></section></div>';
     bindActions();
   }
 
@@ -2183,8 +2208,10 @@
       const labelValue = value("fieldLabel" + index);
       if (!labelValue) continue;
       const key = value("fieldId" + index) || slugify(labelValue, "field");
+      const cleanKey = key.replace(/^field-/, "").replace(/-/g, "").replace(/^[0-9]/, "field$&") || key;
+      if (methodType === "BANK" && ["bankName", "accountNumber"].includes(cleanKey)) continue;
       fields.push({
-        id: key.replace(/^field-/, "").replace(/-/g, "").replace(/^[0-9]/, "field$&") || key,
+        id: cleanKey,
         label: labelValue,
         type: value("fieldType" + index) || "TEXT",
         required: checked("fieldRequired" + index),
@@ -2193,7 +2220,6 @@
         options: value("fieldOptions" + index) ? value("fieldOptions" + index).split(",").map((item) => item.trim()).filter(Boolean) : []
       });
     }
-    if (!fields.length) { toast("Add at least one verification field."); return; }
     const method = {
       id,
       type: methodType,

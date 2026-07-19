@@ -36,6 +36,13 @@ export type WithdrawalMethod = z.infer<typeof methodSchema>;
 export type WithdrawalField = z.infer<typeof fieldSchema>;
 export type WithdrawalMethodsSetting = z.infer<typeof withdrawalMethodsSettingSchema>;
 
+const fixedBankFieldIds = new Set(["bankName", "accountNumber"]);
+
+function customFieldsForMethod(method: WithdrawalMethod) {
+  if (method.type !== "BANK") return method.fields;
+  return method.fields.filter((field) => !fixedBankFieldIds.has(field.id));
+}
+
 export const defaultWithdrawalMethodsSetting: WithdrawalMethodsSetting = {
   methods: [
     {
@@ -50,9 +57,7 @@ export const defaultWithdrawalMethodsSetting: WithdrawalMethodsSetting = {
       cooldownHours: 24,
       instructions: "Add the bank details exactly as they appear on the receiving bank account.",
       fields: [
-        { id: "bankName", label: "Bank name", type: "TEXT", required: true, placeholder: "Receiving bank", options: [] },
         { id: "accountName", label: "Account name", type: "TEXT", required: true, placeholder: "Name on bank account", options: [] },
-        { id: "accountNumber", label: "Account number / IBAN", type: "TEXT", required: true, placeholder: "Account number or IBAN", options: [] },
         { id: "sortCode", label: "Sort code / routing number", type: "TEXT", required: false, placeholder: "Optional local bank code", options: [] },
         { id: "bankCountry", label: "Bank country", type: "TEXT", required: true, placeholder: "United Kingdom", options: [] }
       ]
@@ -80,7 +85,14 @@ export const defaultWithdrawalMethodsSetting: WithdrawalMethodsSetting = {
 
 export function normalizeWithdrawalMethods(value: unknown): WithdrawalMethodsSetting {
   const parsed = withdrawalMethodsSettingSchema.safeParse(value);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    return {
+      methods: parsed.data.methods.map((method) => ({
+        ...method,
+        fields: customFieldsForMethod(method)
+      }))
+    };
+  }
   return defaultWithdrawalMethodsSetting;
 }
 
@@ -135,6 +147,17 @@ export function findWithdrawalMethod(value: unknown, type: string, methodId?: st
 export function collectWithdrawalVerificationData(method: WithdrawalMethod, payload: Record<string, unknown>) {
   const fields: Record<string, string[]> = {};
   const values: Record<string, string> = {};
+  if (method.type === "BANK") {
+    for (const fixedField of [
+      { id: "bankName", label: "Bank name" },
+      { id: "accountNumber", label: "Bank account number" }
+    ]) {
+      const raw = payload[fixedField.id];
+      const value = typeof raw === "string" ? raw.trim() : raw == null ? "" : String(raw).trim();
+      if (!value) fields[fixedField.id] = [`${fixedField.label} is required`];
+      else values[fixedField.id] = value;
+    }
+  }
   for (const field of method.fields) {
     const raw = payload[field.id];
     const value = typeof raw === "string" ? raw.trim() : raw == null ? "" : String(raw).trim();
