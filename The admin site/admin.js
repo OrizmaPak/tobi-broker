@@ -256,6 +256,19 @@
     return (prefix || "method") + "-" + (slug || Date.now().toString(36));
   }
 
+  function defaultDepositProofFields(type) {
+    if (type === "BANK") return [
+      { id: "senderName", label: "Sender name", type: "TEXT", required: true, placeholder: "Name on the sending account", options: [] },
+      { id: "senderBank", label: "Sending bank", type: "TEXT", required: false, placeholder: "Bank funds came from", options: [] },
+      { id: "transferDate", label: "Transfer date", type: "DATE", required: true, options: [] }
+    ];
+    if (type === "CRYPTO") return [
+      { id: "sentAsset", label: "Asset sent", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
+      { id: "sourceWallet", label: "Source wallet", type: "TEXT", required: false, placeholder: "Optional sending wallet address", options: [] }
+    ];
+    return [];
+  }
+
   function normalizeDepositMethods(value) {
     const fallback = defaultDepositMethods();
     const methods = Array.isArray(value?.methods) ? value.methods : fallback.methods;
@@ -273,7 +286,7 @@
         requireTransactionHash: method.requireTransactionHash === true || (method.requireTransactionHash == null && method.type === "CRYPTO"),
         requireReceiptUpload: method.requireReceiptUpload === true || (method.requireReceiptUpload == null && method.type !== "CARD"),
         proofInstructions: method.proofInstructions || (method.type === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : method.type === "BANK" ? "Enter the bank transfer reference and upload the receipt or payment screenshot." : ""),
-        proofFields: Array.isArray(method.proofFields) ? method.proofFields.map((field) => ({
+        proofFields: (Array.isArray(method.proofFields) ? method.proofFields : defaultDepositProofFields(method.type)).map((field) => ({
           id: field.id || slugify(field.label, "field"),
           label: field.label || "Proof field",
           type: ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"].includes(field.type) ? field.type : "TEXT",
@@ -281,7 +294,7 @@
           placeholder: field.placeholder || "",
           helpText: field.helpText || "",
           options: Array.isArray(field.options) ? field.options : []
-        })) : []
+        }))
       }))
     };
   }

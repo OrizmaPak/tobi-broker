@@ -4,6 +4,23 @@ import { prisma } from "../lib/prisma";
 
 export const DEPOSIT_METHODS_SETTING_KEY = "deposit.methods";
 
+function defaultProofFields(type: string) {
+  if (type === "BANK") {
+    return [
+      { id: "senderName", label: "Sender name", type: "TEXT" as const, required: true, placeholder: "Name on the sending account", options: [] },
+      { id: "senderBank", label: "Sending bank", type: "TEXT" as const, required: false, placeholder: "Bank funds came from", options: [] },
+      { id: "transferDate", label: "Transfer date", type: "DATE" as const, required: true, options: [] }
+    ];
+  }
+  if (type === "CRYPTO") {
+    return [
+      { id: "sentAsset", label: "Asset sent", type: "SELECT" as const, required: true, options: ["USDT", "BTC", "ETH"] },
+      { id: "sourceWallet", label: "Source wallet", type: "TEXT" as const, required: false, placeholder: "Optional sending wallet address", options: [] }
+    ];
+  }
+  return [];
+}
+
 const proofFieldSchema = z.object({
   id: z.string().trim().min(2).max(80),
   label: z.string().trim().min(2).max(120),
@@ -92,11 +109,7 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       requireTransactionHash: false,
       requireReceiptUpload: true,
       proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot.",
-      proofFields: [
-        { id: "senderName", label: "Sender name", type: "TEXT", required: true, placeholder: "Name on the sending account", options: [] },
-        { id: "senderBank", label: "Sending bank", type: "TEXT", required: false, placeholder: "Bank funds came from", options: [] },
-        { id: "transferDate", label: "Transfer date", type: "DATE", required: true, options: [] }
-      ]
+      proofFields: defaultProofFields("BANK")
     },
     {
       id: "crypto-usdt-trc20",
@@ -114,10 +127,7 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       requireTransactionHash: true,
       requireReceiptUpload: true,
       proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available.",
-      proofFields: [
-        { id: "sentAsset", label: "Asset sent", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
-        { id: "sourceWallet", label: "Source wallet", type: "TEXT", required: false, placeholder: "Optional sending wallet address", options: [] }
-      ]
+      proofFields: defaultProofFields("CRYPTO")
     },
     {
       id: "card-instant",
@@ -153,7 +163,7 @@ export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {
           : method.type === "BANK"
             ? "Enter the bank transfer reference and upload the receipt or payment screenshot."
             : "Card proof is not required until instant funding is enabled."),
-        proofFields: method.proofFields || []
+        proofFields: Array.isArray(method.proofFields) ? method.proofFields : defaultProofFields(method.type)
       }))
     };
   }
