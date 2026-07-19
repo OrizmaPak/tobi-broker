@@ -230,7 +230,7 @@ v1ClientRouter.get("/beneficiaries", asyncHandler(async (req, res) => {
 
 v1ClientRouter.post("/beneficiaries", requireCsrf, asyncHandler(async (req, res) => {
   const id = clientId(req);
-  await verifiedClient(id);
+  const client = await verifiedClient(id);
   const input = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("BANK"),
@@ -269,9 +269,24 @@ v1ClientRouter.post("/beneficiaries", requireCsrf, asyncHandler(async (req, res)
   };
   const collected = collectWithdrawalVerificationData(method, mergedVerificationData);
   if (Object.keys(collected.fields).length) throw new ApiError(422, "Complete the required withdrawal verification fields", "WITHDRAWAL_VERIFICATION_INCOMPLETE", collected.fields);
-  const row = input.type === "BANK"
-    ? await prisma.beneficiary.create({ data: { clientId: id, type: "BANK", label: input.label, currency: input.currency, bankName: collected.values.bankName || input.bankName, accountName: collected.values.accountName || input.accountName, accountNumberMasked: `****${String(collected.values.accountNumber || input.accountNumber).slice(-4)}`, accountToken: encryptSecret(String(collected.values.accountNumber || input.accountNumber)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } })
-    : await prisma.beneficiary.create({ data: { clientId: id, type: "CRYPTO", label: input.label, currency: collected.values.currency || input.currency, cryptoNetwork: collected.values.cryptoNetwork || input.cryptoNetwork, walletAddressMasked: `${String(collected.values.walletAddress || input.walletAddress).slice(0, 6)}...${String(collected.values.walletAddress || input.walletAddress).slice(-6)}`, walletAddressToken: encryptSecret(String(collected.values.walletAddress || input.walletAddress)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } });
+  const row = await prisma.$transaction(async (tx) => {
+    const created = input.type === "BANK"
+      ? await tx.beneficiary.create({ data: { clientId: id, type: "BANK", label: input.label, currency: input.currency, bankName: collected.values.bankName || input.bankName, accountName: collected.values.accountName || input.accountName, accountNumberMasked: `****${String(collected.values.accountNumber || input.accountNumber).slice(-4)}`, accountToken: encryptSecret(String(collected.values.accountNumber || input.accountNumber)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } })
+      : await tx.beneficiary.create({ data: { clientId: id, type: "CRYPTO", label: input.label, currency: collected.values.currency || input.currency, cryptoNetwork: collected.values.cryptoNetwork || input.cryptoNetwork, walletAddressMasked: `${String(collected.values.walletAddress || input.walletAddress).slice(0, 6)}...${String(collected.values.walletAddress || input.walletAddress).slice(-6)}`, walletAddressToken: encryptSecret(String(collected.values.walletAddress || input.walletAddress)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } });
+    await notifyAdminTx(tx, {
+      clientId: id,
+      category: "Withdrawals",
+      eventKey: "beneficiary.created",
+      severity: "INFO",
+      title: input.type === "BANK" ? "Bank account added" : "Withdrawal destination added",
+      body: `${client.name} (${client.accountNumber}) added ${created.type === "BANK" ? "bank account" : "withdrawal destination"} ${created.label} for ${created.currency}.`,
+      actionUrl: `beneficiary-review.html?id=${created.id}`,
+      entity: { type: "Beneficiary", id: created.id },
+      metadata: { clientId: id, accountNumber: client.accountNumber, beneficiaryId: created.id, type: created.type, label: created.label, currency: created.currency },
+      dedupeKey: `beneficiary.created:${created.id}`
+    });
+    return created;
+  });
   return ok(res, row, 201);
 }));
 

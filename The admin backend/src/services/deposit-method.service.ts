@@ -108,65 +108,7 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
     CRYPTO: { enabled: true, label: "Crypto funding", description: "Crypto wallet funding routes." },
     CARD: { enabled: true, label: "Card payments", description: "Instant card funding availability." }
   },
-  methods: [
-    {
-      id: "bank-london-primary",
-      type: "BANK",
-      name: "London bank transfer",
-      description: "Primary client funding account for bank transfers.",
-      enabled: true,
-      status: "ACTIVE",
-      currency: "USD",
-      bankName: "BullPort Settlement Bank",
-      accountName: "BullPort Client Funding",
-      accountNumber: "BP-CLIENT-0001",
-      sortCode: "20-18-45",
-      iban: "GB29 BULL 2026 0000 0001 01",
-      swift: "BULLGB22",
-      postingWindow: "Within 1 business day after finance confirmation",
-      instructions: "Use your BullPort account number as the payment reference.",
-      requireReference: true,
-      requireTransactionHash: false,
-      requireReceiptUpload: true,
-      proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot.",
-      proofFields: defaultProofFields("BANK")
-    },
-    {
-      id: "crypto-usdt-trc20",
-      type: "CRYPTO",
-      name: "USDT",
-      description: "USDT funding on TRC20 for faster wallet top-ups.",
-      enabled: true,
-      status: "ACTIVE",
-      currency: "USDT",
-      network: "TRC20",
-      address: "TBUllPortDemoFundingWallet000000000001",
-      postingWindow: "After chain and finance confirmation",
-      instructions: "Send only USDT on TRC20 and submit the transaction hash from this portal.",
-      requireReference: false,
-      requireTransactionHash: true,
-      requireReceiptUpload: true,
-      proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available.",
-      proofFields: defaultProofFields("CRYPTO")
-    },
-    {
-      id: "card-instant",
-      type: "CARD",
-      name: "Pay with card",
-      description: "Instant debit and credit card funding will be enabled in a later release.",
-      enabled: false,
-      status: "COMING_SOON",
-      currency: "USD",
-      networks: ["VISA", "Mastercard", "Verve", "AmEx"],
-      postingWindow: "Coming soon",
-      instructions: "Card funding is not enabled for this beta.",
-      requireReference: false,
-      requireTransactionHash: false,
-      requireReceiptUpload: false,
-      proofInstructions: "Card proof is not required until instant funding is enabled.",
-      proofFields: []
-    }
-  ]
+  methods: []
 };
 
 export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {

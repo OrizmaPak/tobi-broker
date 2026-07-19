@@ -23,6 +23,7 @@
     "kyc-review.html": ["KYC Review", "Compliance decision workspace for document checks, risk notes, blocked actions, and audit-ready outcomes."],
     "deposit-review.html": ["Deposit Review", "Funding review workspace for bank and crypto deposits, source checks, proof, and reconciliation decisions."],
     "withdrawal-review.html": ["Withdrawal Review", "Withdrawal approval workspace for KYC, destination, risk, balance, and payout controls."],
+    "beneficiary-review.html": ["Beneficiary Review", "Withdrawal destination verification workspace for bank accounts and payout addresses."],
     "portfolio-product-detail.html": ["Portfolio Product Detail", "Portfolio product controls for publishing, risk labels, minimums, projected returns, and client availability."],
     "support-ticket-detail.html": ["Support Ticket Detail", "Ticket response workspace with assignment, timeline, client context, and resolution controls."]
   };
@@ -45,6 +46,7 @@
     kycRequirements: [],
     deposits: [],
     withdrawals: [],
+    beneficiaries: [],
     products: [],
     investments: [],
     payouts: [],
@@ -112,6 +114,19 @@
       status: "No record",
       checks: [["Status", "No backend withdrawal loaded"]]
     },
+    beneficiaryReview: {
+      id: "",
+      label: "-",
+      client: emptyDetailMessage,
+      type: "-",
+      currency: "-",
+      destination: "-",
+      method: "-",
+      cooldown: "-",
+      status: "No record",
+      verificationData: {},
+      checks: [["Status", "No backend beneficiary loaded"]]
+    },
     productDetail: {
       name: emptyDetailMessage,
       risk: "-",
@@ -161,6 +176,7 @@
     approveWithdrawal: "Approve withdrawal",
     holdWithdrawal: "Place withdrawal on hold",
     requestWithdrawalInfo: "Request withdrawal information",
+    verifyBeneficiary: "Verify beneficiary",
     saveProduct: "Save product changes",
     reviewProduct: "Send product to review",
     hideProduct: "Hide product",
@@ -204,11 +220,7 @@
         CRYPTO: { enabled: true, label: "Crypto funding", description: "Crypto wallet funding routes." },
         CARD: { enabled: true, label: "Card payments", description: "Instant card funding availability." }
       },
-      methods: [
-        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use the client account number as payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot." },
-        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available." },
-        { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta.", requireReference: false, requireTransactionHash: false, requireReceiptUpload: false, proofInstructions: "Card proof is not required until instant funding is enabled." }
-      ]
+      methods: []
     };
   }
 
@@ -414,10 +426,11 @@
 
   function notificationActionUrl(row) {
     const entityType = String(row?.entityType || "").toLowerCase();
-    const entityId = row?.entityId || row?.metadata?.depositId || row?.metadata?.caseId || "";
+    const entityId = row?.entityId || row?.metadata?.depositId || row?.metadata?.caseId || row?.metadata?.beneficiaryId || "";
     if (entityType === "deposit" && entityId) return "deposit-review.html?id=" + encodeURIComponent(entityId);
     if (entityType === "kyccase" && entityId) return "kyc-review.html?id=" + encodeURIComponent(entityId);
     if (entityType === "withdrawal" && entityId) return "withdrawal-review.html?id=" + encodeURIComponent(entityId);
+    if (entityType === "beneficiary" && entityId) return "beneficiary-review.html?id=" + encodeURIComponent(entityId);
     if (row?.actionUrl) return normalizeAdminActionUrl(row.actionUrl);
     return "notifications.html";
   }
@@ -548,6 +561,7 @@
     data.kycRequirements = [];
     data.deposits = [];
     data.withdrawals = [];
+    data.beneficiaries = [];
     data.products = [];
     data.investments = [];
     data.payouts = [];
@@ -566,12 +580,13 @@
     const kycPath = isKycReviewPage
       ? "/api/v1/admin/kyc?status=all&limit=100" + (requestedClientId ? "&clientId=" + encodeURIComponent(requestedClientId) : "")
       : "/api/v1/admin/kyc?status=reviewable&limit=100";
-    const [clients, kyc, kycRequirements, deposits, withdrawals, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
+    const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi(kycPath),
       tryApi("/api/v1/admin/kyc/requirements"),
       tryApi("/api/v1/admin/money/deposits?limit=100"),
       tryApi("/api/v1/admin/money/withdrawals?limit=100"),
+      tryApi("/api/v1/admin/beneficiaries"),
       tryApi("/api/v1/admin/portfolio-products"),
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
@@ -710,6 +725,30 @@
       }
     }
 
+    if (Array.isArray(beneficiaries)) {
+      data.beneficiaries = beneficiaries;
+      const first = beneficiaries.find((row) => row.id === requestedRecordId) || beneficiaries.find((row) => row.status === "PENDING") || beneficiaries[0];
+      if (first) {
+        liveRefs.beneficiaryId = first.id;
+        const destination = first.type === "BANK"
+          ? [first.bankName, first.accountName, first.accountNumberMasked].filter(Boolean).join(" / ")
+          : [first.cryptoNetwork, first.walletAddressMasked].filter(Boolean).join(" / ");
+        data.beneficiaryReview = {
+          id: first.id,
+          label: first.label,
+          client: first.client?.name || "-",
+          type: label(first.type),
+          currency: first.currency,
+          destination: destination || "-",
+          method: first.verificationMethodId || "-",
+          cooldown: first.cooldownUntil ? new Date(first.cooldownUntil).toLocaleString() : "-",
+          status: label(first.status),
+          verificationData: first.verificationData || {},
+          checks: [["Current status", label(first.status)], ["Client", first.client?.accountNumber || "-"], ["Created", first.createdAt ? new Date(first.createdAt).toLocaleString() : "-"], ["Verified", first.verifiedAt ? new Date(first.verifiedAt).toLocaleString() : "Not verified"]]
+        };
+      }
+    }
+
     if (Array.isArray(products)) {
       data.products = products.map((row) => [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status), row.id]);
       const premium = products.find((row) => row.id === requestedRecordId) || products[0];
@@ -828,6 +867,7 @@
       "kyc-review.html": "kyc.html",
       "deposit-review.html": "deposits.html",
       "withdrawal-review.html": "withdrawals.html",
+      "beneficiary-review.html": "withdrawals.html",
       "portfolio-product-detail.html": "portfolio-products.html",
       "support-ticket-detail.html": "support.html"
     };
@@ -1162,6 +1202,16 @@
       "</div>";
   }
 
+  function beneficiaryReviewPage() {
+    const r = data.beneficiaryReview;
+    const verificationRows = Object.entries(r.verificationData || {}).map(([key, value]) => [label(key), value || "-"]);
+    return workflowSteps(["Submitted", "Destination checked", "Verified", "Available for withdrawal"], r.status === "Verified" ? 3 : 1) +
+      '<div class="grid two">' +
+      section("Withdrawal destination", "Verify the submitted beneficiary before allowing it to be used for payouts.", details([["Label", r.label], ["Client", r.client], ["Type", r.type], ["Currency", r.currency], ["Destination", r.destination], ["Verification method", r.method], ["Cooldown until", r.cooldown], ["Status", badge(r.status)]]) + "<h3>Submitted verification data</h3>" + (verificationRows.length ? details(verificationRows) : '<p class="muted">No additional verification fields were submitted.</p>') + "<h3>Review checks</h3>" + checklist(r.checks)) +
+      reviewPanel("Beneficiary decision", "Record the verification reason before approving this payout destination.", decisionButton("Verify beneficiary", "primary", "Beneficiary verified", "verifyBeneficiary")) +
+      "</div>";
+  }
+
   function productDetailPage() {
     const p = data.productDetail;
     return '<div class="grid two">' +
@@ -1265,6 +1315,7 @@
       case "kyc-review.html": return kycReviewPage();
       case "deposit-review.html": return depositReviewPage();
       case "withdrawal-review.html": return withdrawalReviewPage();
+      case "beneficiary-review.html": return beneficiaryReviewPage();
       case "portfolio-product-detail.html": return productDetailPage();
       case "support-ticket-detail.html": return supportTicketDetailPage();
       default: return overview();
@@ -1687,6 +1738,7 @@
       approveWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-approval", { note }],
       holdWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
       requestWithdrawalInfo: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-information", { note }],
+      verifyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/verify", { note }],
       saveProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "DRAFT", note }],
       reviewProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/request-publication", { note }],
       hideProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "HIDDEN", note }],
