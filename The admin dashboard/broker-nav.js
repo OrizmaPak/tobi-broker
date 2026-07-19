@@ -2267,6 +2267,16 @@
       if (href.indexOf("stock/") === 0) a.setAttribute("href", "trading.html");
       if (href === "/") a.setAttribute("href", "dashboard.html");
       if (href === "/support") a.setAttribute("href", "support.html");
+      if (a.dataset.brokerSecureNav === "true" || a.target === "_blank" || a.hasAttribute("download")) return;
+      a.dataset.brokerSecureNav = "true";
+      a.addEventListener("click", function (event) {
+        const targetHref = a.getAttribute("href") || "";
+        if (!targetHref || targetHref.charAt(0) === "#" || /^https?:\/\//i.test(targetHref) || /^mailto:|^tel:/i.test(targetHref)) return;
+        const targetPage = targetHref.split(/[?#]/)[0];
+        if (!/\.html$/i.test(targetPage) || targetHref === currentFile()) return;
+        event.preventDefault();
+        navigateTo(targetHref);
+      });
     });
   }
 
@@ -2586,8 +2596,19 @@
     return data;
   }
 
+  function showSecureNavigationState(page) {
+    if (isAuthPage()) return;
+    const targetPage = String(page || "").split(/[?#]/)[0];
+    const targetTitle = (pages[targetPage] && pages[targetPage].title) || "BullPort";
+    appState.apiLoaded = false;
+    appState.apiMessage = "Securing your BullPort session before opening " + targetTitle + ".";
+    renderPortalState(appState.apiMessage, false);
+    patchApiStatus();
+  }
+
   function navigateTo(page) {
-    location.href = page;
+    showSecureNavigationState(page);
+    setTimeout(function () { location.href = page; }, 120);
   }
 
   function normalizeResponsiveChrome() {
