@@ -64,15 +64,16 @@
       min-width: 0;
     }
 
-    .brand-mark {
-      display: grid;
-      place-items: center;
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: var(--green);
-      color: white;
-      font-weight: 800;
+    .brand-logo {
+      display: block;
+      width: 128px;
+      height: auto;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+
+    .brand-copy {
+      min-width: 0;
     }
 
     .brand-title {
@@ -397,9 +398,9 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <div class="brand-mark">BP</div>
-          <div>
-            <p class="brand-title">BullPort Admin Site</p>
+          <img class="brand-logo" src="assets/brand/bullport-logo.png" alt="BullPort">
+          <div class="brand-copy">
+            <p class="brand-title">Admin Site</p>
             <p class="brand-subtitle">Internal broker operations architecture</p>
           </div>
         </div>

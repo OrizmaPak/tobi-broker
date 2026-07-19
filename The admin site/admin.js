@@ -272,7 +272,16 @@
         requireReference: method.requireReference === true || (method.requireReference == null && method.type === "BANK"),
         requireTransactionHash: method.requireTransactionHash === true || (method.requireTransactionHash == null && method.type === "CRYPTO"),
         requireReceiptUpload: method.requireReceiptUpload === true || (method.requireReceiptUpload == null && method.type !== "CARD"),
-        proofInstructions: method.proofInstructions || (method.type === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : method.type === "BANK" ? "Enter the bank transfer reference and upload the receipt or payment screenshot." : "")
+        proofInstructions: method.proofInstructions || (method.type === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : method.type === "BANK" ? "Enter the bank transfer reference and upload the receipt or payment screenshot." : ""),
+        proofFields: Array.isArray(method.proofFields) ? method.proofFields.map((field) => ({
+          id: field.id || slugify(field.label, "field"),
+          label: field.label || "Proof field",
+          type: ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"].includes(field.type) ? field.type : "TEXT",
+          required: field.required === true,
+          placeholder: field.placeholder || "",
+          helpText: field.helpText || "",
+          options: Array.isArray(field.options) ? field.options : []
+        })) : []
       }))
     };
   }
@@ -624,6 +633,11 @@
           received: first.received ? formatMoney(first.received) : "Pending",
           source: first.rail,
           status: label(first.status),
+          externalReference: first.externalReference || "-",
+          transactionHash: first.transactionHash || "-",
+          evidenceFileId: first.evidenceFileId || "",
+          evidenceFile: first.evidenceFile || null,
+          proofData: first.proofData || {},
           checks: [["Current status", label(first.status)], ["Client", first.client?.accountNumber || "-"], ["Method", first.method], ["Review note", first.reviewNote || "No note yet"]]
         };
       }
@@ -1071,9 +1085,13 @@
 
   function depositReviewPage() {
     const r = data.depositReview;
+    const proofRows = Object.entries(r.proofData || {}).map(([key, value]) => [label(key), value || "-"]);
+    const evidenceLink = r.evidenceFileId
+      ? '<a class="btn primary" href="' + appState.apiBase + '/api/v1/files/' + encodeURIComponent(r.evidenceFileId) + '" target="_blank" rel="noopener">Open receipt</a>'
+      : '<span class="muted">No receipt uploaded</span>';
     return workflowSteps(["Submitted", "Funds detected", "Reconciliation", "Wallet credit"], 2) +
       '<div class="grid two">' +
-      section("Funding request", "Confirm the funding rail, amount, source, and client status before crediting wallet balance.", details([["Reference", r.reference], ["Client", r.client], ["Method", r.method], ["Rail", r.rail], ["Amount", r.amount], ["Received", r.received], ["Source", r.source], ["Status", badge(r.status)]]) + "<h3>Funding checks</h3>" + checklist(r.checks)) +
+      section("Funding request", "Confirm the funding rail, amount, source, and client status before crediting wallet balance.", details([["Reference", r.reference], ["Client", r.client], ["Method", r.method], ["Rail", r.rail], ["Amount", r.amount], ["Received", r.received], ["Transfer reference", r.externalReference], ["Transaction hash", r.transactionHash], ["Receipt / screenshot", evidenceLink], ["Status", badge(r.status)]]) + "<h3>Submitted proof answers</h3>" + (proofRows.length ? details(proofRows) : '<p class="muted">No custom proof answers were submitted for this route.</p>') + "<h3>Funding checks</h3>" + checklist(r.checks)) +
       reviewPanel("Finance decision", "Confirm only when the source, reference, and compliance checks are acceptable.", decisionButton("Credit wallet", "primary", "Deposit credited", "creditDeposit") + decisionButton("Flag mismatch", "danger", "Deposit flagged", "flagDeposit") + decisionButton("Request proof", "", "Proof requested", "requestDepositProof")) +
       "</div>";
   }
@@ -1198,19 +1216,25 @@
     }).join("") + '</div>';
   }
 
+  function adminBrand(variant, subtitle) {
+    const isLight = variant === "light";
+    const src = isLight ? "assets/brand/bullport-logo-light.png" : "assets/brand/bullport-logo.png";
+    return '<div class="brand ' + (isLight ? "is-light" : "is-dark") + '"><img class="brand-logo" src="' + src + '" alt="BullPort" /><div class="brand-copy"><p class="brand-title">Admin Console</p><p class="brand-subtitle">' + escapeHtml(subtitle || "Broker operations console") + '</p></div></div>';
+  }
+
   function renderSessionLoading() {
-    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><p class="auth-status">Checking your secure admin session...</p></section></main>';
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card">' + adminBrand("dark", "Broker operations console") + '<p class="auth-status">Checking your secure admin session...</p></section></main>';
   }
 
   function renderAdminLogin(message, requireMfa) {
-    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><div class="auth-heading"><p class="eyebrow">Restricted access</p><h1>Sign in to operations</h1><p>Use your assigned admin account. Access is role-controlled and session-audited.</p></div>' + (message ? '<p class="auth-error">' + escapeHtml(message) + '</p>' : '') + '<form class="auth-form" data-admin-login-form><label>Email address<input name="email" type="email" autocomplete="username" required value="' + escapeHtml(appState.pendingLogin?.email || "") + '"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label>' + (requireMfa ? '<label>Authenticator or recovery code<input name="mfaCode" autocomplete="one-time-code" required></label>' : '') + '<button class="btn primary" type="submit">Sign in securely</button></form></section></main>';
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card">' + adminBrand("dark", "Broker operations console") + '<div class="auth-heading"><p class="eyebrow">Restricted access</p><h1>Sign in to operations</h1><p>Use your assigned admin account. Access is role-controlled and session-audited.</p></div>' + (message ? '<p class="auth-error">' + escapeHtml(message) + '</p>' : '') + '<form class="auth-form" data-admin-login-form><label>Email address<input name="email" type="email" autocomplete="username" required value="' + escapeHtml(appState.pendingLogin?.email || "") + '"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label>' + (requireMfa ? '<label>Authenticator or recovery code<input name="mfaCode" autocomplete="one-time-code" required></label>' : '') + '<button class="btn primary" type="submit">Sign in securely</button></form></section></main>';
     const form = document.querySelector("[data-admin-login-form]");
     form?.addEventListener("submit", submitAdminLogin);
   }
 
   function renderMfaSetup() {
     const setup = appState.mfaSetup;
-    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card is-wide"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">MFA enrollment required</p></div></div><div class="auth-heading"><p class="eyebrow">One-time setup</p><h1>Protect this admin account</h1><p>Scan the barcode with Google Authenticator, Microsoft Authenticator, Authy or another TOTP app, store the recovery codes offline, then enter the current six-digit code.</p></div><div class="mfa-setup-grid"><div class="mfa-qr-card"><span>Scan with authenticator</span><canvas data-mfa-qr width="220" height="220" aria-label="Authenticator setup barcode"></canvas><p data-mfa-qr-fallback hidden>Barcode could not be generated. Use the manual secret instead.</p></div><div><div class="mfa-secret"><span>Manual setup secret</span><strong>' + escapeHtml(setup.secret) + '</strong></div><p class="mfa-help">Use this secret only if your authenticator cannot scan the barcode.</p></div></div><div class="recovery-grid">' + setup.recoveryCodes.map((code) => '<code>' + escapeHtml(code) + '</code>').join("") + '</div><form class="auth-form" data-mfa-confirm-form><label>Current six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button class="btn primary" type="submit">Enable MFA and continue</button></form></section></main>';
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card is-wide">' + adminBrand("dark", "MFA enrollment required") + '<div class="auth-heading"><p class="eyebrow">One-time setup</p><h1>Protect this admin account</h1><p>Scan the barcode with Google Authenticator, Microsoft Authenticator, Authy or another TOTP app, store the recovery codes offline, then enter the current six-digit code.</p></div><div class="mfa-setup-grid"><div class="mfa-qr-card"><span>Scan with authenticator</span><canvas data-mfa-qr width="220" height="220" aria-label="Authenticator setup barcode"></canvas><p data-mfa-qr-fallback hidden>Barcode could not be generated. Use the manual secret instead.</p></div><div><div class="mfa-secret"><span>Manual setup secret</span><strong>' + escapeHtml(setup.secret) + '</strong></div><p class="mfa-help">Use this secret only if your authenticator cannot scan the barcode.</p></div></div><div class="recovery-grid">' + setup.recoveryCodes.map((code) => '<code>' + escapeHtml(code) + '</code>').join("") + '</div><form class="auth-form" data-mfa-confirm-form><label>Current six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button class="btn primary" type="submit">Enable MFA and continue</button></form></section></main>';
     renderMfaQr();
     document.querySelector("[data-mfa-confirm-form]")?.addEventListener("submit", confirmMfaSetup);
   }
@@ -1407,7 +1431,7 @@
     document.title = meta[0] + " | BullPort Admin";
     const apiState = appState.apiOnline ? '<span class="api-status live">API connected</span>' : '<span class="api-status fallback">API unavailable</span>';
     const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button>' + adminAccountButton(initials) + '</div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar">' + adminBrand("light", "Broker operations console") + '<nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button>' + adminAccountButton(initials) + '</div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
     bindFilters();
   }
@@ -1827,7 +1851,7 @@
     const methodType = current?.type || type || "BANK";
     const methodName = methodType === "CRYPTO" ? "Crypto" : "Bank transfer";
     const common = '<input type="hidden" name="methodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="methodType" value="' + methodType + '"><input type="hidden" name="methodName" value="' + escapeHtml(methodName) + '"><label>Payment method<input value="' + escapeHtml(methodName) + '" readonly aria-readonly="true"></label><label>Description<textarea name="methodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="methodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="methodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="COMING_SOON" ' + (current?.status === "COMING_SOON" ? "selected" : "") + '>Coming soon</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label>';
-    const proof = '<div class="modal-fieldset"><strong>Client proof requirements</strong><label class="modal-check"><input name="requireReference" type="checkbox" ' + (current ? current.requireReference !== false ? "checked" : "" : methodType === "BANK" ? "checked" : "") + '> Require transfer reference</label><label class="modal-check"><input name="requireTransactionHash" type="checkbox" ' + (current ? current.requireTransactionHash === true ? "checked" : "" : methodType === "CRYPTO" ? "checked" : "") + '> Require transaction hash</label><label class="modal-check"><input name="requireReceiptUpload" type="checkbox" ' + (current ? current.requireReceiptUpload === true ? "checked" : "" : "checked") + '> Require receipt / screenshot upload</label><label>Proof instructions<textarea name="proofInstructions" maxlength="500">' + escapeHtml(current?.proofInstructions || (methodType === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : "Enter the bank transfer reference and upload the receipt or payment screenshot.")) + '</textarea></label></div>';
+    const proof = '<div class="modal-fieldset"><strong>Client proof requirements</strong><label class="modal-check"><input name="requireReference" type="checkbox" ' + (current ? current.requireReference !== false ? "checked" : "" : methodType === "BANK" ? "checked" : "") + '> Require transfer reference</label><label class="modal-check"><input name="requireTransactionHash" type="checkbox" ' + (current ? current.requireTransactionHash === true ? "checked" : "" : methodType === "CRYPTO" ? "checked" : "") + '> Require transaction hash</label><label class="modal-check"><input name="requireReceiptUpload" type="checkbox" ' + (current ? current.requireReceiptUpload === true ? "checked" : "" : "checked") + '> Require receipt / screenshot upload</label><label>Proof instructions<textarea name="proofInstructions" maxlength="500">' + escapeHtml(current?.proofInstructions || (methodType === "CRYPTO" ? "Enter the blockchain transaction hash and upload a transfer screenshot if available." : "Enter the bank transfer reference and upload the receipt or payment screenshot.")) + '</textarea></label></div>' + depositProofFieldBuilder(current?.proofFields || []);
     const fields = methodType === "CRYPTO"
       ? common + '<label>Network<input name="cryptoNetwork" maxlength="80" value="' + escapeHtml(current?.network || "TRC20") + '"></label><label>Wallet address<input name="cryptoAddress" maxlength="240" value="' + escapeHtml(current?.address || "") + '"></label><label>Tag or memo<input name="cryptoMemo" maxlength="120" value="' + escapeHtml(current?.tagOrMemo || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "After chain and finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Submit the transaction hash after sending funds.") + '</textarea></label>' + proof
       : common + '<label>Bank name<input name="bankName" maxlength="120" value="' + escapeHtml(current?.bankName || "") + '"></label><label>Account name<input name="accountName" maxlength="160" value="' + escapeHtml(current?.accountName || "BullPort Client Funding") + '"></label><label>Account number<input name="accountNumber" maxlength="80" value="' + escapeHtml(current?.accountNumber || "") + '"></label><label>Sort code<input name="sortCode" maxlength="40" value="' + escapeHtml(current?.sortCode || "") + '"></label><label>IBAN<input name="iban" maxlength="80" value="' + escapeHtml(current?.iban || "") + '"></label><label>SWIFT<input name="swift" maxlength="40" value="' + escapeHtml(current?.swift || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "Within 1 business day after finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Use the client account number as payment reference.") + '</textarea></label>' + proof;
@@ -1843,16 +1867,31 @@
     const id = value("methodId") || slugify(value("methodName"), methodType.toLowerCase());
     const checked = (name) => Boolean(modal?.querySelector('[name="' + name + '"]')?.checked);
     if (!value("methodName")) { toast("Enter a method name."); return; }
+    const proofFields = [];
+    for (let index = 0; index < 20; index += 1) {
+      const labelValue = value("proofFieldLabel" + index);
+      if (!labelValue) continue;
+      const key = value("proofFieldId" + index) || slugify(labelValue, "field");
+      proofFields.push({
+        id: key.replace(/^field-/, "").replace(/-/g, "").replace(/^[0-9]/, "field$&") || key,
+        label: labelValue,
+        type: value("proofFieldType" + index) || "TEXT",
+        required: checked("proofFieldRequired" + index),
+        placeholder: value("proofFieldPlaceholder" + index) || undefined,
+        helpText: value("proofFieldHelp" + index) || undefined,
+        options: value("proofFieldOptions" + index) ? value("proofFieldOptions" + index).split(",").map((item) => item.trim()).filter(Boolean) : []
+      });
+    }
     const method = methodType === "CRYPTO"
       ? {
           id, type: "CRYPTO", name: value("methodName"), description: value("methodDescription"), enabled: status !== "DISABLED", status, currency: value("methodCurrency") || "USDT",
           network: value("cryptoNetwork"), address: value("cryptoAddress"), tagOrMemo: value("cryptoMemo") || undefined, postingWindow: value("postingWindow"), instructions: value("methodInstructions"),
-          requireReference: checked("requireReference"), requireTransactionHash: checked("requireTransactionHash"), requireReceiptUpload: checked("requireReceiptUpload"), proofInstructions: value("proofInstructions")
+          requireReference: checked("requireReference"), requireTransactionHash: checked("requireTransactionHash"), requireReceiptUpload: checked("requireReceiptUpload"), proofInstructions: value("proofInstructions"), proofFields
         }
       : {
           id, type: "BANK", name: value("methodName"), description: value("methodDescription"), enabled: status !== "DISABLED", status, currency: value("methodCurrency") || "USD",
           bankName: value("bankName"), accountName: value("accountName"), accountNumber: value("accountNumber"), sortCode: value("sortCode") || undefined, iban: value("iban") || undefined, swift: value("swift") || undefined, postingWindow: value("postingWindow"), instructions: value("methodInstructions"),
-          requireReference: checked("requireReference"), requireTransactionHash: checked("requireTransactionHash"), requireReceiptUpload: checked("requireReceiptUpload"), proofInstructions: value("proofInstructions")
+          requireReference: checked("requireReference"), requireTransactionHash: checked("requireTransactionHash"), requireReceiptUpload: checked("requireReceiptUpload"), proofInstructions: value("proofInstructions"), proofFields
         };
     if (method.type === "BANK" && (!method.bankName || !method.accountName || !method.accountNumber)) { toast("Bank name, account name and account number are required."); return; }
     if (method.type === "CRYPTO" && (!method.network || !method.address)) { toast("Crypto network and address are required."); return; }
@@ -1898,6 +1937,24 @@
       '</div>';
     }).join("");
     return '<div class="withdrawal-field-builder"><div class="builder-head"><strong>Verification fields</strong><span>Leave unused rows blank. Required rows are enforced in the client portal.</span></div>' + rows + '</div>';
+  }
+
+  function depositProofFieldBuilder(fields) {
+    const rows = Array.from({ length: Math.max(6, (fields || []).length + 2) }).map((_, index) => {
+      const field = (fields || [])[index] || {};
+      const type = field.type || "TEXT";
+      const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
+      return '<div class="withdrawal-field-row">' +
+        '<label>Field key<input name="proofFieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="senderName"></label>' +
+        '<label>Label<input name="proofFieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Sender name"></label>' +
+        '<label>Type<select name="proofFieldType' + index + '">' + options + '</select></label>' +
+        '<label>Options<input name="proofFieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
+        '<label>Placeholder<input name="proofFieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
+        '<label>Help text<input name="proofFieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '"></label>' +
+        '<label class="checkbox-row"><input name="proofFieldRequired' + index + '" type="checkbox" ' + (field.required === true ? "checked" : "") + '> Required</label>' +
+      '</div>';
+    }).join("");
+    return '<div class="withdrawal-field-builder"><div class="builder-head"><strong>Custom proof fields</strong><span>These fields appear on the client deposit modal and on the admin transaction review.</span></div>' + rows + '</div>';
   }
 
   function openWithdrawalMethodEditor(type, id) {
