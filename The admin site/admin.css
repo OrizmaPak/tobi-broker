@@ -1243,6 +1243,14 @@ tr:last-child td {
   box-shadow: 0 24px 80px rgba(16, 24, 20, 0.28);
 }
 
+.modal.modal-wide {
+  width: min(1040px, calc(100vw - 28px));
+}
+
+.modal.modal-proof-wide {
+  width: min(1320px, calc(100vw - 28px));
+}
+
 .modal-head,
 .modal-actions {
   display: flex;
