@@ -69,6 +69,7 @@ export async function clientDashboard(clientId: string) {
   const approvedCase = client.kycCases.find((item) => item.status === "APPROVED" && (!item.expiresAt || item.expiresAt > new Date()));
   const approvedLegacy = client.kycReviews.find((item) => item.status === "APPROVED");
   const kycStatus = approvedCase?.status || approvedLegacy?.status || client.kycCases[0]?.status || client.kycReviews[0]?.status || "NOT_STARTED";
+  const depositMethods = await getDepositMethodsSetting();
 
   return {
     client: {
@@ -115,7 +116,8 @@ export async function clientDashboard(clientId: string) {
     payouts: client.payouts,
     distributions: client.distributionItems,
     notifications: client.notifications,
-    riskAlerts: client.riskAlerts
+    riskAlerts: client.riskAlerts,
+    depositMethods: clientVisibleDepositMethods(depositMethods)
   };
 }
 

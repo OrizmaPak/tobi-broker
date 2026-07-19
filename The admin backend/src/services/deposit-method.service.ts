@@ -129,7 +129,7 @@ export async function getDepositMethodsSetting() {
 }
 
 export async function upsertDepositMethodsSetting(value: unknown, updatedBy?: string, description?: string) {
-  const normalized = normalizeDepositMethods(value);
+  const normalized = depositMethodsSettingSchema.parse(value);
   return prisma.systemSetting.upsert({
     where: { key: DEPOSIT_METHODS_SETTING_KEY },
     update: {
