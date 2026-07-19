@@ -282,7 +282,7 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
     amount: moneySchema,
     currency: z.string().length(3).default("USD"),
     method: z.enum(["BANK", "CRYPTO", "CARD"]),
-    rail: z.string().trim().min(2).max(40),
+    rail: z.string().trim().min(2).max(80),
     evidenceFileId: z.string().optional(),
     transactionHash: z.string().trim().min(8).max(200).optional(),
     externalReference: z.string().trim().max(120).optional()
@@ -291,7 +291,11 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
   const depositMethods = await getDepositMethodsSetting();
   const configuredMethod = findDepositMethod(depositMethods, input.method, input.rail);
   if (!configuredMethod) throw new ApiError(422, "This deposit route is not currently available", "DEPOSIT_METHOD_UNAVAILABLE");
-  if (input.method === "CRYPTO" && !input.transactionHash) throw new ApiError(422, "A blockchain transaction hash is required", "TRANSACTION_HASH_REQUIRED");
+  const proofFields: Record<string, string[]> = {};
+  if (configuredMethod.requireReference && !input.externalReference) proofFields.externalReference = ["Transfer reference is required for this deposit route"];
+  if (configuredMethod.requireTransactionHash && !input.transactionHash) proofFields.transactionHash = ["Transaction hash is required for this deposit route"];
+  if (configuredMethod.requireReceiptUpload && !input.evidenceFileId) proofFields.evidenceFileId = ["Receipt or transfer proof upload is required for this deposit route"];
+  if (Object.keys(proofFields).length) throw new ApiError(422, "Complete the required deposit proof fields", "DEPOSIT_PROOF_INCOMPLETE", proofFields);
   const result = await idempotentMutation(req, id, "POST:/client/deposits", async (tx) => tx.deposit.create({
     data: {
       reference: reference("DEP"), clientId: id, method: input.method, rail: configuredMethod.name,

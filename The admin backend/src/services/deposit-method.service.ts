@@ -14,7 +14,11 @@ const methodBaseSchema = z.object({
   currency: z.string().trim().min(2).max(12).default("USD"),
   minimumAmount: z.coerce.number().nonnegative().optional(),
   postingWindow: z.string().trim().max(160).optional(),
-  instructions: z.string().trim().max(1000).optional()
+  instructions: z.string().trim().max(1000).optional(),
+  requireReference: z.boolean().optional(),
+  requireTransactionHash: z.boolean().optional(),
+  requireReceiptUpload: z.boolean().optional(),
+  proofInstructions: z.string().trim().max(500).optional()
 });
 
 const bankMethodSchema = methodBaseSchema.extend({
@@ -72,7 +76,11 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       iban: "GB29 BULL 2026 0000 0001 01",
       swift: "BULLGB22",
       postingWindow: "Within 1 business day after finance confirmation",
-      instructions: "Use your BullPort account number as the payment reference."
+      instructions: "Use your BullPort account number as the payment reference.",
+      requireReference: true,
+      requireTransactionHash: false,
+      requireReceiptUpload: true,
+      proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot."
     },
     {
       id: "crypto-usdt-trc20",
@@ -85,7 +93,11 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       network: "TRC20",
       address: "TBUllPortDemoFundingWallet000000000001",
       postingWindow: "After chain and finance confirmation",
-      instructions: "Send only USDT on TRC20 and submit the transaction hash from this portal."
+      instructions: "Send only USDT on TRC20 and submit the transaction hash from this portal.",
+      requireReference: false,
+      requireTransactionHash: true,
+      requireReceiptUpload: true,
+      proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available."
     },
     {
       id: "card-instant",
@@ -97,14 +109,32 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       currency: "USD",
       networks: ["VISA", "Mastercard", "Verve", "AmEx"],
       postingWindow: "Coming soon",
-      instructions: "Card funding is not enabled for this beta."
+      instructions: "Card funding is not enabled for this beta.",
+      requireReference: false,
+      requireTransactionHash: false,
+      requireReceiptUpload: false,
+      proofInstructions: "Card proof is not required until instant funding is enabled."
     }
   ]
 };
 
 export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {
   const parsed = depositMethodsSettingSchema.safeParse(value);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    return {
+      methods: parsed.data.methods.map((method) => ({
+        ...method,
+        requireReference: method.requireReference ?? (method.type === "BANK"),
+        requireTransactionHash: method.requireTransactionHash ?? (method.type === "CRYPTO"),
+        requireReceiptUpload: method.requireReceiptUpload ?? (method.type !== "CARD"),
+        proofInstructions: method.proofInstructions || (method.type === "CRYPTO"
+          ? "Enter the blockchain transaction hash and upload a transfer screenshot if available."
+          : method.type === "BANK"
+            ? "Enter the bank transfer reference and upload the receipt or payment screenshot."
+            : "Card proof is not required until instant funding is enabled.")
+      }))
+    };
+  }
   return defaultDepositMethodsSetting;
 }
 

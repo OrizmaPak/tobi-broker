@@ -540,9 +540,9 @@
   function fallbackDepositMethods() {
     return {
       methods: [
-        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference." },
-        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash." },
-        { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant debit and credit card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta." }
+        { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot." },
+        { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available." },
+        { id: "card-instant", type: "CARD", name: "Pay with card", description: "Instant debit and credit card funding will be enabled in a later release.", enabled: false, status: "COMING_SOON", currency: "USD", networks: ["VISA", "Mastercard", "Verve", "AmEx"], postingWindow: "Coming soon", instructions: "Card funding is not enabled for this beta.", requireReference: false, requireTransactionHash: false, requireReceiptUpload: false, proofInstructions: "Card proof is not required until instant funding is enabled." }
       ]
     };
   }
@@ -604,6 +604,29 @@
       detail = '<div class="broker-card-logos" aria-label="Supported card networks">' + (method.networks || ["VISA", "Mastercard", "Verve", "AmEx"]).map(function (network) { return "<span>" + escapeHtml(network) + "</span>"; }).join("") + '</div><div class="broker-funding-note">' + escapeHtml(method.description || "Card funding is reserved for the next release.") + "</div>";
     }
     return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || depositMethodDestination(method)) + '</small></span>' + badge(status, depositMethodTone(method)) + '</summary><div class="broker-funding-detail">' + detail + '<button type="button" data-broker-action="' + action + '" data-broker-method-id="' + escapeHtml(method.id) + '" class="' + buttonClass + '">' + buttonText + '</button></div></details>';
+  }
+
+  function depositProofSummary(method) {
+    const items = [];
+    if (method.requireReference !== false) items.push("reference");
+    if (method.requireTransactionHash === true) items.push("transaction hash");
+    if (method.requireReceiptUpload === true) items.push("receipt upload");
+    return items.length ? items.join(", ") : "No proof required";
+  }
+
+  function depositMethodColumn(title, subtitle, methods, emptyText) {
+    return '<section class="broker-deposit-column"><div class="broker-deposit-column-head"><h2>' + title + '</h2><p>' + subtitle + '</p></div><div class="broker-deposit-routes">' + (methods.length ? methods.map(function (method, index) {
+      return depositRouteCard(method, index, index === 0);
+    }).join("") : '<div class="broker-empty-route">' + emptyText + '</div>') + '</div></section>';
+  }
+
+  function depositProofFields(method) {
+    const fields = [];
+    fields.push(modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"'));
+    if (method.requireReference !== false) fields.push(modalField(method.type === "BANK" ? "Bank transfer reference" : "Transfer reference", "externalReference", "text", "", 'required maxlength="120"'));
+    if (method.requireTransactionHash === true) fields.push(modalField("Transaction hash", "transactionHash", "text", "", 'required minlength="8" maxlength="200"'));
+    if (method.requireReceiptUpload === true) fields.push('<label class="broker-form-field"><span>Receipt / screenshot</span><input name="depositProofFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="text-xs text-muted-foreground">Accepted formats: PDF, JPG and PNG. Maximum file size: 5 MB.</p>');
+    return fields.join("");
   }
 
   function fallbackWithdrawalMethods() {
@@ -1456,13 +1479,16 @@
         return (order[a.type] || 9) - (order[b.type] || 9);
       });
       const primaryRoute = methods.find(function (method) { return method.type === "BANK" && method.enabled !== false && method.status === "ACTIVE"; }) || methods.find(function (method) { return method.enabled !== false && method.status === "ACTIVE"; }) || methods[0];
-      const depositMethods = methods.length
-        ? '<div class="broker-funding-grid">' + methods.map(function (method, index) {
-            return depositRouteCard(method, index, method.enabled !== false && method.status === "ACTIVE");
-          }).join("") + "</div>"
-        : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No deposit method is currently available. Contact support before sending funds.</div>';
+      const banks = methods.filter(function (method) { return method.type === "BANK"; });
+      const cards = methods.filter(function (method) { return method.type === "CARD"; });
+      const cryptos = methods.filter(function (method) { return method.type === "CRYPTO"; });
+      const depositMethods = '<div class="broker-deposit-columns">' +
+        depositMethodColumn("Bank transfer / wire", "All configured bank accounts are listed here. Open a bank to view full payment details and submit proof for review.", banks, "No bank funding route is currently available.") +
+        depositMethodColumn("Card payment", "Instant card funding remains a controlled route. Supported card networks are shown here when enabled.", cards, "Card funding is not currently configured.") +
+        depositMethodColumn("Crypto funding", "Each supported asset and network is listed separately. Open one to copy details and submit the required proof.", cryptos, "No crypto funding route is currently available.") +
+        "</div>";
       return '' +
-        section("Choose funding method", "Select one route and open only the details you need. Bank and crypto submissions remain pending until reviewed.", depositMethods) +
+        section("Choose funding method", "Bank, card, and crypto routes are organized into three columns. Open a route to view details and submit only the proof required by operations.", depositMethods) +
         '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
         '<div class="xl:col-span-7">' + section("Deposit snapshot", "A compact view of funds currently moving into your BullPort wallet.", keyValueRows([
           { label: "Pending confirmation", value: money(state.pendingDeposit) },
@@ -2476,6 +2502,49 @@
     return field ? field.value.trim() : "";
   }
 
+  function modalFile(name) {
+    const field = document.querySelector('#broker-modal [name="' + name + '"]');
+    return field && field.files && field.files[0] ? field.files[0] : null;
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(",")[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadDepositProofIfPresent(method) {
+    const file = modalFile("depositProofFile");
+    if (!file) {
+      if (method.requireReceiptUpload === true) throw new Error("Upload the receipt or transfer screenshot for this route.");
+      return "";
+    }
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Use a PDF, JPG or PNG proof file.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("The proof file must be 5 MB or smaller.");
+    const base64 = await fileToBase64(file);
+    const uploaded = await apiRequest("/api/v1/files", { method: "POST", body: JSON.stringify({ category: "DEPOSIT_PROOF", fileName: file.name, mimeType: file.type, base64: base64 }) }, false);
+    return uploaded && uploaded.id ? uploaded.id : "";
+  }
+
+  async function submitDepositRequest(methodType, keyPrefix) {
+    const method = depositMethodById(modalValue("depositMethodId"));
+    if (!method) throw new Error("This deposit route is not available. Refresh and try again.");
+    const evidenceFileId = await uploadDepositProofIfPresent(method);
+    const body = {
+      amount: Number(modalValue("amount")),
+      currency: "USD",
+      method: methodType,
+      rail: method.id,
+      externalReference: modalValue("externalReference") || undefined,
+      transactionHash: modalValue("transactionHash") || undefined,
+      evidenceFileId: evidenceFileId || undefined
+    };
+    await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey(keyPrefix) }, body: JSON.stringify(body) }, false);
+  }
+
   function modalField(label, name, type, value, extra) {
     return '<label class="broker-form-field"><span>' + label + '</span><input name="' + name + '" type="' + (type || "text") + '" value="' + (value || "") + '" ' + (extra || "") + '></label>';
   }
@@ -2790,11 +2859,11 @@
       case "deposit-bank":
         const bankMethod = depositMethodById(node.getAttribute("data-broker-method-id")) || configuredDepositMethods().find(function (method) { return method.type === "BANK" && method.enabled !== false && method.status === "ACTIVE"; });
         if (!bankMethod) { toast("No active bank funding route is currently available.", "warning"); return; }
-        showModal("Submit bank deposit", '<p>Enter the amount already sent to ' + escapeHtml(bankMethod.name) + '. Funds remain pending until operations and finance review is complete.</p><div class="broker-form-grid"><input type="hidden" name="depositMethodId" value="' + escapeHtml(bankMethod.id) + '"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3 text-sm"><p class="font-semibold">' + escapeHtml(depositMethodDestination(bankMethod)) + '</p><p class="mt-1 text-muted-foreground">' + escapeHtml(bankMethod.instructions || "Use your BullPort account reference.") + '</p></div>' + modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"') + modalField("Bank transfer reference", "externalReference", "text", "", 'required maxlength="120"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-bank-confirm">Submit deposit</button>');
+        showModal("Submit bank transfer", '<p>Submit proof only after sending funds to ' + escapeHtml(bankMethod.name) + '. Bank transfers usually post within one business day after finance review.</p><div class="broker-form-grid"><input type="hidden" name="depositMethodId" value="' + escapeHtml(bankMethod.id) + '"><input type="hidden" name="depositMethodType" value="BANK"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3 text-sm"><p class="font-semibold">' + escapeHtml(depositMethodDestination(bankMethod)) + '</p><p class="mt-1 text-muted-foreground">' + escapeHtml(bankMethod.proofInstructions || bankMethod.instructions || "Use your BullPort account reference, then submit proof.") + '</p><p class="mt-2 text-xs font-semibold text-muted-foreground">Required proof: ' + escapeHtml(depositProofSummary(bankMethod)) + '</p></div>' + depositProofFields(bankMethod) + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-bank-confirm">Submit bank transfer</button>');
         return;
       case "deposit-bank-confirm":
         try {
-          await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey("bank-deposit") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", method: "BANK", rail: modalValue("depositMethodId") || "Bank transfer", externalReference: modalValue("externalReference") }) }, false);
+          await submitDepositRequest("BANK", "bank-deposit");
           closeModal();
           await refreshLiveView("Bank deposit submitted for operations review.", "success");
         } catch (error) { toast((error && error.message) || "Could not submit the deposit.", "warning"); }
@@ -2802,11 +2871,11 @@
       case "deposit-crypto":
         const cryptoMethod = depositMethodById(node.getAttribute("data-broker-method-id")) || configuredDepositMethods().find(function (method) { return method.type === "CRYPTO" && method.enabled !== false && method.status === "ACTIVE"; });
         if (!cryptoMethod) { toast("No active crypto funding route is currently available.", "warning"); return; }
-        showModal("Submit crypto funding", '<p>Submit a transfer only after sending it to BullPort\'s reviewed funding wallet. The transaction is credited after chain and finance confirmation.</p><div class="broker-form-grid"><input type="hidden" name="depositMethodId" value="' + escapeHtml(cryptoMethod.id) + '"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3 text-sm"><p class="font-semibold">' + escapeHtml(cryptoMethod.name) + ' on ' + escapeHtml(cryptoMethod.network || "network") + '</p><p class="mt-1 break-all text-muted-foreground">' + escapeHtml(cryptoMethod.address || "") + '</p></div>' + modalField("Amount (USD equivalent)", "amount", "number", "2500", 'min="1" step="0.01"') + modalField("Transaction hash", "transactionHash", "text", "", 'required minlength="8"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-crypto-confirm">Submit transfer</button>');
+        showModal("Submit crypto funding", '<p>Submit a transfer only after sending it to BullPort\'s reviewed funding wallet. The transaction is credited after chain and finance confirmation.</p><div class="broker-form-grid"><input type="hidden" name="depositMethodId" value="' + escapeHtml(cryptoMethod.id) + '"><input type="hidden" name="depositMethodType" value="CRYPTO"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3 text-sm"><p class="font-semibold">' + escapeHtml(cryptoMethod.name) + ' on ' + escapeHtml(cryptoMethod.network || "network") + '</p><p class="mt-1 break-all text-muted-foreground">' + escapeHtml(cryptoMethod.address || "") + '</p><p class="mt-2 text-xs font-semibold text-muted-foreground">' + escapeHtml(cryptoMethod.proofInstructions || "Submit the transaction hash and any required proof.") + '</p><p class="mt-2 text-xs font-semibold text-muted-foreground">Required proof: ' + escapeHtml(depositProofSummary(cryptoMethod)) + '</p></div>' + depositProofFields(cryptoMethod) + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="deposit-crypto-confirm">Submit transfer</button>');
         return;
       case "deposit-crypto-confirm":
         try {
-          await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey("crypto-deposit") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", method: "CRYPTO", rail: modalValue("depositMethodId") || "Crypto", transactionHash: modalValue("transactionHash") }) }, false);
+          await submitDepositRequest("CRYPTO", "crypto-deposit");
           closeModal();
           await refreshLiveView("Crypto transfer submitted for confirmation.", "success");
         } catch (error) { toast((error && error.message) || "Could not submit the crypto transfer.", "warning"); }
@@ -3167,6 +3236,7 @@
       + " .broker-notification-list{display:grid;max-height:340px;overflow:auto;padding:6px}.broker-notification-item{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;border:0;border-radius:12px;background:transparent;padding:11px 10px;text-align:left;cursor:pointer}.broker-notification-item:hover{background:#f1f8f3}.broker-notification-item strong{display:block;color:#101713;font-size:13px;font-weight:800;line-height:1.35}.broker-notification-item em,.broker-notification-item small{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal;line-height:1.4}.broker-notification-item small{color:#334155}.broker-notification-dot{margin-top:5px;height:8px;width:8px;border-radius:999px;background:#cbd5e1}.broker-notification-dot.is-new{background:#19b72f;box-shadow:0 0 0 4px rgba(25,183,47,.12)}.broker-notification-empty{padding:18px;color:#64748b;font-size:13px;text-align:center}"
       + " .broker-user-menu{position:absolute;z-index:130;width:min(320px,calc(100vw - 32px));overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:18px;background:rgba(255,255,255,.98);color:#101713;box-shadow:0 24px 70px rgba(15,23,42,.18);backdrop-filter:blur(18px)}"
       + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:grid;grid-template-columns:36px 1fr;gap:10px;align-items:center;width:100%;border:0;border-radius:12px;background:transparent;padding:10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item i{display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:10px;background:#eef8f0;color:#16a34a}.broker-user-item svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-user-item span{display:block}.broker-user-item strong{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger i{background:#fef2f2;color:#b91c1c}.broker-user-item.is-danger strong{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
+      + " .broker-deposit-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.broker-deposit-column{min-width:0;border:1px solid rgba(148,163,184,.24);border-radius:18px;background:linear-gradient(180deg,rgba(248,250,252,.74),rgba(255,255,255,.58));padding:14px}.broker-deposit-column-head{padding:4px 4px 13px}.broker-deposit-column-head h2{margin:0;color:#101713;font-size:16px;font-weight:900}.broker-deposit-column-head p{margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.5}.broker-deposit-routes{display:grid;gap:12px}.broker-empty-route{border:1px dashed rgba(148,163,184,.35);border-radius:14px;background:rgba(255,255,255,.64);padding:15px;color:#64748b;font-size:13px}.broker-deposit-column .broker-funding-route summary{min-height:118px}.dark .broker-deposit-column{border-color:rgba(148,163,184,.18);background:linear-gradient(180deg,rgba(15,23,18,.58),rgba(15,23,42,.36))}.dark .broker-deposit-column-head h2{color:#f8fafc}.dark .broker-deposit-column-head p,.dark .broker-empty-route{color:#94a3b8}.dark .broker-empty-route{background:rgba(15,23,18,.38)}"
       + " .broker-funding-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.broker-funding-grid.is-withdrawal{grid-template-columns:repeat(2,minmax(0,1fr))}.broker-funding-route{overflow:hidden;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(248,250,252,.76));box-shadow:0 14px 34px rgba(15,23,42,.06)}.broker-funding-route.is-primary{border-color:rgba(34,197,94,.24);background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(240,253,244,.82))}.broker-funding-route summary{display:flex;min-height:132px;cursor:pointer;list-style:none;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.broker-funding-route summary::-webkit-details-marker{display:none}.broker-funding-route summary span{min-width:0}.broker-funding-route summary em{display:inline-flex;height:28px;width:28px;align-items:center;justify-content:center;border-radius:999px;background:#eef8f0;color:#15803d;font-size:11px;font-style:normal;font-weight:900}.broker-funding-route summary strong{display:block;margin-top:14px;color:#101713;font-size:16px;font-weight:850}.broker-funding-route summary small{display:block;margin-top:7px;color:#64748b;font-size:12px;line-height:1.45}.broker-funding-detail{border-top:1px solid rgba(148,163,184,.2);padding:16px 18px 18px}.broker-funding-note{margin:12px 0;border-radius:12px;background:rgba(15,23,42,.04);padding:11px 12px;color:#475569;font-size:12px;line-height:1.5}.broker-address{display:inline-block;max-width:100%;overflow-wrap:anywhere}.broker-card-logos{display:flex;flex-wrap:wrap;gap:8px}.broker-card-logos span{display:inline-flex;height:34px;align-items:center;border:1px solid rgba(148,163,184,.28);border-radius:10px;background:#fff;padding:0 12px;color:#0f172a;font-size:11px;font-weight:900;letter-spacing:.04em}.dark .broker-funding-route{border-color:rgba(148,163,184,.18);background:linear-gradient(135deg,rgba(15,23,18,.84),rgba(15,23,42,.56))}.dark .broker-funding-route.is-primary{border-color:rgba(74,222,128,.24);background:linear-gradient(135deg,rgba(15,23,18,.88),rgba(20,83,45,.24))}.dark .broker-funding-route summary strong{color:#f8fafc}.dark .broker-funding-route summary small,.dark .broker-funding-note{color:#94a3b8}.dark .broker-funding-note{background:rgba(255,255,255,.05)}.dark .broker-card-logos span{border-color:rgba(148,163,184,.22);background:rgba(15,23,18,.8);color:#e2e8f0}@media (max-width:1100px){.broker-funding-grid,.broker-funding-grid.is-withdrawal{grid-template-columns:1fr}.broker-funding-route summary{min-height:auto}}"
       + " .broker-kyc-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}.broker-kyc-summary div{border:1px solid rgba(148,163,184,.25);border-radius:12px;background:rgba(248,250,252,.72);padding:12px}.broker-kyc-summary span{display:block;color:#64748b;font-size:11px;font-weight:750;text-transform:uppercase}.broker-kyc-summary strong{display:block;margin-top:5px;color:#101713;font-size:17px}.broker-kyc-requirement{overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:14px;background:rgba(255,255,255,.72)}.broker-kyc-requirement+.broker-kyc-requirement{margin-top:14px}.broker-kyc-requirement-head{display:flex;justify-content:space-between;gap:18px;padding:16px}.broker-kyc-title-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px}.broker-kyc-title-row h3{margin:0;font-size:15px;font-weight:800}.broker-kyc-requirement-head p{max-width:620px;margin:7px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-kyc-mode{flex:none;color:#15803d;font-size:11px;font-weight:800;text-transform:uppercase}.broker-kyc-slots{display:grid;border-top:1px solid rgba(148,163,184,.22)}.broker-kyc-slot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 16px}.broker-kyc-slot+.broker-kyc-slot{border-top:1px solid rgba(148,163,184,.18)}.broker-kyc-slot-copy{min-width:0}.broker-kyc-slot-copy>span{display:block;color:#64748b;font-size:10px;font-weight:800;text-transform:uppercase}.broker-kyc-slot-copy strong{display:block;overflow:hidden;margin-top:3px;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.broker-kyc-slot-copy small{display:block;margin-top:3px;color:#64748b;font-size:11px}.broker-kyc-slot-action{display:flex;flex:none;align-items:center;gap:9px}.broker-kyc-upload{border:1px solid rgba(34,197,94,.35);border-radius:9px;background:rgba(34,197,94,.08);color:#15803d;padding:8px 10px;font-size:11px;font-weight:800;cursor:pointer}.broker-kyc-upload:hover{background:rgba(34,197,94,.15)}.broker-kyc-rejection{margin:7px 0 0!important;color:#be123c!important;font-size:11px!important;font-weight:650}.dark .broker-kyc-summary div,.dark .broker-kyc-requirement{background:rgba(15,23,18,.58)}.dark .broker-kyc-summary strong{color:#e7f2e9}.dark .broker-kyc-requirement-head p,.dark .broker-kyc-slot-copy>span,.dark .broker-kyc-slot-copy small{color:#94a3b8}.dark .broker-kyc-mode,.dark .broker-kyc-upload{color:#86efac}"
       + " .broker-modal{position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px}"
@@ -3187,6 +3257,7 @@
       + " .broker-form-field{display:grid;gap:7px;color:#334155;font-size:.85rem;font-weight:600}"
       + " .broker-form-field input,.broker-form-field select,.broker-form-field textarea{width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a;padding:9px 11px;font:inherit;font-weight:500}.broker-form-field textarea{min-height:92px;resize:vertical}"
       + " .broker-form-field input[type=file]{padding:7px}"
+      + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
       + " @media (max-width:640px){.broker-kyc-summary{grid-template-columns:1fr}.broker-kyc-requirement-head,.broker-kyc-slot{align-items:flex-start;flex-direction:column}.broker-kyc-mode{white-space:normal}.broker-kyc-slot-action{width:100%;justify-content:space-between}.broker-kyc-upload{min-height:38px}.broker-modal-panel{max-height:calc(100vh - 32px);overflow:auto}.broker-modal-actions{flex-wrap:wrap}.broker-modal-button{flex:1}}"
       + " .broker-api-status{position:fixed;left:16px;bottom:16px;z-index:110;display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.35);border-radius:999px;background:rgba(255,255,255,.94);color:#0f172a;padding:8px 11px;box-shadow:0 12px 30px rgba(15,23,42,.12);font-size:12px;backdrop-filter:blur(10px)}"
       + " .broker-api-status span{width:8px;height:8px;border-radius:999px;background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.16)}"
