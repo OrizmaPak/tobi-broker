@@ -707,6 +707,26 @@
     return data;
   }
 
+  function depositStatusTone(status) {
+    const value = String(status || "").toLowerCase();
+    if (value.indexOf("credit") !== -1 || value.indexOf("posted") !== -1 || value.indexOf("complete") !== -1 || value.indexOf("approved") !== -1) return "success";
+    if (value.indexOf("reject") !== -1 || value.indexOf("fail") !== -1 || value.indexOf("cancel") !== -1 || value.indexOf("mismatch") !== -1) return "danger";
+    if (value.indexOf("review") !== -1 || value.indexOf("pending") !== -1 || value.indexOf("submit") !== -1 || value.indexOf("processing") !== -1) return "warning";
+    return "info";
+  }
+
+  function depositStatusPill(status) {
+    const text = labelize(status || "Pending");
+    const tone = depositStatusTone(status);
+    return '<span class="broker-deposit-status is-' + tone + '"><i></i>' + escapeHtml(text) + '</span>';
+  }
+
+  function depositAmountPill(amount, status) {
+    const value = numberValue(amount);
+    const tone = depositStatusTone(status);
+    return '<span class="broker-deposit-amount is-' + tone + '">' + money(value) + '</span>';
+  }
+
   function submittedDepositRows() {
     const deposits = (appState.data && Array.isArray(appState.data.deposits)) ? appState.data.deposits : [];
     return deposits.map(function (row) {
@@ -715,9 +735,9 @@
         row.reference || "-",
         row.method || "-",
         row.rail || "-",
-        money(numberValue(row.amount)),
+        depositAmountPill(row.amount, row.status),
         row.evidenceFileId ? "Uploaded" : "Not uploaded",
-        badge(labelize(row.status || "Pending"), statusTone(row.status || "PENDING"))
+        depositStatusPill(row.status)
       ];
     });
   }
@@ -3373,6 +3393,7 @@
       + " .broker-form-field input,.broker-form-field select,.broker-form-field textarea{width:100%;min-height:46px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#0f172a;padding:10px 12px;font:inherit;font-weight:600;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.broker-form-field input:focus,.broker-form-field select:focus,.broker-form-field textarea:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.broker-form-field textarea{min-height:96px;resize:vertical}"
       + " .broker-form-field input[type=file]{min-height:52px;padding:12px;background:#f8fafc;border-style:dashed}.broker-form-field input[type=file]::file-selector-button{margin-right:12px;border:0;border-radius:10px;background:#eef8f0;color:#15803d;padding:8px 11px;font:inherit;font-size:12px;font-weight:850;cursor:pointer}"
       + " .broker-deposit-proof-modal{display:grid;gap:16px}.broker-deposit-proof-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid rgba(22,163,74,.18);border-radius:18px;background:linear-gradient(135deg,rgba(240,253,244,.92),rgba(255,255,255,.92));padding:14px 16px}.broker-deposit-proof-intro span{display:inline-flex;flex:none;border-radius:999px;background:#16a34a;color:#fff;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.broker-deposit-proof-intro p{margin:0;color:#475569;font-size:13px;line-height:1.55}.broker-deposit-proof-layout{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1fr);gap:16px;align-items:start}.broker-deposit-proof-card,.broker-deposit-proof-form{min-width:0;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#fff;padding:16px;box-shadow:0 14px 32px rgba(15,23,42,.06)}.broker-deposit-proof-card{position:sticky;top:0;background:linear-gradient(180deg,#ffffff,#f8fbf9)}.broker-deposit-proof-card>small{display:block;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-card>strong{display:block;margin-top:6px;color:#101713;font-size:18px;font-weight:900;line-height:1.25}.broker-deposit-proof-card .grid{margin-top:14px}.broker-deposit-proof-note{margin-top:12px;border-radius:14px;background:#f8fafc;padding:12px}.broker-deposit-proof-note span{display:block;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-note p{margin:5px 0 0;color:#101713;font-size:13px;font-weight:750;line-height:1.45}.broker-deposit-proof-instructions{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-deposit-proof-form .broker-form-grid{margin-top:0;grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-proof-form .broker-form-field:has(textarea),.broker-deposit-proof-form .broker-form-field:has(input[type=file]),.broker-deposit-proof-form .text-xs{grid-column:1/-1}.broker-deposit-proof-form .text-xs{margin:-4px 0 0;color:#64748b;font-size:12px;line-height:1.45}"
+      + " .broker-deposit-status{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}.broker-deposit-status i{height:7px;width:7px;border-radius:999px;background:currentColor;box-shadow:0 0 0 4px currentColor;opacity:.72}.broker-deposit-status.is-success{border-color:rgba(22,163,74,.22);background:rgba(22,163,74,.1);color:#15803d}.broker-deposit-status.is-warning{border-color:rgba(217,119,6,.22);background:rgba(245,158,11,.12);color:#b45309}.broker-deposit-status.is-danger{border-color:rgba(225,29,72,.22);background:rgba(244,63,94,.1);color:#be123c}.broker-deposit-status.is-info{border-color:rgba(2,132,199,.22);background:rgba(14,165,233,.1);color:#0369a1}.broker-deposit-status i{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}.broker-deposit-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;border-radius:12px;padding:7px 10px;font-size:13px;font-weight:950;letter-spacing:0}.broker-deposit-amount.is-success{background:linear-gradient(135deg,rgba(22,163,74,.14),rgba(240,253,244,.92));color:#15803d}.broker-deposit-amount.is-warning{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(255,251,235,.94));color:#b45309}.broker-deposit-amount.is-danger{background:linear-gradient(135deg,rgba(244,63,94,.13),rgba(255,241,242,.94));color:#be123c}.broker-deposit-amount.is-info{background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(240,249,255,.94));color:#0369a1}.dark .broker-deposit-status.is-success,.dark .broker-deposit-amount.is-success{color:#86efac}.dark .broker-deposit-status.is-warning,.dark .broker-deposit-amount.is-warning{color:#fcd34d}.dark .broker-deposit-status.is-danger,.dark .broker-deposit-amount.is-danger{color:#fda4af}.dark .broker-deposit-status.is-info,.dark .broker-deposit-amount.is-info{color:#7dd3fc}"
       + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
       + " @media (max-width:860px){.broker-deposit-proof-layout{grid-template-columns:1fr}.broker-deposit-proof-card{position:static}.broker-deposit-proof-form .broker-form-grid{grid-template-columns:1fr}}"
       + " @media (max-width:640px){.broker-kyc-summary{grid-template-columns:1fr}.broker-kyc-requirement-head,.broker-kyc-slot{align-items:flex-start;flex-direction:column}.broker-kyc-mode{white-space:normal}.broker-kyc-slot-action{width:100%;justify-content:space-between}.broker-kyc-upload{min-height:38px}.broker-modal{align-items:stretch;padding:12px}.broker-modal-panel{max-height:calc(100vh - 24px);border-radius:18px}.broker-modal-header,.broker-modal-body,.broker-modal-actions{padding-left:14px;padding-right:14px}.broker-modal-actions{flex-wrap:wrap}.broker-modal-button{flex:1}.broker-deposit-proof-intro{display:grid}.broker-deposit-proof-card,.broker-deposit-proof-form{padding:14px}}"
