@@ -1191,14 +1191,14 @@
   function depositCategoryControls(setting) {
     const categories = setting.categories || normalizeDepositMethods(setting).categories;
     const meta = [
-      ["BANK", "Bank transfers", "Hide or show all bank and wire-transfer deposit routes."],
-      ["CRYPTO", "Crypto", "Hide or show all crypto wallet funding routes."],
-      ["CARD", "Card payments", "Hide or show instant card payment routes."]
+      ["BANK", "Bank transfer", "Controls every bank and wire-transfer funding route."],
+      ["CRYPTO", "Crypto", "Controls every crypto wallet funding route."],
+      ["CARD", "Card payment", "Controls instant card payment availability."]
     ];
-    return '<div class="deposit-method-toolbar deposit-category-toolbar">' + meta.map(([type, title, description]) => {
+    return '<div class="deposit-category-panel"><div class="deposit-category-head"><div><strong>Payment categories</strong><span>Enable or disable whole deposit channels before managing the individual routes below.</span></div></div><div class="deposit-category-toolbar">' + meta.map(([type, title, description]) => {
       const enabled = categories[type]?.enabled !== false;
-      return '<div><strong>' + title + '</strong><span>' + description + '</span><div class="action-row"><span>' + badge(enabled ? "Enabled" : "Disabled", enabled ? "success" : "danger") + '</span><button class="btn ' + (enabled ? "danger" : "primary") + '" type="button" data-action="deposit-category-toggle" data-category-type="' + type + '">' + (enabled ? "Disable" : "Enable") + '</button></div></div>';
-    }).join("") + '</div>';
+      return '<div class="deposit-category-card is-' + (enabled ? "enabled" : "disabled") + '"><div><strong>' + title + '</strong><span>' + description + '</span></div><div class="deposit-category-status"><span>' + badge(enabled ? "Enabled" : "Disabled", enabled ? "success" : "danger") + '</span><button class="btn ' + (enabled ? "danger" : "primary") + '" type="button" data-action="deposit-category-toggle" data-category-type="' + type + '">' + (enabled ? "Disable" : "Enable") + '</button></div></div>';
+    }).join("") + '</div></div>';
   }
 
   function depositSettingsPanel() {
@@ -1212,7 +1212,7 @@
       '<div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-view" data-method-id="' + escapeHtml(method.id) + '">View</button><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
     ]);
     const activeRoutes = setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED" && setting.categories?.[method.type]?.enabled !== false).length;
-    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", categoryControls + '<div class="deposit-method-toolbar"><div><strong>' + activeRoutes + ' active route' + (activeRoutes === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Category switches hide whole funding groups from the client portal.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + depositMethodTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
+    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", categoryControls + '<div class="deposit-method-toolbar"><div><strong>' + activeRoutes + ' active route' + (activeRoutes === 1 ? "" : "s") + '</strong><span>Manage the specific bank, crypto, and card records that belong to the enabled categories.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + depositMethodTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
   }
 
   function withdrawalSettingsPanel() {
