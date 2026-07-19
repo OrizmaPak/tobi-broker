@@ -7,7 +7,7 @@ import { prisma } from "../../lib/prisma";
 import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
-import { findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
+import { collectDepositProofData, findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
 import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
@@ -285,7 +285,8 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
     rail: z.string().trim().min(2).max(80),
     evidenceFileId: z.string().optional(),
     transactionHash: z.string().trim().min(8).max(200).optional(),
-    externalReference: z.string().trim().max(120).optional()
+    externalReference: z.string().trim().max(120).optional(),
+    proofData: z.record(z.string(), z.unknown()).default({})
   }).parse(req.body);
   if (input.method === "CARD") throw new ApiError(503, "Card funding is not currently enabled", "CARD_FUNDING_UNAVAILABLE");
   const depositMethods = await getDepositMethodsSetting();
@@ -295,11 +296,14 @@ v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
   if (configuredMethod.requireReference && !input.externalReference) proofFields.externalReference = ["Transfer reference is required for this deposit route"];
   if (configuredMethod.requireTransactionHash && !input.transactionHash) proofFields.transactionHash = ["Transaction hash is required for this deposit route"];
   if (configuredMethod.requireReceiptUpload && !input.evidenceFileId) proofFields.evidenceFileId = ["Receipt or transfer proof upload is required for this deposit route"];
+  const collectedProof = collectDepositProofData(configuredMethod, input.proofData);
+  Object.assign(proofFields, collectedProof.fields);
   if (Object.keys(proofFields).length) throw new ApiError(422, "Complete the required deposit proof fields", "DEPOSIT_PROOF_INCOMPLETE", proofFields);
   const result = await idempotentMutation(req, id, "POST:/client/deposits", async (tx) => tx.deposit.create({
     data: {
       reference: reference("DEP"), clientId: id, method: input.method, rail: configuredMethod.name,
       amount: input.amount, currency: input.currency, evidenceFileId: input.evidenceFileId,
+      proofData: collectedProof.values as Prisma.InputJsonObject,
       transactionHash: input.transactionHash, externalReference: input.externalReference,
       status: "IN_REVIEW", reviewNote: "Submitted through the client portal"
     }

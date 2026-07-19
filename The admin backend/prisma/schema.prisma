@@ -669,6 +669,7 @@ model Deposit {
   status              MoneyStatus @default(PENDING)
   reviewNote          String?
   evidenceFileId      String?
+  proofData           Json?
   transactionHash     String?
   externalReference   String?
   approvalRequestId   String?

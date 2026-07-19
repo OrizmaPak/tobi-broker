@@ -419,7 +419,10 @@ v1AdminCoreRouter.get("/money/deposits", financeRoles, asyncHandler(async (req, 
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const where: Prisma.DepositWhereInput = status ? { status: status as never } : {};
   const [rows, total] = await Promise.all([prisma.deposit.findMany({ where, include: { client: { include: { kycCases: { orderBy: { updatedAt: "desc" }, take: 1 } } } }, orderBy: { createdAt: "desc" }, skip, take: limit }), prisma.deposit.count({ where })]);
-  return ok(res, rows, 200, pageMeta(page, limit, total));
+  const evidenceIds = rows.map((row) => row.evidenceFileId).filter(Boolean) as string[];
+  const evidenceFiles = evidenceIds.length ? await prisma.storedFile.findMany({ where: { id: { in: evidenceIds } } }) : [];
+  const evidenceById = new Map(evidenceFiles.map((file) => [file.id, file]));
+  return ok(res, rows.map((row) => ({ ...row, evidenceFile: row.evidenceFileId ? evidenceById.get(row.evidenceFileId) || null : null })), 200, pageMeta(page, limit, total));
 }));
 
 v1AdminCoreRouter.get("/money/withdrawals", financeRoles, asyncHandler(async (req, res) => {

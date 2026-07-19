@@ -637,8 +637,48 @@
     fields.push(modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"'));
     if (method.requireReference !== false) fields.push(modalField(method.type === "BANK" ? "Bank transfer reference" : "Transfer reference", "externalReference", "text", "", 'required maxlength="120"'));
     if (method.requireTransactionHash === true) fields.push(modalField("Transaction hash", "transactionHash", "text", "", 'required minlength="8" maxlength="200"'));
+    (method.proofFields || []).forEach(function (field) {
+      fields.push(depositProofField(field));
+    });
     if (method.requireReceiptUpload === true) fields.push('<label class="broker-form-field"><span>Receipt / screenshot</span><input name="depositProofFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="text-xs text-muted-foreground">Accepted formats: PDF, JPG and PNG. Maximum file size: 5 MB.</p>');
     return fields.join("");
+  }
+
+  function depositProofField(field) {
+    const name = "proof_" + field.id;
+    const required = field.required !== false ? "required" : "";
+    const help = field.helpText ? '<small>' + escapeHtml(field.helpText) + '</small>' : "";
+    if (field.type === "SELECT") {
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>'; }).join("") + '</select>' + help + '</label>';
+    }
+    if (field.type === "TEXTAREA") {
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '></textarea>' + help + '</label>';
+    }
+    const type = field.type === "NUMBER" ? "number" : field.type === "EMAIL" ? "email" : field.type === "TEL" ? "tel" : field.type === "DATE" ? "date" : "text";
+    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + type + '" value="" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
+  }
+
+  function depositProofData(method) {
+    const data = {};
+    (method.proofFields || []).forEach(function (field) {
+      data[field.id] = modalValue("proof_" + field.id);
+    });
+    return data;
+  }
+
+  function submittedDepositRows() {
+    const deposits = (appState.data && Array.isArray(appState.data.deposits)) ? appState.data.deposits : [];
+    return deposits.map(function (row) {
+      return [
+        formatDate(row.submittedAt || row.createdAt),
+        row.reference || "-",
+        row.method || "-",
+        row.rail || "-",
+        money(numberValue(row.amount)),
+        row.evidenceFileId ? "Uploaded" : "Not uploaded",
+        badge(labelize(row.status || "Pending"), statusTone(row.status || "PENDING"))
+      ];
+    });
   }
 
   function fallbackWithdrawalMethods() {
@@ -1512,12 +1552,10 @@
           return '<div class="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div><p class="text-sm font-semibold">' + row.reference + '</p><p class="mt-1 text-sm text-muted-foreground">' + row.type + ' - ' + row.date + '</p></div><div class="text-right"><p class="text-sm font-semibold">' + row.amount + '</p>' + badge(row.status, statusTone(row.status)) + '</div></div>';
         })) + "</div>" +
         "</div>" +
-        section("Related wallet activity", "Recent items that affect available wallet funds.", table(
-          ["Date", "Type", "Reference", "Amount", "Status"],
-          state.transactions.map(function (row) {
-            return [row.date, row.type, row.reference, row.amount, badge(row.status, statusTone(row.status))];
-          })
-        ));
+        section("Submitted deposits", "Track every funding request submitted from this portal, including reference, proof upload and review status.", submittedDepositRows().length ? table(
+          ["Submitted", "Reference", "Method", "Route", "Amount", "Proof", "Status"],
+          submittedDepositRows()
+        ) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No deposit request has been submitted yet.</div>');
     }
     const withdrawalMethods = configuredWithdrawalMethods().sort(function (a, b) {
       const order = { BANK: 1, CRYPTO: 2 };
@@ -2562,6 +2600,7 @@
       rail: method.id,
       externalReference: modalValue("externalReference") || undefined,
       transactionHash: modalValue("transactionHash") || undefined,
+      proofData: depositProofData(method),
       evidenceFileId: evidenceFileId || undefined
     };
     await apiRequest("/api/v1/client/deposits", { method: "POST", headers: { "Idempotency-Key": requestKey(keyPrefix) }, body: JSON.stringify(body) }, false);

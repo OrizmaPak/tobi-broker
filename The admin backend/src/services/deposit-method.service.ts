@@ -4,6 +4,16 @@ import { prisma } from "../lib/prisma";
 
 export const DEPOSIT_METHODS_SETTING_KEY = "deposit.methods";
 
+const proofFieldSchema = z.object({
+  id: z.string().trim().min(2).max(80),
+  label: z.string().trim().min(2).max(120),
+  type: z.enum(["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA", "DATE"]).default("TEXT"),
+  required: z.boolean().default(false),
+  placeholder: z.string().trim().max(160).optional(),
+  helpText: z.string().trim().max(240).optional(),
+  options: z.array(z.string().trim().min(1).max(80)).default([])
+});
+
 const methodBaseSchema = z.object({
   id: z.string().trim().min(2).max(80),
   type: z.enum(["BANK", "CRYPTO", "CARD"]),
@@ -18,7 +28,8 @@ const methodBaseSchema = z.object({
   requireReference: z.boolean().optional(),
   requireTransactionHash: z.boolean().optional(),
   requireReceiptUpload: z.boolean().optional(),
-  proofInstructions: z.string().trim().max(500).optional()
+  proofInstructions: z.string().trim().max(500).optional(),
+  proofFields: z.array(proofFieldSchema).default([])
 });
 
 const bankMethodSchema = methodBaseSchema.extend({
@@ -80,7 +91,12 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       requireReference: true,
       requireTransactionHash: false,
       requireReceiptUpload: true,
-      proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot."
+      proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot.",
+      proofFields: [
+        { id: "senderName", label: "Sender name", type: "TEXT", required: true, placeholder: "Name on the sending account", options: [] },
+        { id: "senderBank", label: "Sending bank", type: "TEXT", required: false, placeholder: "Bank funds came from", options: [] },
+        { id: "transferDate", label: "Transfer date", type: "DATE", required: true, options: [] }
+      ]
     },
     {
       id: "crypto-usdt-trc20",
@@ -97,7 +113,11 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       requireReference: false,
       requireTransactionHash: true,
       requireReceiptUpload: true,
-      proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available."
+      proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available.",
+      proofFields: [
+        { id: "sentAsset", label: "Asset sent", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
+        { id: "sourceWallet", label: "Source wallet", type: "TEXT", required: false, placeholder: "Optional sending wallet address", options: [] }
+      ]
     },
     {
       id: "card-instant",
@@ -113,7 +133,8 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
       requireReference: false,
       requireTransactionHash: false,
       requireReceiptUpload: false,
-      proofInstructions: "Card proof is not required until instant funding is enabled."
+      proofInstructions: "Card proof is not required until instant funding is enabled.",
+      proofFields: []
     }
   ]
 };
@@ -131,7 +152,8 @@ export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {
           ? "Enter the blockchain transaction hash and upload a transfer screenshot if available."
           : method.type === "BANK"
             ? "Enter the bank transfer reference and upload the receipt or payment screenshot."
-            : "Card proof is not required until instant funding is enabled.")
+            : "Card proof is not required until instant funding is enabled."),
+        proofFields: method.proofFields || []
       }))
     };
   }
@@ -185,4 +207,16 @@ export function findDepositMethod(value: unknown, methodType: string, rail: stri
     if (method.type === "CRYPTO") return method.network.toLowerCase() === railValue || method.currency.toLowerCase() === railValue;
     return false;
   });
+}
+
+export function collectDepositProofData(method: DepositMethod, payload: Record<string, unknown>) {
+  const fields: Record<string, string[]> = {};
+  const values: Record<string, string> = {};
+  for (const field of method.proofFields || []) {
+    const raw = payload[field.id];
+    const value = typeof raw === "string" ? raw.trim() : raw == null ? "" : String(raw).trim();
+    if (field.required && !value) fields[field.id] = [`${field.label} is required`];
+    if (value) values[field.id] = value;
+  }
+  return { fields, values };
 }
