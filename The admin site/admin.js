@@ -23,6 +23,7 @@
     "kyc-review.html": ["KYC Review", "Compliance decision workspace for document checks, risk notes, blocked actions, and audit-ready outcomes."],
     "deposit-review.html": ["Deposit Review", "Funding review workspace for bank and crypto deposits, source checks, proof, and reconciliation decisions."],
     "withdrawal-review.html": ["Withdrawal Review", "Withdrawal approval workspace for KYC, destination, risk, balance, and payout controls."],
+    "beneficiaries.html": ["Bank Verifications", "Approve client-added withdrawal banks and crypto wallet destinations before payout use."],
     "beneficiary-review.html": ["Beneficiary Review", "Withdrawal destination verification workspace for bank accounts and payout addresses."],
     "portfolio-product-detail.html": ["Portfolio Product Detail", "Portfolio product controls for publishing, risk labels, minimums, projected returns, and client availability."],
     "support-ticket-detail.html": ["Support Ticket Detail", "Ticket response workspace with assignment, timeline, client context, and resolution controls."]
@@ -30,7 +31,7 @@
 
   const navGroups = [
     ["Operations", [["Overview", "index.html", "grid"], ["Queues", "queues.html", "list"], ["Clients", "clients.html", "users"], ["KYC Queue", "kyc.html", "shield"]]],
-    ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
+    ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Bank Verifications", "beneficiaries.html", "usercheck"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
     ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Markets & Instruments", "instruments.html", "trend"], ["Risk & Compliance", "risk.html", "alert"]]],
     ["Comms & Records", [["Reports", "reports.html", "file"], ["Notifications", "notifications.html", "bell"], ["Support Tickets", "support.html", "help"]]],
     ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
@@ -867,7 +868,7 @@
       "kyc-review.html": "kyc.html",
       "deposit-review.html": "deposits.html",
       "withdrawal-review.html": "withdrawals.html",
-      "beneficiary-review.html": "withdrawals.html",
+      "beneficiary-review.html": "beneficiaries.html",
       "portfolio-product-detail.html": "portfolio-products.html",
       "support-ticket-detail.html": "support.html"
     };
@@ -1065,6 +1066,34 @@
       section("Approval controls", "Withdrawal decisions should be auditable and role-gated.", details([["KYC dependency", "Full approval required"], ["Destination check", "Verified bank or screened wallet"], ["Risk review", "Enhanced review for crypto and high value"], ["Audit", "Decision, staff user and timestamp"]]));
   }
 
+  function beneficiaryDestination(row) {
+    if (!row) return "-";
+    if (row.type === "BANK") return [row.bankName, row.accountName, row.accountNumberMasked].filter(Boolean).join(" / ") || "-";
+    return [row.cryptoNetwork, row.walletAddressMasked].filter(Boolean).join(" / ") || "-";
+  }
+
+  function beneficiariesPage() {
+    const pending = data.beneficiaries.filter((row) => row.status === "PENDING").length;
+    const verified = data.beneficiaries.filter((row) => row.status === "VERIFIED").length;
+    const bankCount = data.beneficiaries.filter((row) => row.type === "BANK").length;
+    return '<div class="grid metrics">' + [
+      metric("Pending review", String(pending), "Client-added banks and wallets awaiting approval.", "Pending"),
+      metric("Verified", String(verified), "Destinations available for withdrawal requests.", "Active"),
+      metric("Bank profiles", String(bankCount), "Client-added bank accounts.", "Bank"),
+      metric("Total destinations", String(data.beneficiaries.length), "All withdrawal destinations in the system.", "Review")
+    ].join("") + "</div>" +
+      section("Withdrawal destination verifications", "Review and approve the bank accounts or crypto wallets clients add before they can request withdrawals.", filterableTable("Search client, label, bank, wallet...", ["Client", "Label", "Type", "Currency", "Destination", "Status", "Action"], data.beneficiaries.map((row) => [
+        row.client?.name || "-",
+        escapeHtml(row.label || "-"),
+        badge(label(row.type), row.type === "BANK" ? "success" : "info"),
+        escapeHtml(row.currency || "-"),
+        escapeHtml(beneficiaryDestination(row)),
+        badge(label(row.status), row.status === "VERIFIED" ? "success" : row.status === "REJECTED" ? "danger" : "warning"),
+        linkButton(row.status === "VERIFIED" ? "View" : "Review", "beneficiary-review.html?id=" + encodeURIComponent(row.id), row.status === "VERIFIED" ? "" : "primary")
+      ]))) +
+      section("Verification rules", "A verified destination is required before a client can submit a withdrawal.", details([["Bank profile approval", "Required before bank withdrawal"], ["Crypto wallet screening", "Required before crypto withdrawal"], ["Cooldown", "Configured per withdrawal method"], ["Audit", "Verification decision is recorded"]]));
+  }
+
   function approvalsPage() {
     const approvalSetting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {} };
     const approvalValue = approvalSetting.value && typeof approvalSetting.value === "object" && !Array.isArray(approvalSetting.value) ? approvalSetting.value : {};
@@ -1129,6 +1158,18 @@
   function clientDetailPage() {
     const c = data.clientProfile;
     const kycHref = c.kycCaseId ? "kyc-review.html?id=" + encodeURIComponent(c.kycCaseId) : "kyc-review.html?clientId=" + encodeURIComponent(c.id || liveRefs.clientId || "");
+    const clientBeneficiaries = data.beneficiaries.filter((row) => {
+      const clientId = c.id || liveRefs.clientId || "";
+      return row.clientId === clientId || row.client?.id === clientId || row.client?.accountNumber === c.account || row.client?.name === c.name;
+    });
+    const beneficiaryRows = clientBeneficiaries.map((row) => [
+      escapeHtml(row.label || "-"),
+      badge(label(row.type), row.type === "BANK" ? "success" : "info"),
+      escapeHtml(row.currency || "-"),
+      escapeHtml(beneficiaryDestination(row)),
+      badge(label(row.status), row.status === "VERIFIED" ? "success" : row.status === "REJECTED" ? "danger" : "warning"),
+      linkButton(row.status === "VERIFIED" ? "View" : "Review", "beneficiary-review.html?id=" + encodeURIComponent(row.id), row.status === "VERIFIED" ? "" : "primary")
+    ]);
     return '<div class="grid metrics">' + [
       metric("Wallet balance", c.wallet, "Available operating balance.", "Active"),
       metric("Portfolio value", c.portfolioValue, "Current recorded portfolio value.", "Active"),
@@ -1144,7 +1185,8 @@
         ["Withdrawal", data.withdrawalReview.reference, data.withdrawalReview.status, badge(data.withdrawalReview.status), linkButton("Open", "withdrawal-review.html")],
         ["Portfolio", data.productDetail.name, data.productDetail.visibility, badge(data.productDetail.visibility), linkButton("Open", "portfolio-product-detail.html")],
         ["Support", data.supportDetail.ticket, data.supportDetail.subject, badge(data.supportDetail.status), linkButton("Open", "support-ticket-detail.html")]
-      ]));
+      ])) +
+      section("Withdrawal destinations", "Client-added banks and crypto wallets requiring admin verification before withdrawal use.", beneficiaryRows.length ? table(["Label", "Type", "Currency", "Destination", "Status", "Action"], beneficiaryRows) : '<p class="muted">This client has not added a withdrawal bank or crypto wallet yet.</p>', linkButton("Open bank verifications", "beneficiaries.html", "primary"));
   }
 
   function kycReviewPage() {
@@ -1298,6 +1340,7 @@
       case "kyc.html": return kycPage();
       case "deposits.html": return depositsPage();
       case "withdrawals.html": return withdrawalsPage();
+      case "beneficiaries.html": return beneficiariesPage();
       case "approvals.html": return approvalsPage();
       case "portfolio-products.html": return productsPage();
       case "client-investments.html": return investmentsPage();
@@ -1332,7 +1375,7 @@
 
   function mobileTabs() {
     const file = activeNavFile();
-    const tabs = [["Overview", "index.html"], ["Queues", "queues.html"], ["Clients", "clients.html"], ["KYC", "kyc.html"], ["Deposits", "deposits.html"], ["Withdrawals", "withdrawals.html"], ["Products", "portfolio-products.html"], ["Risk", "risk.html"]];
+    const tabs = [["Overview", "index.html"], ["Queues", "queues.html"], ["Clients", "clients.html"], ["KYC", "kyc.html"], ["Deposits", "deposits.html"], ["Withdrawals", "withdrawals.html"], ["Bank Checks", "beneficiaries.html"], ["Products", "portfolio-products.html"], ["Risk", "risk.html"]];
     return '<div class="mobile-tabs">' + tabs.map((tab) => {
       const active = file === tab[1] || (file === "" && tab[1] === "index.html");
       return '<a class="' + (active ? "is-active" : "") + '" href="' + tab[1] + '"' + (active ? ' aria-current="page"' : "") + '>' + tab[0] + '</a>';
