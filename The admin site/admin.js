@@ -756,7 +756,20 @@
   };
 
   function currentFile() {
-    return location.pathname.split("/").pop() || "index.html";
+    const file = (location.pathname.split("/").pop() || "index.html").split(/[?#]/)[0];
+    return file || "index.html";
+  }
+
+  function activeNavFile() {
+    const detailParents = {
+      "client-detail.html": "clients.html",
+      "kyc-review.html": "kyc.html",
+      "deposit-review.html": "deposits.html",
+      "withdrawal-review.html": "withdrawals.html",
+      "portfolio-product-detail.html": "portfolio-products.html",
+      "support-ticket-detail.html": "support.html"
+    };
+    return detailParents[currentFile()] || currentFile();
   }
 
   function svg(name) {
@@ -1169,15 +1182,20 @@
   }
 
   function buildNav() {
-    const file = currentFile();
+    const file = activeNavFile();
     return navGroups.map((group) => '<div class="nav-group"><p class="nav-label">' + group[0] + '</p>' + group[1].map((item) => {
       const active = file === item[1] || (file === "" && item[1] === "index.html");
-      return '<a class="nav-link ' + (active ? "is-active" : "") + '" href="' + item[1] + '"><span class="nav-icon">' + svg(item[2]) + '</span><span>' + item[0] + "</span></a>";
+      return '<a class="nav-link ' + (active ? "is-active" : "") + '" href="' + item[1] + '"' + (active ? ' aria-current="page"' : "") + '><span class="nav-icon">' + svg(item[2]) + '</span><span>' + item[0] + "</span></a>";
     }).join("") + "</div>").join("");
   }
 
   function mobileTabs() {
-    return '<div class="mobile-tabs"><a href="index.html">Overview</a><a href="queues.html">Queues</a><a href="clients.html">Clients</a><a href="kyc.html">KYC</a><a href="deposits.html">Deposits</a><a href="withdrawals.html">Withdrawals</a><a href="portfolio-products.html">Products</a><a href="risk.html">Risk</a></div>';
+    const file = activeNavFile();
+    const tabs = [["Overview", "index.html"], ["Queues", "queues.html"], ["Clients", "clients.html"], ["KYC", "kyc.html"], ["Deposits", "deposits.html"], ["Withdrawals", "withdrawals.html"], ["Products", "portfolio-products.html"], ["Risk", "risk.html"]];
+    return '<div class="mobile-tabs">' + tabs.map((tab) => {
+      const active = file === tab[1] || (file === "" && tab[1] === "index.html");
+      return '<a class="' + (active ? "is-active" : "") + '" href="' + tab[1] + '"' + (active ? ' aria-current="page"' : "") + '>' + tab[0] + '</a>';
+    }).join("") + '</div>';
   }
 
   function renderSessionLoading() {

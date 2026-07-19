@@ -1328,6 +1328,12 @@ tr:last-child td {
   font-weight: 800;
 }
 
+.mobile-tabs a.is-active {
+  border-color: rgba(22, 163, 74, 0.35);
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--green-dark);
+}
+
 .toast-root {
   position: fixed;
   right: 16px;
