@@ -80,7 +80,22 @@ export const depositMethodSchema = z.discriminatedUnion("type", [
   cardMethodSchema
 ]);
 
+const depositCategorySchema = z.object({
+  enabled: z.boolean().default(true),
+  label: z.string().trim().max(80).optional(),
+  description: z.string().trim().max(240).optional()
+});
+
 export const depositMethodsSettingSchema = z.object({
+  categories: z.object({
+    BANK: depositCategorySchema.optional(),
+    CRYPTO: depositCategorySchema.optional(),
+    CARD: depositCategorySchema.optional()
+  }).default({
+    BANK: { enabled: true, label: "Bank transfers" },
+    CRYPTO: { enabled: true, label: "Crypto funding" },
+    CARD: { enabled: true, label: "Card payments" }
+  }),
   methods: z.array(depositMethodSchema).default([])
 });
 
@@ -88,6 +103,11 @@ export type DepositMethod = z.infer<typeof depositMethodSchema>;
 export type DepositMethodsSetting = z.infer<typeof depositMethodsSettingSchema>;
 
 export const defaultDepositMethodsSetting: DepositMethodsSetting = {
+  categories: {
+    BANK: { enabled: true, label: "Bank transfers", description: "Manual bank and wire-transfer funding routes." },
+    CRYPTO: { enabled: true, label: "Crypto funding", description: "Crypto wallet funding routes." },
+    CARD: { enabled: true, label: "Card payments", description: "Instant card funding availability." }
+  },
   methods: [
     {
       id: "bank-london-primary",
@@ -152,7 +172,13 @@ export const defaultDepositMethodsSetting: DepositMethodsSetting = {
 export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {
   const parsed = depositMethodsSettingSchema.safeParse(value);
   if (parsed.success) {
+    const categories = parsed.data.categories;
     return {
+      categories: {
+        BANK: { enabled: categories.BANK?.enabled !== false, label: categories.BANK?.label || "Bank transfers", description: categories.BANK?.description },
+        CRYPTO: { enabled: categories.CRYPTO?.enabled !== false, label: categories.CRYPTO?.label || "Crypto funding", description: categories.CRYPTO?.description },
+        CARD: { enabled: categories.CARD?.enabled !== false, label: categories.CARD?.label || "Card payments", description: categories.CARD?.description }
+      },
       methods: parsed.data.methods.map((method) => ({
         ...method,
         requireReference: method.requireReference ?? (method.type === "BANK"),
@@ -173,7 +199,8 @@ export function normalizeDepositMethods(value: unknown): DepositMethodsSetting {
 export function clientVisibleDepositMethods(value: unknown) {
   const setting = normalizeDepositMethods(value);
   return {
-    methods: setting.methods.filter((method) => method.status !== "DISABLED")
+    categories: setting.categories,
+    methods: setting.methods.filter((method) => method.status !== "DISABLED" && setting.categories[method.type]?.enabled !== false)
   };
 }
 
@@ -210,7 +237,9 @@ export async function upsertDepositMethodsSetting(value: unknown, updatedBy?: st
 
 export function findDepositMethod(value: unknown, methodType: string, rail: string) {
   const railValue = String(rail || "").toLowerCase();
-  return normalizeDepositMethods(value).methods.find((method) => {
+  const setting = normalizeDepositMethods(value);
+  return setting.methods.find((method) => {
+    if (setting.categories[method.type]?.enabled === false) return false;
     if (method.type !== methodType || method.status !== "ACTIVE" || method.enabled === false) return false;
     if (method.id.toLowerCase() === railValue || method.name.toLowerCase() === railValue) return true;
     if (method.type === "BANK") return railValue === "bank transfer" || method.bankName.toLowerCase() === railValue;

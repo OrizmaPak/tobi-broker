@@ -539,6 +539,11 @@
 
   function fallbackDepositMethods() {
     return {
+      categories: {
+        BANK: { enabled: true, label: "Bank transfers" },
+        CRYPTO: { enabled: true, label: "Crypto funding" },
+        CARD: { enabled: true, label: "Card payments" }
+      },
       methods: [
         { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use your BullPort account number as the payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot.", proofFields: defaultDepositProofFields("BANK") },
         { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available.", proofFields: defaultDepositProofFields("CRYPTO") },
@@ -551,7 +556,10 @@
     const value = appState.data && appState.data.depositMethods && Array.isArray(appState.data.depositMethods.methods)
       ? appState.data.depositMethods
       : fallbackDepositMethods();
-    return value.methods.filter(function (method) { return method && method.status !== "DISABLED"; });
+    const categories = value.categories || fallbackDepositMethods().categories;
+    return value.methods.filter(function (method) {
+      return method && method.status !== "DISABLED" && categories[method.type]?.enabled !== false;
+    });
   }
 
   function defaultDepositProofFields(type) {

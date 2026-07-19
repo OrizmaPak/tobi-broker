@@ -199,6 +199,11 @@
 
   function defaultDepositMethods() {
     return {
+      categories: {
+        BANK: { enabled: true, label: "Bank transfers", description: "Manual bank and wire-transfer funding routes." },
+        CRYPTO: { enabled: true, label: "Crypto funding", description: "Crypto wallet funding routes." },
+        CARD: { enabled: true, label: "Card payments", description: "Instant card funding availability." }
+      },
       methods: [
         { id: "bank-london-primary", type: "BANK", name: "London bank transfer", description: "Primary client funding account for bank transfers.", enabled: true, status: "ACTIVE", currency: "USD", bankName: "BullPort Settlement Bank", accountName: "BullPort Client Funding", accountNumber: "BP-CLIENT-0001", sortCode: "20-18-45", iban: "GB29 BULL 2026 0000 0001 01", swift: "BULLGB22", postingWindow: "Within 1 business day after finance confirmation", instructions: "Use the client account number as payment reference.", requireReference: true, requireTransactionHash: false, requireReceiptUpload: true, proofInstructions: "Enter the bank transfer reference and upload the receipt or payment screenshot." },
         { id: "crypto-usdt-trc20", type: "CRYPTO", name: "USDT", description: "USDT funding on TRC20 for faster wallet top-ups.", enabled: true, status: "ACTIVE", currency: "USDT", network: "TRC20", address: "TBUllPortDemoFundingWallet000000000001", postingWindow: "After chain and finance confirmation", instructions: "Send only USDT on TRC20 and submit the transaction hash.", requireReference: false, requireTransactionHash: true, requireReceiptUpload: true, proofInstructions: "Enter the blockchain transaction hash and upload a transfer screenshot if available." },
@@ -272,7 +277,13 @@
   function normalizeDepositMethods(value) {
     const fallback = defaultDepositMethods();
     const methods = Array.isArray(value?.methods) ? value.methods : fallback.methods;
+    const rawCategories = value?.categories && typeof value.categories === "object" && !Array.isArray(value.categories) ? value.categories : {};
     return {
+      categories: {
+        BANK: { enabled: rawCategories.BANK?.enabled !== false, label: rawCategories.BANK?.label || "Bank transfers", description: rawCategories.BANK?.description || "Manual bank and wire-transfer funding routes." },
+        CRYPTO: { enabled: rawCategories.CRYPTO?.enabled !== false, label: rawCategories.CRYPTO?.label || "Crypto funding", description: rawCategories.CRYPTO?.description || "Crypto wallet funding routes." },
+        CARD: { enabled: rawCategories.CARD?.enabled !== false, label: rawCategories.CARD?.label || "Card payments", description: rawCategories.CARD?.description || "Instant card funding availability." }
+      },
       methods: methods.map((method) => ({
         ...method,
         id: method.id || slugify(method.name, String(method.type || "method").toLowerCase()),
@@ -1177,16 +1188,31 @@
     return section("Admin users and roles", "Active staff identities and enforced role boundaries.", table(["Admin", "Email", "Role", "MFA", "Last login", "Status"], data.adminUsers.map((row) => [row.name, row.email, label(row.role), row.mfa?.enabledAt ? "Enabled" : "Enrollment required", row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : "Never", badge(row.isActive ? "Active" : "Inactive")])), modalButton("Invite admin", "admin-user", "primary"));
   }
 
+  function depositCategoryControls(setting) {
+    const categories = setting.categories || normalizeDepositMethods(setting).categories;
+    const meta = [
+      ["BANK", "Bank transfers", "Hide or show all bank and wire-transfer deposit routes."],
+      ["CRYPTO", "Crypto", "Hide or show all crypto wallet funding routes."],
+      ["CARD", "Card payments", "Hide or show instant card payment routes."]
+    ];
+    return '<div class="deposit-method-toolbar deposit-category-toolbar">' + meta.map(([type, title, description]) => {
+      const enabled = categories[type]?.enabled !== false;
+      return '<div><strong>' + title + '</strong><span>' + description + '</span><div class="action-row"><span>' + badge(enabled ? "Enabled" : "Disabled", enabled ? "success" : "danger") + '</span><button class="btn ' + (enabled ? "danger" : "primary") + '" type="button" data-action="deposit-category-toggle" data-category-type="' + type + '">' + (enabled ? "Disable" : "Enable") + '</button></div></div>';
+    }).join("") + '</div>';
+  }
+
   function depositSettingsPanel() {
     const setting = depositMethodsValue();
+    const categoryControls = depositCategoryControls(setting);
     const rows = setting.methods.map((method) => [
       badge(method.type, method.type === "CARD" ? "warning" : method.type === "CRYPTO" ? "info" : "success"),
       '<strong>' + escapeHtml(method.name) + '</strong><br><span class="muted">' + escapeHtml(method.description || "No description") + '</span>',
       truncatedText(depositMethodDestination(method), 20, "deposit-destination-preview"),
-      badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
+      badge(setting.categories?.[method.type]?.enabled === false ? "CATEGORY DISABLED" : method.status || (method.enabled ? "ACTIVE" : "DISABLED"), setting.categories?.[method.type]?.enabled === false ? "danger" : method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
       '<div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-view" data-method-id="' + escapeHtml(method.id) + '">View</button><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
     ]);
-    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + depositMethodTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
+    const activeRoutes = setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED" && setting.categories?.[method.type]?.enabled !== false).length;
+    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", categoryControls + '<div class="deposit-method-toolbar"><div><strong>' + activeRoutes + ' active route' + (activeRoutes === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Category switches hide whole funding groups from the client portal.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + depositMethodTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
   }
 
   function withdrawalSettingsPanel() {
@@ -1501,7 +1527,7 @@
       "admin-logout", "approval-confirm", "kyc-requirement-save",
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
       "task-status", "report-download", "deposit-method-save",
-      "deposit-method-toggle", "setting-save", "decision"
+      "deposit-method-toggle", "deposit-category-toggle", "setting-save", "decision"
     ].includes(action);
   }
 
@@ -1596,6 +1622,7 @@
           else if (action === "deposit-proof-field-add") addDepositProofFieldRow();
           else if (action === "deposit-proof-field-remove") removeDepositProofFieldRow(node);
           else if (action === "deposit-method-save") await submitDepositMethod();
+          else if (action === "deposit-category-toggle") await toggleDepositCategory(node.dataset.categoryType);
           else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
           else if (action === "withdrawal-method-new") openWithdrawalMethodEditor(node.dataset.methodType);
           else if (action === "withdrawal-method-edit") openWithdrawalMethodEditor(null, node.dataset.methodId);
@@ -1947,7 +1974,7 @@
     if (method.type === "CRYPTO" && (!method.network || !method.address)) { toast("Crypto network and address are required."); return; }
     const setting = depositMethodsValue();
     const next = setting.methods.filter((item) => item.id !== id).concat(method);
-    await saveDepositMethods({ methods: next });
+    await saveDepositMethods({ categories: setting.categories, methods: next });
     closeModal();
     render();
     toast("Deposit method saved.");
@@ -1960,9 +1987,23 @@
       const enabled = method.enabled === false || method.status === "DISABLED";
       return { ...method, enabled, status: enabled ? (method.type === "CARD" ? "COMING_SOON" : "ACTIVE") : "DISABLED" };
     });
-    await saveDepositMethods({ methods: next });
+    await saveDepositMethods({ categories: setting.categories, methods: next });
     render();
     toast("Deposit method updated.");
+  }
+
+  async function toggleDepositCategory(type) {
+    if (!["BANK", "CRYPTO", "CARD"].includes(type)) return;
+    const setting = depositMethodsValue();
+    const categories = setting.categories || normalizeDepositMethods(setting).categories;
+    const enabled = categories[type]?.enabled === false;
+    const nextCategories = {
+      ...categories,
+      [type]: { ...categories[type], enabled }
+    };
+    await saveDepositMethods({ categories: nextCategories, methods: setting.methods });
+    render();
+    toast(label(type) + " deposit category " + (enabled ? "enabled." : "disabled."));
   }
 
   async function saveWithdrawalMethods(value) {

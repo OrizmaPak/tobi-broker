@@ -825,6 +825,23 @@ a {
   line-height: 1.45;
 }
 
+.deposit-category-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.deposit-category-toolbar > div {
+  min-width: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 12px;
+}
+
+.deposit-category-toolbar .action-row {
+  margin-top: 12px;
+}
+
 .modal-wide {
   width: min(1040px, calc(100vw - 28px));
 }
@@ -1562,6 +1579,10 @@ tr:last-child td {
   .deposit-method-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .deposit-category-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .builder-head {
