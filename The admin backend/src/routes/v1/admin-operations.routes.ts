@@ -7,6 +7,7 @@ import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
 import { DEPOSIT_METHODS_SETTING_KEY, getDepositMethodsSetting, upsertDepositMethodsSetting } from "../../services/deposit-method.service";
+import { WITHDRAWAL_METHODS_SETTING_KEY, getWithdrawalMethodsSetting, upsertWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { ADMIN_NOTIFICATION_RECIPIENT_ID, markAllNotificationsRead, markNotificationRead, notificationInbox, notifyClient } from "../../services/notification.service";
 
 export const v1AdminOperationsRouter = Router();
@@ -193,6 +194,7 @@ v1AdminOperationsRouter.patch("/admin-users/:id", superAdmin, asyncHandler(async
 
 v1AdminOperationsRouter.get("/settings", superAdmin, asyncHandler(async (_req, res) => {
   await getDepositMethodsSetting();
+  await getWithdrawalMethodsSetting();
   await ensureApprovalPolicySetting(_req.user!.id);
   const rows = await prisma.systemSetting.findMany({ where: { isSecret: false }, orderBy: { key: "asc" } });
   return ok(res, rows);
@@ -203,6 +205,8 @@ v1AdminOperationsRouter.put("/settings/:key", superAdmin, asyncHandler(async (re
   const key = String(req.params.key);
   const row = key === DEPOSIT_METHODS_SETTING_KEY
     ? await upsertDepositMethodsSetting(input.value, req.user!.id, input.description || "Accepted client wallet funding routes including bank, crypto and card availability.")
+    : key === WITHDRAWAL_METHODS_SETTING_KEY
+      ? await upsertWithdrawalMethodsSetting(input.value, req.user!.id, input.description || "Accepted client withdrawal routes and beneficiary verification field requirements.")
     : key === APPROVAL_SETTINGS_KEY
       ? await prisma.systemSetting.upsert({ where: { key }, update: { value: { ...DEFAULT_APPROVAL_POLICY, ...(typeof input.value === "object" && input.value !== null && !Array.isArray(input.value) ? input.value : {}) } as never, description: input.description, updatedBy: req.user!.id }, create: { key, value: { ...DEFAULT_APPROVAL_POLICY, ...(typeof input.value === "object" && input.value !== null && !Array.isArray(input.value) ? input.value : {}) } as never, description: input.description || "Sensitive operation approval policy, including deposit auto-approval.", updatedBy: req.user!.id } })
     : await prisma.systemSetting.upsert({ where: { key }, update: { value: input.value as never, description: input.description, updatedBy: req.user!.id }, create: { key, value: input.value as never, description: input.description, updatedBy: req.user!.id } });

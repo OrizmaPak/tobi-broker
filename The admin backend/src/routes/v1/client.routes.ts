@@ -8,6 +8,7 @@ import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
+import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
 import { debitClientCashTx, placeWalletHoldTx, releaseWalletHoldTx } from "../../services/ledger.service";
@@ -231,12 +232,46 @@ v1ClientRouter.post("/beneficiaries", requireCsrf, asyncHandler(async (req, res)
   const id = clientId(req);
   await verifiedClient(id);
   const input = z.discriminatedUnion("type", [
-    z.object({ type: z.literal("BANK"), label: z.string().min(2).max(80), currency: z.string().length(3).default("USD"), bankName: z.string().min(2).max(100), accountName: z.string().min(2).max(120), accountNumber: z.string().min(4).max(40) }),
-    z.object({ type: z.literal("CRYPTO"), label: z.string().min(2).max(80), currency: z.string().min(2).max(10), cryptoNetwork: z.string().min(2).max(30), walletAddress: z.string().min(12).max(160) })
+    z.object({
+      type: z.literal("BANK"),
+      methodId: z.string().trim().max(80).optional(),
+      label: z.string().trim().min(2).max(80),
+      currency: z.string().length(3).default("USD"),
+      bankName: z.string().trim().min(2).max(100).optional(),
+      accountName: z.string().trim().min(2).max(120).optional(),
+      accountNumber: z.string().trim().min(4).max(80).optional(),
+      verificationData: z.record(z.string(), z.unknown()).default({})
+    }),
+    z.object({
+      type: z.literal("CRYPTO"),
+      methodId: z.string().trim().max(80).optional(),
+      label: z.string().trim().min(2).max(80),
+      currency: z.string().min(2).max(10).default("USDT"),
+      cryptoNetwork: z.string().trim().min(2).max(40).optional(),
+      walletAddress: z.string().trim().min(8).max(200).optional(),
+      verificationData: z.record(z.string(), z.unknown()).default({})
+    })
   ]).parse(req.body);
+  const withdrawalMethods = await getWithdrawalMethodsSetting();
+  const method = findWithdrawalMethod(withdrawalMethods, input.type, input.methodId);
+  if (!method) throw new ApiError(422, "This withdrawal destination type is not currently available", "WITHDRAWAL_METHOD_UNAVAILABLE");
+  const mergedVerificationData = {
+    ...input.verificationData,
+    ...(input.type === "BANK" ? {
+      bankName: input.bankName || input.verificationData.bankName,
+      accountName: input.accountName || input.verificationData.accountName,
+      accountNumber: input.accountNumber || input.verificationData.accountNumber
+    } : {
+      currency: input.currency || input.verificationData.currency,
+      cryptoNetwork: input.cryptoNetwork || input.verificationData.cryptoNetwork,
+      walletAddress: input.walletAddress || input.verificationData.walletAddress
+    })
+  };
+  const collected = collectWithdrawalVerificationData(method, mergedVerificationData);
+  if (Object.keys(collected.fields).length) throw new ApiError(422, "Complete the required withdrawal verification fields", "WITHDRAWAL_VERIFICATION_INCOMPLETE", collected.fields);
   const row = input.type === "BANK"
-    ? await prisma.beneficiary.create({ data: { clientId: id, type: "BANK", label: input.label, currency: input.currency, bankName: input.bankName, accountName: input.accountName, accountNumberMasked: `****${input.accountNumber.slice(-4)}`, accountToken: encryptSecret(input.accountNumber), cooldownUntil: new Date(Date.now() + 24 * 60 * 60 * 1000) } })
-    : await prisma.beneficiary.create({ data: { clientId: id, type: "CRYPTO", label: input.label, currency: input.currency, cryptoNetwork: input.cryptoNetwork, walletAddressMasked: `${input.walletAddress.slice(0, 6)}...${input.walletAddress.slice(-6)}`, walletAddressToken: encryptSecret(input.walletAddress), cooldownUntil: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    ? await prisma.beneficiary.create({ data: { clientId: id, type: "BANK", label: input.label, currency: input.currency, bankName: collected.values.bankName || input.bankName, accountName: collected.values.accountName || input.accountName, accountNumberMasked: `****${String(collected.values.accountNumber || input.accountNumber).slice(-4)}`, accountToken: encryptSecret(String(collected.values.accountNumber || input.accountNumber)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } })
+    : await prisma.beneficiary.create({ data: { clientId: id, type: "CRYPTO", label: input.label, currency: collected.values.currency || input.currency, cryptoNetwork: collected.values.cryptoNetwork || input.cryptoNetwork, walletAddressMasked: `${String(collected.values.walletAddress || input.walletAddress).slice(0, 6)}...${String(collected.values.walletAddress || input.walletAddress).slice(-6)}`, walletAddressToken: encryptSecret(String(collected.values.walletAddress || input.walletAddress)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } });
   return ok(res, row, 201);
 }));
 

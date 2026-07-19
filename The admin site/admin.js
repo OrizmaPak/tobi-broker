@@ -57,6 +57,7 @@
     adminUsers: [],
     settingsRows: [],
     depositMethods: { methods: [] },
+    withdrawalMethods: { methods: [] },
     tasks: [],
     instruments: [],
     reports: [],
@@ -206,6 +207,50 @@
     };
   }
 
+  function defaultWithdrawalMethods() {
+    return {
+      methods: [
+        {
+          id: "bank-withdrawal-primary",
+          type: "BANK",
+          name: "Bank withdrawal",
+          description: "Withdraw cleared USD balance to a reviewed bank account.",
+          enabled: true,
+          status: "ACTIVE",
+          currency: "USD",
+          reviewWindow: "Same business day after finance review",
+          cooldownHours: 24,
+          instructions: "Add the bank details exactly as they appear on the receiving bank account.",
+          fields: [
+            { id: "bankName", label: "Bank name", type: "TEXT", required: true, placeholder: "Receiving bank" },
+            { id: "accountName", label: "Account name", type: "TEXT", required: true, placeholder: "Name on bank account" },
+            { id: "accountNumber", label: "Account number / IBAN", type: "TEXT", required: true, placeholder: "Account number or IBAN" },
+            { id: "sortCode", label: "Sort code / routing number", type: "TEXT", required: false, placeholder: "Optional local bank code" },
+            { id: "bankCountry", label: "Bank country", type: "TEXT", required: true, placeholder: "United Kingdom" }
+          ]
+        },
+        {
+          id: "crypto-withdrawal-primary",
+          type: "CRYPTO",
+          name: "Crypto withdrawal",
+          description: "Withdraw to a screened crypto wallet destination.",
+          enabled: true,
+          status: "ACTIVE",
+          currency: "USDT",
+          reviewWindow: "Enhanced review before release",
+          cooldownHours: 48,
+          instructions: "Confirm the network carefully. Crypto withdrawals sent to a wrong network cannot be recovered.",
+          fields: [
+            { id: "currency", label: "Asset", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
+            { id: "cryptoNetwork", label: "Network", type: "SELECT", required: true, options: ["TRC20", "ERC20", "BTC", "ETH"] },
+            { id: "walletAddress", label: "Wallet address", type: "TEXT", required: true, placeholder: "Paste the full wallet address" },
+            { id: "walletLabel", label: "Wallet label", type: "TEXT", required: false, placeholder: "Personal cold wallet" }
+          ]
+        }
+      ]
+    };
+  }
+
   function slugify(value, prefix) {
     const slug = String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 56);
     return (prefix || "method") + "-" + (slug || Date.now().toString(36));
@@ -228,6 +273,33 @@
     };
   }
 
+  function normalizeWithdrawalMethods(value) {
+    const fallback = defaultWithdrawalMethods();
+    const methods = Array.isArray(value?.methods) ? value.methods : fallback.methods;
+    return {
+      methods: methods.map((method) => ({
+        ...method,
+        id: method.id || slugify(method.name, String(method.type || "method").toLowerCase() + "-withdrawal"),
+        type: ["BANK", "CRYPTO"].includes(method.type) ? method.type : "BANK",
+        name: method.name || "Withdrawal method",
+        description: method.description || "",
+        enabled: method.enabled !== false,
+        status: method.status === "DISABLED" ? "DISABLED" : "ACTIVE",
+        currency: method.currency || (method.type === "CRYPTO" ? "USDT" : "USD"),
+        cooldownHours: Number(method.cooldownHours ?? (method.type === "CRYPTO" ? 48 : 24)),
+        fields: Array.isArray(method.fields) ? method.fields.map((field) => ({
+          id: field.id || slugify(field.label, "field"),
+          label: field.label || "Verification field",
+          type: ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].includes(field.type) ? field.type : "TEXT",
+          required: field.required !== false,
+          placeholder: field.placeholder || "",
+          helpText: field.helpText || "",
+          options: Array.isArray(field.options) ? field.options : []
+        })) : []
+      }))
+    };
+  }
+
   function depositMethodsSettingRow() {
     return data.settingsRows.find((row) => row.key === "deposit.methods") || { key: "deposit.methods", value: data.depositMethods, description: "Accepted client wallet funding routes including bank, crypto and card availability." };
   }
@@ -235,6 +307,20 @@
   function depositMethodsValue() {
     data.depositMethods = normalizeDepositMethods(depositMethodsSettingRow().value || data.depositMethods);
     return data.depositMethods;
+  }
+
+  function withdrawalMethodsSettingRow() {
+    return data.settingsRows.find((row) => row.key === "withdrawal.methods") || { key: "withdrawal.methods", value: data.withdrawalMethods, description: "Accepted client withdrawal routes and beneficiary verification field requirements." };
+  }
+
+  function withdrawalMethodsValue() {
+    data.withdrawalMethods = normalizeWithdrawalMethods(withdrawalMethodsSettingRow().value || data.withdrawalMethods);
+    return data.withdrawalMethods;
+  }
+
+  function withdrawalFieldSummary(method) {
+    const required = (method.fields || []).filter((field) => field.required !== false).length;
+    return (method.fields || []).length + " field" + ((method.fields || []).length === 1 ? "" : "s") + " / " + required + " required";
   }
 
   function depositMethodDestination(method) {
@@ -660,6 +746,8 @@
     help: '<circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path>',
     lock: '<rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
     settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle>',
+    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path>',
     map: '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"></path><path d="M15 5.764v15"></path><path d="M9 3.236v15"></path>'
   };
 
@@ -1020,6 +1108,20 @@
     return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + table(["Type", "Method", "Destination", "Status", "Action"], rows));
   }
 
+  function withdrawalSettingsPanel() {
+    const setting = withdrawalMethodsValue();
+    const activeCount = setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length;
+    const rows = setting.methods.map((method) => [
+      badge(method.type, method.type === "CRYPTO" ? "info" : "success"),
+      '<strong>' + escapeHtml(method.name) + '</strong><br><span class="muted">' + escapeHtml(method.description || "No description") + '</span>',
+      escapeHtml(method.currency || "-"),
+      escapeHtml(withdrawalFieldSummary(method)),
+      badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : "danger"),
+      '<div class="action-row"><button class="btn" type="button" data-action="withdrawal-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="withdrawal-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
+    ]);
+    return section("Withdrawal settings", "Define bank and crypto destination forms shown in the client portal before a withdrawal beneficiary can be reviewed.", '<div class="deposit-method-toolbar"><div><strong>' + activeCount + ' active route' + (activeCount === 1 ? "" : "s") + '</strong><span>Each route can collect its own required verification fields before admin approval.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="withdrawal-method-new" data-method-type="BANK">Add bank form</button><button class="btn" type="button" data-action="withdrawal-method-new" data-method-type="CRYPTO">Add crypto form</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="withdrawal.methods">Edit JSON</button></div></div>' + table(["Type", "Method", "Currency", "Fields", "Status", "Action"], rows));
+  }
+
   function settingsPage() {
     const approvalSetting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {} };
     const approvalValue = approvalSetting.value && typeof approvalSetting.value === "object" && !Array.isArray(approvalSetting.value) ? approvalSetting.value : {};
@@ -1029,7 +1131,7 @@
       ["Deposit credit approval", autoApproveDeposits ? "Skipped after finance review" : "Requires maker-checker"],
       ["Withdrawal approval", approvalValue.withdrawals === false ? "Disabled" : "Required"]
     ]) + '<div class="action-row" style="margin-top:14px"><button class="btn ' + (autoApproveDeposits ? "danger" : "primary") + '" type="button" data-action="approval-setting-toggle" data-setting-key="operations.approvals" data-auto-approve-deposits="' + (!autoApproveDeposits) + '">' + (autoApproveDeposits ? "Disable auto-approve deposits" : "Enable auto-approve deposits") + '</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="operations.approvals">Edit JSON</button></div>');
-    return depositSettingsPanel() + approvalPanel + section("Platform settings", "Shared backend-controlled capability, accounting, approval, and risk configuration.", table(["Key", "Value", "Description", "Updated", "Action"], data.settingsRows.map((row) => [row.key, '<code>' + JSON.stringify(row.value) + '</code>', row.description || "-", row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-", '<button class="btn" type="button" data-action="setting-edit" data-setting-key="' + row.key + '">Edit</button>'])));
+    return depositSettingsPanel() + withdrawalSettingsPanel() + approvalPanel + section("Platform settings", "Shared backend-controlled capability, accounting, approval, and risk configuration.", table(["Key", "Value", "Description", "Updated", "Action"], data.settingsRows.map((row) => [row.key, '<code>' + JSON.stringify(row.value) + '</code>', row.description || "-", row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "-", '<button class="btn" type="button" data-action="setting-edit" data-setting-key="' + row.key + '">Edit</button>'])));
   }
 
   function bodyFor(file) {
@@ -1115,6 +1217,10 @@
     return '<button class="notification-button" type="button" data-action="admin-notifications-toggle" aria-label="Notifications" aria-haspopup="menu" aria-expanded="' + (document.getElementById("admin-notification-menu") ? "true" : "false") + '">' + svg("bell") + (unread ? '<span data-admin-notification-count>' + (unread > 99 ? "99+" : String(unread)) + '</span>' : "") + "</button>";
   }
 
+  function adminAccountButton(initials) {
+    return '<button class="admin-account-button" type="button" data-action="admin-account-toggle" aria-label="Open admin account menu" aria-haspopup="menu" aria-expanded="' + (document.getElementById("admin-account-menu") ? "true" : "false") + '"><span class="avatar">' + initials + '</span><span class="admin-account-caret" aria-hidden="true">⌄</span></button>';
+  }
+
   function updateAdminNotificationBell() {
     const unread = Math.max(0, Number(appState.adminNotificationUnreadCount || 0));
     document.querySelectorAll('[data-action="admin-notifications-toggle"]').forEach((button) => {
@@ -1139,6 +1245,11 @@
     document.querySelectorAll('[data-action="admin-notifications-toggle"]').forEach((button) => button.setAttribute("aria-expanded", "false"));
   }
 
+  function closeAdminAccountMenu() {
+    document.getElementById("admin-account-menu")?.remove();
+    document.querySelectorAll('[data-action="admin-account-toggle"]').forEach((button) => button.setAttribute("aria-expanded", "false"));
+  }
+
   function refreshOpenAdminNotificationMenu() {
     const menu = document.getElementById("admin-notification-menu");
     if (!menu) return;
@@ -1154,6 +1265,7 @@
       closeAdminNotificationMenu();
       return;
     }
+    closeAdminAccountMenu();
     const rows = appState.adminNotifications.slice(0, 6);
     const unread = Math.max(0, Number(appState.adminNotificationUnreadCount || unreadNotificationCount(rows)));
     const rect = button.getBoundingClientRect();
@@ -1176,6 +1288,44 @@
     const toggle = event.target?.closest?.('[data-action="admin-notifications-toggle"]');
     if (menu && !menu.contains(event.target) && !toggle) closeAdminNotificationMenu();
     else if (menu) document.addEventListener("click", outsideAdminNotificationClick, { once: true });
+  }
+
+  function showAdminAccountMenu(button) {
+    const existing = document.getElementById("admin-account-menu");
+    if (existing) {
+      closeAdminAccountMenu();
+      return;
+    }
+    closeAdminNotificationMenu();
+    const admin = appState.admin || {};
+    const name = admin.name || "BullPort Admin";
+    const email = admin.email || "admin@bullport.com";
+    const role = label(admin.role || "Admin");
+    const initials = name.split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase() || "BP";
+    const rect = button.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "admin-account-menu";
+    menu.className = "admin-account-menu";
+    menu.setAttribute("role", "menu");
+    menu.style.top = Math.round(rect.bottom + 12 + window.scrollY) + "px";
+    menu.style.right = Math.max(16, Math.round(window.innerWidth - rect.right)) + "px";
+    menu.innerHTML = '<div class="admin-account-head"><span class="avatar">' + initials + '</span><div><strong>' + escapeHtml(name) + '</strong><span>' + escapeHtml(email) + '</span><em>' + escapeHtml(role) + '</em></div></div>' +
+      '<div class="admin-account-list">' +
+      '<a role="menuitem" class="admin-account-item" href="roles.html" data-action="admin-account-open"><i>' + svg("user") + '</i><span><strong>Profile</strong><em>Admin identity and role access</em></span></a>' +
+      '<a role="menuitem" class="admin-account-item" href="settings.html" data-action="admin-account-open"><i>' + svg("settings") + '</i><span><strong>Settings</strong><em>Platform rules and controls</em></span></a>' +
+      '<button type="button" role="menuitem" class="admin-account-item is-danger" data-action="admin-logout"><i>' + svg("logout") + '</i><span><strong>Sign out</strong><em>Close this admin session</em></span></button>' +
+      '</div>';
+    document.body.appendChild(menu);
+    button.setAttribute("aria-expanded", "true");
+    bindActions();
+    setTimeout(() => document.addEventListener("click", outsideAdminAccountClick, { once: true }), 0);
+  }
+
+  function outsideAdminAccountClick(event) {
+    const menu = document.getElementById("admin-account-menu");
+    const toggle = event.target?.closest?.('[data-action="admin-account-toggle"]');
+    if (menu && !menu.contains(event.target) && !toggle) closeAdminAccountMenu();
+    else if (menu) document.addEventListener("click", outsideAdminAccountClick, { once: true });
   }
 
   async function submitAdminLogin(event) {
@@ -1235,7 +1385,7 @@
     document.title = meta[0] + " | BullPort Admin";
     const apiState = appState.apiOnline ? '<span class="api-status live">API connected</span>' : '<span class="api-status fallback">API unavailable</span>';
     const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
-    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button><button class="avatar" type="button" data-action="admin-logout" title="Sign out" aria-label="Sign out">' + initials + '</button></div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
+    document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">BP</div><div><p class="brand-title">BullPort Admin</p><p class="brand-subtitle">Broker operations console</p></div></div><nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button>' + adminAccountButton(initials) + '</div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
     bindFilters();
   }
@@ -1303,6 +1453,8 @@
           else if (action === "goto-clients") location.href = "clients.html";
           else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
           else if (action === "admin-notifications-toggle") showAdminNotificationMenu(node);
+          else if (action === "admin-account-toggle") showAdminAccountMenu(node);
+          else if (action === "admin-account-open") closeAdminAccountMenu();
           else if (action === "admin-notifications-read-all") {
             await api("/api/v1/admin/notifications/read-all", { method: "POST", body: "{}" });
             closeAdminNotificationMenu();
@@ -1326,6 +1478,7 @@
             location.href = url;
           }
           else if (action === "admin-logout") {
+            closeAdminAccountMenu();
             try { await api("/api/v1/auth/admin/logout", { method: "POST", body: "{}" }); } catch {}
             stopAdminNotificationPolling();
             appState.admin = null;
@@ -1349,6 +1502,10 @@
           else if (action === "deposit-method-edit") openDepositMethodEditor(null, node.dataset.methodId);
           else if (action === "deposit-method-save") await submitDepositMethod();
           else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
+          else if (action === "withdrawal-method-new") openWithdrawalMethodEditor(node.dataset.methodType);
+          else if (action === "withdrawal-method-edit") openWithdrawalMethodEditor(null, node.dataset.methodId);
+          else if (action === "withdrawal-method-save") await submitWithdrawalMethod();
+          else if (action === "withdrawal-method-toggle") await toggleWithdrawalMethod(node.dataset.methodId);
           else if (action === "approval-setting-toggle") await toggleDepositAutoApproval(node.dataset.autoApproveDeposits === "true");
           else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
           else if (action === "setting-save") await submitSetting(node.dataset.settingKey);
@@ -1615,7 +1772,8 @@
     const setting = depositMethodsValue();
     const current = setting.methods.find((method) => method.id === id);
     const methodType = current?.type || type || "BANK";
-    const common = '<input type="hidden" name="methodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="methodType" value="' + methodType + '"><label>Method name<input name="methodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "USDT" : "Bank transfer")) + '"></label><label>Description<textarea name="methodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="methodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="methodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="COMING_SOON" ' + (current?.status === "COMING_SOON" ? "selected" : "") + '>Coming soon</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label>';
+    const methodName = methodType === "CRYPTO" ? "Crypto" : "Bank transfer";
+    const common = '<input type="hidden" name="methodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="methodType" value="' + methodType + '"><input type="hidden" name="methodName" value="' + escapeHtml(methodName) + '"><label>Payment method<input value="' + escapeHtml(methodName) + '" readonly aria-readonly="true"></label><label>Description<textarea name="methodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="methodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="methodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="COMING_SOON" ' + (current?.status === "COMING_SOON" ? "selected" : "") + '>Coming soon</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label>';
     const fields = methodType === "CRYPTO"
       ? common + '<label>Network<input name="cryptoNetwork" maxlength="80" value="' + escapeHtml(current?.network || "TRC20") + '"></label><label>Wallet address<input name="cryptoAddress" maxlength="240" value="' + escapeHtml(current?.address || "") + '"></label><label>Tag or memo<input name="cryptoMemo" maxlength="120" value="' + escapeHtml(current?.tagOrMemo || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "After chain and finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Submit the transaction hash after sending funds.") + '</textarea></label>'
       : common + '<label>Bank name<input name="bankName" maxlength="120" value="' + escapeHtml(current?.bankName || "") + '"></label><label>Account name<input name="accountName" maxlength="160" value="' + escapeHtml(current?.accountName || "BullPort Client Funding") + '"></label><label>Account number<input name="accountNumber" maxlength="80" value="' + escapeHtml(current?.accountNumber || "") + '"></label><label>Sort code<input name="sortCode" maxlength="40" value="' + escapeHtml(current?.sortCode || "") + '"></label><label>IBAN<input name="iban" maxlength="80" value="' + escapeHtml(current?.iban || "") + '"></label><label>SWIFT<input name="swift" maxlength="40" value="' + escapeHtml(current?.swift || "") + '"></label><label>Posting window<input name="postingWindow" maxlength="160" value="' + escapeHtml(current?.postingWindow || "Within 1 business day after finance confirmation") + '"></label><label>Client instructions<textarea name="methodInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "Use the client account number as payment reference.") + '</textarea></label>';
@@ -1659,6 +1817,98 @@
     await saveDepositMethods({ methods: next });
     render();
     toast("Deposit method updated.");
+  }
+
+  async function saveWithdrawalMethods(value) {
+    const description = "Accepted client withdrawal routes and beneficiary verification field requirements.";
+    await api("/api/v1/admin/settings/withdrawal.methods", { method: "PUT", body: JSON.stringify({ value: normalizeWithdrawalMethods(value), description }) });
+    await loadBackendData();
+  }
+
+  function withdrawalFieldBuilder(fields) {
+    const rows = Array.from({ length: Math.max(8, (fields || []).length + 2) }).map((_, index) => {
+      const field = (fields || [])[index] || {};
+      const type = field.type || "TEXT";
+      const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
+      return '<div class="withdrawal-field-row">' +
+        '<label>Field key<input name="fieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="accountNumber"></label>' +
+        '<label>Label<input name="fieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Account number"></label>' +
+        '<label>Type<select name="fieldType' + index + '">' + options + '</select></label>' +
+        '<label>Options<input name="fieldOptions' + index + '" maxlength="240" value="' + escapeHtml((field.options || []).join(", ")) + '" placeholder="For select fields"></label>' +
+        '<label>Placeholder<input name="fieldPlaceholder' + index + '" maxlength="160" value="' + escapeHtml(field.placeholder || "") + '"></label>' +
+        '<label>Help text<input name="fieldHelp' + index + '" maxlength="240" value="' + escapeHtml(field.helpText || "") + '"></label>' +
+        '<label class="checkbox-row"><input name="fieldRequired' + index + '" type="checkbox" ' + (field.required !== false ? "checked" : "") + '> Required</label>' +
+      '</div>';
+    }).join("");
+    return '<div class="withdrawal-field-builder"><div class="builder-head"><strong>Verification fields</strong><span>Leave unused rows blank. Required rows are enforced in the client portal.</span></div>' + rows + '</div>';
+  }
+
+  function openWithdrawalMethodEditor(type, id) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const setting = withdrawalMethodsValue();
+    const current = setting.methods.find((method) => method.id === id);
+    const methodType = current?.type || type || "BANK";
+    const common = '<input type="hidden" name="withdrawalMethodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="withdrawalMethodType" value="' + methodType + '"><label>Method name<input name="withdrawalMethodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "Crypto withdrawal" : "Bank withdrawal")) + '"></label><label>Description<textarea name="withdrawalMethodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="withdrawalMethodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="withdrawalMethodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Review window<input name="withdrawalReviewWindow" maxlength="160" value="' + escapeHtml(current?.reviewWindow || (methodType === "CRYPTO" ? "Enhanced review before release" : "Same business day after finance review")) + '"></label><label>Cooling-off hours<input name="withdrawalCooldownHours" type="number" min="0" max="720" value="' + escapeHtml(String(current?.cooldownHours ?? (methodType === "CRYPTO" ? 48 : 24))) + '"></label><label>Client instructions<textarea name="withdrawalInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "") + '</textarea></label>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Withdrawal settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto form" : "bank form") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + common + withdrawalFieldBuilder(current?.fields || defaultWithdrawalMethods().methods.find((method) => method.type === methodType)?.fields || []) + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="withdrawal-method-save">Save withdrawal form</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitWithdrawalMethod() {
+    const modal = document.querySelector(".modal");
+    const value = (name) => modal?.querySelector('[name="' + name + '"]')?.value.trim() || "";
+    const checked = (name) => Boolean(modal?.querySelector('[name="' + name + '"]')?.checked);
+    const methodType = value("withdrawalMethodType") || "BANK";
+    const status = value("withdrawalMethodStatus") || "ACTIVE";
+    const id = value("withdrawalMethodId") || slugify(value("withdrawalMethodName"), methodType.toLowerCase() + "-withdrawal");
+    if (!value("withdrawalMethodName")) { toast("Enter a withdrawal method name."); return; }
+    const fields = [];
+    for (let index = 0; index < 20; index += 1) {
+      const labelValue = value("fieldLabel" + index);
+      if (!labelValue) continue;
+      const key = value("fieldId" + index) || slugify(labelValue, "field");
+      fields.push({
+        id: key.replace(/^field-/, "").replace(/-/g, "").replace(/^[0-9]/, "field$&") || key,
+        label: labelValue,
+        type: value("fieldType" + index) || "TEXT",
+        required: checked("fieldRequired" + index),
+        placeholder: value("fieldPlaceholder" + index) || undefined,
+        helpText: value("fieldHelp" + index) || undefined,
+        options: value("fieldOptions" + index) ? value("fieldOptions" + index).split(",").map((item) => item.trim()).filter(Boolean) : []
+      });
+    }
+    if (!fields.length) { toast("Add at least one verification field."); return; }
+    const method = {
+      id,
+      type: methodType,
+      name: value("withdrawalMethodName"),
+      description: value("withdrawalMethodDescription"),
+      enabled: status !== "DISABLED",
+      status,
+      currency: value("withdrawalMethodCurrency") || (methodType === "CRYPTO" ? "USDT" : "USD"),
+      reviewWindow: value("withdrawalReviewWindow"),
+      cooldownHours: Number(value("withdrawalCooldownHours") || (methodType === "CRYPTO" ? 48 : 24)),
+      instructions: value("withdrawalInstructions"),
+      fields
+    };
+    const setting = withdrawalMethodsValue();
+    const next = setting.methods.filter((item) => item.id !== id).concat(method);
+    await saveWithdrawalMethods({ methods: next });
+    closeModal();
+    render();
+    toast("Withdrawal form saved.");
+  }
+
+  async function toggleWithdrawalMethod(id) {
+    const setting = withdrawalMethodsValue();
+    const next = setting.methods.map((method) => {
+      if (method.id !== id) return method;
+      const enabled = method.enabled === false || method.status === "DISABLED";
+      return { ...method, enabled, status: enabled ? "ACTIVE" : "DISABLED" };
+    });
+    await saveWithdrawalMethods({ methods: next });
+    render();
+    toast("Withdrawal method updated.");
   }
 
   function openSettingEditor(key) {

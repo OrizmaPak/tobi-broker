@@ -632,6 +632,8 @@ model Beneficiary {
   cryptoNetwork       String?
   walletAddressMasked String?
   walletAddressToken  String?
+  verificationMethodId String?
+  verificationData     Json?
   status              VerificationStatus @default(PENDING)
   verifiedAt          DateTime?
   cooldownUntil       DateTime?

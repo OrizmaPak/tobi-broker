@@ -606,6 +606,97 @@
     return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || depositMethodDestination(method)) + '</small></span>' + badge(status, depositMethodTone(method)) + '</summary><div class="broker-funding-detail">' + detail + '<button type="button" data-broker-action="' + action + '" data-broker-method-id="' + escapeHtml(method.id) + '" class="' + buttonClass + '">' + buttonText + '</button></div></details>';
   }
 
+  function fallbackWithdrawalMethods() {
+    return {
+      methods: [
+        {
+          id: "bank-withdrawal-primary",
+          type: "BANK",
+          name: "Bank withdrawal",
+          description: "Withdraw cleared USD balance to a reviewed bank account.",
+          enabled: true,
+          status: "ACTIVE",
+          currency: "USD",
+          reviewWindow: "Same business day after finance review",
+          cooldownHours: 24,
+          instructions: "Add the bank details exactly as they appear on the receiving bank account.",
+          fields: [
+            { id: "bankName", label: "Bank name", type: "TEXT", required: true, placeholder: "Receiving bank" },
+            { id: "accountName", label: "Account name", type: "TEXT", required: true, placeholder: "Name on bank account" },
+            { id: "accountNumber", label: "Account number / IBAN", type: "TEXT", required: true, placeholder: "Account number or IBAN" },
+            { id: "sortCode", label: "Sort code / routing number", type: "TEXT", required: false, placeholder: "Optional local bank code" },
+            { id: "bankCountry", label: "Bank country", type: "TEXT", required: true, placeholder: "United Kingdom" }
+          ]
+        },
+        {
+          id: "crypto-withdrawal-primary",
+          type: "CRYPTO",
+          name: "Crypto withdrawal",
+          description: "Withdraw to a screened crypto wallet destination.",
+          enabled: true,
+          status: "ACTIVE",
+          currency: "USDT",
+          reviewWindow: "Enhanced review before release",
+          cooldownHours: 48,
+          instructions: "Confirm the network carefully. Crypto withdrawals sent to a wrong network cannot be recovered.",
+          fields: [
+            { id: "currency", label: "Asset", type: "SELECT", required: true, options: ["USDT", "BTC", "ETH"] },
+            { id: "cryptoNetwork", label: "Network", type: "SELECT", required: true, options: ["TRC20", "ERC20", "BTC", "ETH"] },
+            { id: "walletAddress", label: "Wallet address", type: "TEXT", required: true, placeholder: "Paste the full wallet address" },
+            { id: "walletLabel", label: "Wallet label", type: "TEXT", required: false, placeholder: "Personal cold wallet" }
+          ]
+        }
+      ]
+    };
+  }
+
+  function configuredWithdrawalMethods() {
+    const value = appState.data && appState.data.withdrawalMethods && Array.isArray(appState.data.withdrawalMethods.methods)
+      ? appState.data.withdrawalMethods
+      : fallbackWithdrawalMethods();
+    return value.methods.filter(function (method) { return method && method.enabled !== false && method.status !== "DISABLED"; });
+  }
+
+  function withdrawalMethodById(id) {
+    return configuredWithdrawalMethods().find(function (method) { return method.id === id; }) || null;
+  }
+
+  function beneficiariesByType(type) {
+    return ((appState.data && appState.data.beneficiaries) || []).filter(function (item) { return item.type === type; });
+  }
+
+  function verifiedBeneficiariesByType(type) {
+    return beneficiariesByType(type).filter(function (item) { return item.status === "VERIFIED"; });
+  }
+
+  function beneficiaryDestination(item) {
+    if (item.type === "BANK") return [item.bankName, item.accountName, item.accountNumberMasked].filter(Boolean).join(" / ") || "Bank details under review";
+    return [item.currency, item.cryptoNetwork, item.walletAddressMasked].filter(Boolean).join(" / ") || "Wallet under review";
+  }
+
+  function withdrawalMethodCard(method, index, isOpen) {
+    const code = String(index + 1).padStart(2, "0");
+    const fields = method.fields || [];
+    const required = fields.filter(function (field) { return field.required !== false; }).length;
+    const verified = verifiedBeneficiariesByType(method.type);
+    const pending = beneficiariesByType(method.type).filter(function (item) { return item.status !== "VERIFIED"; });
+    const detail = keyValueRows([
+      { label: "Currency", value: escapeHtml(method.currency || "-") },
+      { label: "Review window", value: escapeHtml(method.reviewWindow || "Operations review") },
+      { label: "Cooling-off", value: String(method.cooldownHours || (method.type === "CRYPTO" ? 48 : 24)) + " hours after adding destination" },
+      { label: "Required fields", value: String(required) + " of " + String(fields.length) }
+    ]) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Add and verify a destination before requesting a withdrawal.") + '</div><div class="flex flex-wrap gap-2"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(method.id) + '" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add ' + (method.type === "CRYPTO" ? "crypto wallet" : "bank account") + '</button><button type="button" data-broker-action="' + (method.type === "CRYPTO" ? "withdraw-crypto" : "withdraw-bank") + '" class="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">' + (verified.length ? "Request withdrawal" : "Use after verification") + '</button></div>';
+    return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || "Configured withdrawal destination workflow") + '</small></span>' + badge(verified.length ? verified.length + " verified" : pending.length ? "Pending review" : "Setup needed", verified.length ? "success" : pending.length ? "warning" : "info") + '</summary><div class="broker-funding-detail">' + detail + '</div></details>';
+  }
+
+  function beneficiaryList(type) {
+    const rows = beneficiariesByType(type);
+    if (!rows.length) return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No ' + (type === "CRYPTO" ? "crypto wallet" : "bank account") + ' has been added yet.</div>';
+    return '<div class="space-y-3">' + rows.map(function (row) {
+      return '<div class="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="min-w-0"><p class="text-sm font-semibold">' + escapeHtml(row.label || "Withdrawal destination") + '</p><p class="mt-1 break-all text-sm text-muted-foreground">' + escapeHtml(beneficiaryDestination(row)) + '</p></div>' + badge(labelize(row.status || "Pending"), statusTone(row.status || "PENDING")) + '</div>';
+    }).join("") + "</div>";
+  }
+
   function numberValue(value) {
     const next = Number(value);
     return Number.isFinite(next) ? next : 0;
@@ -1390,53 +1481,34 @@
           })
         ));
     }
-    const title = isDeposit ? "Funding route summary" : "Withdrawal controls";
-    const subtitle = isDeposit ? "Use these funding routes to top up the wallet before portfolio subscriptions or trading." : "Withdraw cleared wallet balance while keeping KYC, bank and review controls visible.";
-    const methods = isDeposit
-      ? '<div class="grid gap-4 lg:grid-cols-3">'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Bank transfer</h3><p class="mt-2 text-sm text-muted-foreground">Use your BullPort account reference for direct wallet funding.</p></div>' + badge("Available", "success") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reference</p><p class="mt-1 font-semibold">' + DEMO.client.accountNo + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Expected posting</p><p class="mt-1 font-semibold">Within 1 business day after confirmation</p></div></div><button type="button" data-broker-action="deposit-bank" class="mt-4 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Use bank transfer</button></div>'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Pay with card</h3><p class="mt-2 text-sm text-muted-foreground">Card funding is reserved for the next product release.</p></div>' + badge("Coming soon", "warning") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="font-medium">Instant funding</p><p class="mt-1 text-muted-foreground">Debit and credit card funding will be enabled later.</p></div></div><button type="button" data-broker-action="deposit-card" class="mt-4 inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground">Coming soon</button></div>'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Fund with crypto</h3><p class="mt-2 text-sm text-muted-foreground">Send supported digital assets to the broker wallet and await confirmation.</p></div>' + badge("Review required", "info") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported rails</p><p class="mt-1 font-semibold">USDT (TRC20), BTC, ETH</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Posting rule</p><p class="mt-1 font-semibold">Credit after compliance review and chain confirmation</p></div></div><button type="button" data-broker-action="deposit-crypto" class="mt-4 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">View crypto instructions</button></div>'
-        + "</div>"
-      : '<div class="grid gap-4 lg:grid-cols-2">'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Withdraw to bank</h3><p class="mt-2 text-sm text-muted-foreground">Send cleared funds to your verified settlement account.</p></div>' + badge("Primary route", "success") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Verified destination</p><p class="mt-1 font-semibold">' + DEMO.wallet.linkedBank + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review timing</p><p class="mt-1 font-semibold">Same day after compliance checks</p></div></div><button type="button" data-broker-action="withdraw-bank" class="mt-4 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Continue to bank withdrawal</button></div>'
-        + '<div class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-semibold tracking-tight">Withdraw to crypto</h3><p class="mt-2 text-sm text-muted-foreground">Transfer approved balances to a reviewed wallet destination.</p></div>' + badge("Enhanced review", "warning") + '</div><div class="mt-4 space-y-3 text-sm"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Eligibility</p><p class="mt-1 font-semibold">Available after full KYC and wallet screening</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported assets</p><p class="mt-1 font-semibold">USDT, BTC and ETH withdrawals</p></div></div><button type="button" data-broker-action="withdraw-crypto" class="mt-4 inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Review crypto withdrawal</button></div>'
-        + "</div>";
-    const formCard = isDeposit
-      ? section("Deposit request details", "Bank and crypto funding requests remain pending until evidence review and approval.", keyValueRows([
-          { label: "Preferred route", value: "Bank transfer or approved crypto funding" },
-          { label: "Suggested deposit size", value: "$2,500 to $10,000" },
-          { label: "Account reference", value: DEMO.client.accountNo },
-          { label: "Wallet status", value: "Ready to receive funds" }
-        ]))
-      : section("Withdrawal request summary", "Show controls and gating before a withdrawal instruction is approved.", keyValueRows([
-          { label: "Available to withdraw", value: money(state.walletBalance - state.pendingWithdrawal) },
-          { label: "Pending request", value: money(state.pendingWithdrawal) },
-          { label: "Settlement route", value: "Verified bank or approved crypto wallet" },
-          { label: "Security hold", value: "24-hour verification hold on new devices" }
-        ]));
-    const kycPanel = section("KYC and compliance status", "Funding and withdrawals should surface verification state before money movement.", '<div class="space-y-4"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-semibold">Verification status</p><p class="mt-1 text-sm text-muted-foreground">Current account review state for funding and settlement.</p></div>' + badge(state.kycStatus, statusTone(state.kycStatus)) + '</div></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-semibold">Blocked action if incomplete</p><p class="mt-1 text-sm text-muted-foreground">' + (isDeposit ? "Large deposits and crypto funding may pause for manual review." : "Withdrawals remain restricted until address and bank confirmation are complete.") + '</p></div>' + badge("Compliance aware", "info") + '</div></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Checklist progress</p><div class="mt-3 space-y-2">' + DEMO.kycChecklist.map(function (item) { return '<div class="flex items-center justify-between gap-3 text-sm"><span>' + item.item + '</span>' + badge(item.state, statusTone(item.state)) + '</div>'; }).join("") + '</div></div></div>');
+    const withdrawalMethods = configuredWithdrawalMethods().sort(function (a, b) {
+      const order = { BANK: 1, CRYPTO: 2 };
+      return (order[a.type] || 9) - (order[b.type] || 9);
+    });
+    const bankMethod = withdrawalMethods.find(function (method) { return method.type === "BANK"; });
+    const cryptoMethod = withdrawalMethods.find(function (method) { return method.type === "CRYPTO"; });
+    const routes = withdrawalMethods.length
+      ? '<div class="broker-funding-grid is-withdrawal">' + withdrawalMethods.map(function (method, index) {
+          return withdrawalMethodCard(method, index, index === 0);
+        }).join("") + "</div>"
+      : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No withdrawal method is currently available. Contact support before requesting a withdrawal.</div>';
+    const destinationPanel = '<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">' +
+      section("Bank destinations", "Add one or more bank accounts, then wait for operations to verify the destination before use.", beneficiaryList("BANK") + '<div class="mt-4"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(bankMethod ? bankMethod.id : "") + '" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add bank account</button></div>') +
+      section("Crypto destinations", "Add a screened wallet address for crypto withdrawals. New wallets remain pending until reviewed.", beneficiaryList("CRYPTO") + '<div class="mt-4"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(cryptoMethod ? cryptoMethod.id : "") + '" class="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Add crypto wallet</button></div>') +
+      "</div>";
     return '' +
-      methods +
+      section("Choose withdrawal route", "Withdrawals are available through verified bank accounts or approved crypto wallets only.", routes) +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-7">' + section(title, subtitle, keyValueRows(isDeposit ? [
-        { label: "Preferred funding rail", value: "Bank transfer" },
-        { label: "Pending confirmation", value: money(state.pendingDeposit) },
-        { label: "Expected posting window", value: "Within 1 business day after confirmation" },
-        { label: "Reference rules", value: "Use account number " + DEMO.client.accountNo }
-      ] : [
+      '<div class="xl:col-span-7">' + section("Withdrawal capacity", "A compact view of funds that can move out of the wallet.", keyValueRows([
         { label: "Available for withdrawal", value: money(state.walletBalance - state.pendingWithdrawal) },
-        { label: "Current pending request", value: money(state.pendingWithdrawal) },
-        { label: "Withdrawal hold policy", value: "24-hour verification hold for new devices" },
-        { label: "Destination bank", value: DEMO.wallet.linkedBank }
+        { label: "Pending withdrawals", value: money(state.pendingWithdrawal) },
+        { label: "Verified bank accounts", value: String(verifiedBeneficiariesByType("BANK").length) },
+        { label: "Verified crypto wallets", value: String(verifiedBeneficiariesByType("CRYPTO").length) }
       ])) + "</div>" +
-      '<div class="xl:col-span-5">' + section("Settlement workflow", "Every money movement follows the same visible review and posting controls.", '<div class="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">' + (isDeposit ? "Deposits move from submitted evidence to confirmed wallet credit before becoming available for portfolio subscriptions or trading." : "Withdrawals use cleared wallet balance and remain reserved while KYC, beneficiary, risk, and approval checks complete.") + "</div>") + "</div>" +
+      '<div class="xl:col-span-5">' + section("Review flow", "New destinations are reviewed before withdrawals can be released.", '<div class="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">Add destination details, wait for admin verification, then submit a withdrawal against the verified bank or crypto wallet.</div>') + "</div>" +
       "</div>" +
-      '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-7">' + formCard + "</div>" +
-      '<div class="xl:col-span-5">' + kycPanel + "</div>" +
-      "</div>" +
-      section("Related activity", "Recent items that affect funding and settlement.", table(
+      destinationPanel +
+      section("Withdrawal activity", "Recent withdrawal requests and related wallet movement.", table(
         ["Date", "Type", "Reference", "Amount", "Status"],
         state.transactions.map(function (row) {
           return [row.date, row.type, row.reference, row.amount, badge(row.status, statusTone(row.status))];
@@ -2408,6 +2480,43 @@
     return '<label class="broker-form-field"><span>' + label + '</span><input name="' + name + '" type="' + (type || "text") + '" value="' + (value || "") + '" ' + (extra || "") + '></label>';
   }
 
+  function withdrawalInputType(field) {
+    const type = String(field.type || "TEXT").toUpperCase();
+    if (type === "NUMBER") return "number";
+    if (type === "EMAIL") return "email";
+    if (type === "TEL") return "tel";
+    return "text";
+  }
+
+  function withdrawalVerificationField(field) {
+    const name = "verify_" + field.id;
+    const required = field.required !== false ? "required" : "";
+    const help = field.helpText ? '<small>' + escapeHtml(field.helpText) + '</small>' : "";
+    if (field.type === "SELECT") {
+      const options = (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>'; }).join("");
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + options + '</select>' + help + '</label>';
+    }
+    if (field.type === "TEXTAREA") {
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '></textarea>' + help + '</label>';
+    }
+    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + withdrawalInputType(field) + '" value="" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
+  }
+
+  function openBeneficiaryModal(method) {
+    if (!method) { toast("No active withdrawal setup is available for this route.", "warning"); return; }
+    const fields = method.fields || [];
+    const defaultLabel = method.type === "CRYPTO" ? "Primary crypto wallet" : "Primary bank account";
+    showModal("Add " + (method.type === "CRYPTO" ? "crypto wallet" : "bank account"), '<p>' + escapeHtml(method.description || "Add destination details for admin review.") + '</p><div class="broker-form-grid"><input type="hidden" name="beneficiaryType" value="' + escapeHtml(method.type) + '"><input type="hidden" name="beneficiaryMethodId" value="' + escapeHtml(method.id) + '">' + modalField("Destination label", "beneficiaryLabel", "text", defaultLabel, 'required maxlength="80"') + fields.map(withdrawalVerificationField).join("") + '<p class="text-xs text-muted-foreground">' + escapeHtml(method.instructions || "The destination remains pending until BullPort verifies it.") + '</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="beneficiary-confirm">Submit for review</button>');
+  }
+
+  function modalVerificationData(method) {
+    const data = {};
+    (method.fields || []).forEach(function (field) {
+      data[field.id] = modalValue("verify_" + field.id);
+    });
+    return data;
+  }
+
   function navigateTo(page) {
     location.href = page;
   }
@@ -2446,7 +2555,7 @@
       "toggle-password", "phone-country-toggle", "phone-country-select",
       "goto-deposit", "goto-kyc", "goto-reports",
       "deposit-card", "deposit-bank", "deposit-crypto",
-      "withdraw-bank", "withdraw-crypto", "subscribe-plan", "investment-action",
+      "withdraw-bank", "withdraw-crypto", "beneficiary-add", "beneficiary-confirm", "subscribe-plan", "investment-action",
       "order-create", "options-apply", "profile-edit", "password-change",
       "notifications-toggle", "notification-open", "user-menu-toggle",
       "goto-profile", "goto-settings", "support-create", "support-reply"
