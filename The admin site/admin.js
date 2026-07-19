@@ -385,13 +385,30 @@
       body: row?.body || "",
       category: row?.category || "Operations",
       severity: row?.severity || "INFO",
-      actionUrl: row?.actionUrl || "notifications.html",
+      actionUrl: notificationActionUrl(row),
       client: row?.client || null,
       createdAt: row?.createdAt || null,
       readAt: row?.readAt || null,
       state: row?.readAt ? "Read" : "New",
       time: relativeTime(row?.createdAt)
     };
+  }
+
+  function notificationActionUrl(row) {
+    const entityType = String(row?.entityType || "").toLowerCase();
+    const entityId = row?.entityId || row?.metadata?.depositId || row?.metadata?.caseId || "";
+    if (entityType === "deposit" && entityId) return "deposit-review.html?id=" + encodeURIComponent(entityId);
+    if (entityType === "kyccase" && entityId) return "kyc-review.html?id=" + encodeURIComponent(entityId);
+    if (entityType === "withdrawal" && entityId) return "withdrawal-review.html?id=" + encodeURIComponent(entityId);
+    if (row?.actionUrl) return normalizeAdminActionUrl(row.actionUrl);
+    return "notifications.html";
+  }
+
+  function normalizeAdminActionUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "notifications.html";
+    if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
+    return url.replace(/^\.?\//, "");
   }
 
   function unreadNotificationCount(rows, explicitCount) {
@@ -855,6 +872,14 @@
     return filters(placeholder) + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching records. Adjust the search or status filter.</div>';
   }
 
+  function depositMethodFilters(placeholder) {
+    return '<div class="filter-bar"><label class="filter-search">' + svg("grid") + '<input data-table-search placeholder="' + placeholder + '" /></label><select data-table-type><option value="">All types</option><option value="bank">Bank</option><option value="crypto">Crypto</option><option value="card">Card</option></select><select data-table-status><option value="">All statuses</option><option value="active">Active</option><option value="coming soon">Coming soon</option><option value="disabled">Disabled</option></select></div>';
+  }
+
+  function depositMethodTable(placeholder, headers, rows) {
+    return depositMethodFilters(placeholder) + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching deposit routes. Adjust the search, type, or status filter.</div>';
+  }
+
   function taskRows(rows) {
     return rows.map((row) => [
       row.title || "-",
@@ -1034,8 +1059,9 @@
   }
 
   function notificationsPage() {
+    const rows = data.notifications.slice(0, 50).map((row) => ({ ...mapAdminNotification(row), client: row.client }));
     return section("Notification composer", "Send account, KYC, funding, investment, payout, support, and risk messages.", details([["Audience", "Single client, segment or all active clients"], ["Templates", "KYC, deposit, withdrawal, payout, risk, support"], ["Delivery", "Dashboard notification now, email later"], ["Approval", "Compliance approval for risk-sensitive notices"]]) + '<div class="action-row" style="margin-top:14px">' + modalButton("Create notice", "notification", "primary") + modalButton("Preview template", "notification-preview") + "</div>") +
-      section("Recent notification activity", "Authoritative in-app messages and their delivery state.", queueList(data.notifications.slice(0, 50).map((row) => ({ title: row.title, owner: row.category, client: row.client?.name || "Platform audience", age: row.createdAt ? new Date(row.createdAt).toLocaleString() : "-", state: row.readAt ? "Read" : "Sent" }))));
+      section("Recent notification activity", "Authoritative in-app messages and their delivery state.", '<div class="queue-list">' + rows.map((row) => '<article class="queue-item" data-search="' + stripHtml(row.title + " " + row.category + " " + (row.client?.name || "") + " " + row.state) + '"><div><h3>' + row.title + '</h3><p>' + (row.client?.name || "Platform audience") + ' - ' + row.category + ' - ' + (row.createdAt ? new Date(row.createdAt).toLocaleString() : "-") + '</p></div><div class="action-row">' + badge(row.state) + '<button class="btn" type="button" data-action="admin-notification-open" data-notification-id="' + escapeHtml(row.id) + '" data-notification-url="' + escapeHtml(row.actionUrl) + '">Open</button></div></article>').join("") + '</div><div class="empty-state" data-empty-state>No matching notification activity.</div>');
   }
 
   function supportPage() {
@@ -1153,7 +1179,7 @@
       badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
       '<div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-view" data-method-id="' + escapeHtml(method.id) + '">View</button><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
     ]);
-    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + filterableTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
+    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + depositMethodTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
   }
 
   function withdrawalSettingsPanel() {
@@ -1526,7 +1552,7 @@
           }
           else if (action === "admin-notification-open") {
             const id = node.dataset.notificationId || "";
-            const url = node.dataset.notificationUrl || "notifications.html";
+            const url = normalizeAdminActionUrl(node.dataset.notificationUrl || "notifications.html");
             if (id) {
               try {
                 await api("/api/v1/admin/notifications/" + encodeURIComponent(id) + "/read", { method: "POST", body: "{}" });
@@ -2179,8 +2205,9 @@
     document.querySelectorAll(".filter-bar").forEach((bar) => {
       const search = bar.querySelector("[data-table-search]");
       const status = bar.querySelector("[data-table-status]");
+      const type = bar.querySelector("[data-table-type]");
       const sectionNode = bar.closest(".section");
-      const apply = () => applyFilter(sectionNode, search ? search.value : "", status ? status.value : "");
+      const apply = () => applyFilter(sectionNode, search ? search.value : "", status ? status.value : "", type ? type.value : "");
       if (search && search.dataset.bound !== "true") {
         search.dataset.bound = "true";
         search.addEventListener("input", apply);
@@ -2188,6 +2215,10 @@
       if (status && status.dataset.bound !== "true") {
         status.dataset.bound = "true";
         status.addEventListener("change", apply);
+      }
+      if (type && type.dataset.bound !== "true") {
+        type.dataset.bound = "true";
+        type.addEventListener("change", apply);
       }
     });
     const globalSearch = document.querySelector("[data-global-search]");
@@ -2203,15 +2234,16 @@
     }
   }
 
-  function applyFilter(sectionNode, query, status) {
+  function applyFilter(sectionNode, query, status, type) {
     if (!sectionNode) return;
     const q = String(query || "").toLowerCase();
     const s = String(status || "").toLowerCase();
+    const t = String(type || "").toLowerCase();
     const rows = Array.from(sectionNode.querySelectorAll("[data-search]"));
     let visible = 0;
     rows.forEach((row) => {
       const text = row.getAttribute("data-search") || row.textContent.toLowerCase();
-      const show = (!q || text.indexOf(q) !== -1) && (!s || text.indexOf(s) !== -1);
+      const show = (!q || text.indexOf(q) !== -1) && (!s || text.indexOf(s) !== -1) && (!t || text.indexOf(t) !== -1);
       row.hidden = !show;
       if (show) visible += 1;
     });
