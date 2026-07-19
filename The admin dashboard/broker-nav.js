@@ -570,6 +570,18 @@
     return Array.isArray(method.networks) ? method.networks.join(", ") : "Card networks";
   }
 
+  function depositRouteTitle(method) {
+    if (method.type === "BANK") return method.bankName || "Bank transfer";
+    if (method.type === "CRYPTO") return [method.name || method.currency || "Crypto", method.network].filter(Boolean).join(" - ");
+    return method.name || "Card payment";
+  }
+
+  function depositRouteSubtitle(method) {
+    if (method.type === "BANK") return method.branch || method.location || method.address || "London, United Kingdom";
+    if (method.type === "CRYPTO") return method.description || depositMethodDestination(method);
+    return Array.isArray(method.networks) ? method.networks.join(", ") : method.description || "Coming soon";
+  }
+
   function depositRouteCard(method, index, isOpen) {
     const code = String(index + 1).padStart(2, "0");
     const status = method.status === "COMING_SOON" || method.enabled === false ? "Coming soon" : "Available";
@@ -603,7 +615,7 @@
     } else {
       detail = '<div class="broker-card-logos" aria-label="Supported card networks">' + (method.networks || ["VISA", "Mastercard", "Verve", "AmEx"]).map(function (network) { return "<span>" + escapeHtml(network) + "</span>"; }).join("") + '</div><div class="broker-funding-note">' + escapeHtml(method.description || "Card funding is reserved for the next release.") + "</div>";
     }
-    return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(method.name) + '</strong><small>' + escapeHtml(method.description || depositMethodDestination(method)) + '</small></span>' + badge(status, depositMethodTone(method)) + '</summary><div class="broker-funding-detail">' + detail + '<button type="button" data-broker-action="' + action + '" data-broker-method-id="' + escapeHtml(method.id) + '" class="' + buttonClass + '">' + buttonText + '</button></div></details>';
+    return '<details class="broker-funding-route ' + (index === 0 ? "is-primary" : "") + '" ' + (isOpen ? "open" : "") + '><summary><span><em>' + code + '</em><strong>' + escapeHtml(depositRouteTitle(method)) + '</strong><small>' + escapeHtml(depositRouteSubtitle(method)) + '</small></span><span class="broker-route-side">' + badge(status, depositMethodTone(method)) + '<i aria-hidden="true">⌄</i></span></summary><div class="broker-funding-detail">' + detail + '<button type="button" data-broker-action="' + action + '" data-broker-method-id="' + escapeHtml(method.id) + '" class="' + buttonClass + '">' + buttonText + '</button></div></details>';
   }
 
   function depositProofSummary(method) {
@@ -616,7 +628,7 @@
 
   function depositMethodColumn(title, subtitle, methods, emptyText) {
     return '<section class="broker-deposit-column"><div class="broker-deposit-column-head"><h2>' + title + '</h2><p>' + subtitle + '</p></div><div class="broker-deposit-routes">' + (methods.length ? methods.map(function (method, index) {
-      return depositRouteCard(method, index, index === 0);
+      return depositRouteCard(method, index, false);
     }).join("") : '<div class="broker-empty-route">' + emptyText + '</div>') + '</div></section>';
   }
 
