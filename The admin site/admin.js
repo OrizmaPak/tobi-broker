@@ -355,6 +355,13 @@
     return Array.isArray(method.networks) ? method.networks.join(", ") : "Card networks";
   }
 
+  function truncatedText(value, limit, className) {
+    const text = String(value || "-");
+    const max = Number(limit) || 20;
+    const preview = text.length > max ? text.slice(0, max).trimEnd() + "..." : text;
+    return '<span class="' + (className || "truncate-cell") + '" title="' + escapeHtml(text) + '">' + escapeHtml(preview) + '</span>';
+  }
+
   function relativeTime(value) {
     if (!value) return "Recently";
     const date = new Date(value);
@@ -1175,7 +1182,7 @@
     const rows = setting.methods.map((method) => [
       badge(method.type, method.type === "CARD" ? "warning" : method.type === "CRYPTO" ? "info" : "success"),
       '<strong>' + escapeHtml(method.name) + '</strong><br><span class="muted">' + escapeHtml(method.description || "No description") + '</span>',
-      escapeHtml(depositMethodDestination(method)),
+      truncatedText(depositMethodDestination(method), 20, "deposit-destination-preview"),
       badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
       '<div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-view" data-method-id="' + escapeHtml(method.id) + '">View</button><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
     ]);
