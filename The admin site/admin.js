@@ -1103,9 +1103,9 @@
       '<strong>' + escapeHtml(method.name) + '</strong><br><span class="muted">' + escapeHtml(method.description || "No description") + '</span>',
       escapeHtml(depositMethodDestination(method)),
       badge(method.status || (method.enabled ? "ACTIVE" : "DISABLED"), method.status === "ACTIVE" && method.enabled !== false ? "success" : method.status === "COMING_SOON" ? "warning" : "danger"),
-      '<div class="action-row"><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
+      '<div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-view" data-method-id="' + escapeHtml(method.id) + '">View</button><button class="btn" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit</button><button class="btn" type="button" data-action="deposit-method-toggle" data-method-id="' + escapeHtml(method.id) + '">' + (method.enabled !== false && method.status !== "DISABLED" ? "Disable" : "Enable") + '</button></div>'
     ]);
-    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + table(["Type", "Method", "Destination", "Status", "Action"], rows));
+    return section("Deposit settings", "Define the bank accounts, crypto wallets, and card availability that the client deposit page can show.", '<div class="deposit-method-toolbar"><div><strong>' + setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length + ' active route' + (setting.methods.filter((method) => method.enabled !== false && method.status !== "DISABLED").length === 1 ? "" : "s") + '</strong><span>Bank and crypto records can be added multiple times. Card remains coming soon until enabled by product policy.</span></div><div class="action-row"><button class="btn primary" type="button" data-action="deposit-method-new" data-method-type="BANK">Add bank</button><button class="btn" type="button" data-action="deposit-method-new" data-method-type="CRYPTO">Add crypto</button><button class="btn" type="button" data-action="setting-edit" data-setting-key="deposit.methods">Edit JSON</button></div></div>' + filterableTable("Search deposit method, bank, account, wallet...", ["Type", "Method", "Destination", "Status", "Action"], rows));
   }
 
   function withdrawalSettingsPanel() {
@@ -1499,6 +1499,7 @@
           else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
           else if (action === "deposit-method-new") openDepositMethodEditor(node.dataset.methodType);
+          else if (action === "deposit-method-view") openDepositMethodViewer(node.dataset.methodId);
           else if (action === "deposit-method-edit") openDepositMethodEditor(null, node.dataset.methodId);
           else if (action === "deposit-method-save") await submitDepositMethod();
           else if (action === "deposit-method-toggle") await toggleDepositMethod(node.dataset.methodId);
@@ -1764,6 +1765,36 @@
     const description = "Accepted client wallet funding routes including bank, crypto and card availability.";
     await api("/api/v1/admin/settings/deposit.methods", { method: "PUT", body: JSON.stringify({ value: normalizeDepositMethods(value), description }) });
     await loadBackendData();
+  }
+
+  function openDepositMethodViewer(id) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const method = depositMethodsValue().methods.find((item) => item.id === id);
+    if (!method) { toast("Deposit method was not found."); return; }
+    const detailRows = [
+      ["ID", method.id],
+      ["Payment method", method.name],
+      ["Type", label(method.type)],
+      ["Status", label(method.status || (method.enabled ? "ACTIVE" : "DISABLED"))],
+      ["Enabled", method.enabled === false ? "No" : "Yes"],
+      ["Currency", method.currency || "-"],
+      ["Description", method.description || "-"],
+      ["Bank name", method.bankName || "-"],
+      ["Account name", method.accountName || "-"],
+      ["Account number", method.accountNumber || "-"],
+      ["Sort code", method.sortCode || "-"],
+      ["IBAN", method.iban || "-"],
+      ["SWIFT", method.swift || "-"],
+      ["Network", method.network || "-"],
+      ["Wallet address", method.address || "-"],
+      ["Tag or memo", method.tagOrMemo || "-"],
+      ["Card networks", Array.isArray(method.networks) ? method.networks.join(", ") : "-"],
+      ["Posting window", method.postingWindow || "-"],
+      ["Instructions", method.instructions || "-"]
+    ];
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Deposit method</p><h2>' + escapeHtml(method.name) + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + details(detailRows) + '<label>Stored JSON<textarea readonly aria-readonly="true">' + escapeHtml(JSON.stringify(method, null, 2)) + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Close</button><button class="btn primary" type="button" data-action="deposit-method-edit" data-method-id="' + escapeHtml(method.id) + '">Edit method</button></div></section></div>';
+    bindActions();
   }
 
   function openDepositMethodEditor(type, id) {
