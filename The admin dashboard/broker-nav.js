@@ -1455,10 +1455,9 @@
         const order = { BANK: 1, CARD: 2, CRYPTO: 3 };
         return (order[a.type] || 9) - (order[b.type] || 9);
       });
-      const primaryRoute = methods.find(function (method) { return method.type === "BANK" && method.enabled !== false && method.status === "ACTIVE"; }) || methods[0];
       const depositMethods = methods.length
         ? '<div class="broker-funding-grid">' + methods.map(function (method, index) {
-            return depositRouteCard(method, index, primaryRoute && method.id === primaryRoute.id);
+            return depositRouteCard(method, index, method.enabled !== false && method.status === "ACTIVE");
           }).join("") + "</div>"
         : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No deposit method is currently available. Contact support before sending funds.</div>';
       return '' +
