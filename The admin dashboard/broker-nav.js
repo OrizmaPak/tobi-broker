@@ -1455,6 +1455,7 @@
         const order = { BANK: 1, CARD: 2, CRYPTO: 3 };
         return (order[a.type] || 9) - (order[b.type] || 9);
       });
+      const primaryRoute = methods.find(function (method) { return method.type === "BANK" && method.enabled !== false && method.status === "ACTIVE"; }) || methods.find(function (method) { return method.enabled !== false && method.status === "ACTIVE"; }) || methods[0];
       const depositMethods = methods.length
         ? '<div class="broker-funding-grid">' + methods.map(function (method, index) {
             return depositRouteCard(method, index, method.enabled !== false && method.status === "ACTIVE");
