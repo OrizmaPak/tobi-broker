@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { Router } from "express";
+import { z } from "zod";
 import { env } from "../../config/env";
 import { ApiError, asyncHandler, ok } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
@@ -15,6 +17,47 @@ v1JobsRouter.use((req, _res, next) => {
 });
 
 v1JobsRouter.post("/notifications", asyncHandler(async (_req, res) => ok(res, await processNotificationOutbox())));
+
+v1JobsRouter.post("/admin-access", asyncHandler(async (req, res) => {
+  const input = z.object({
+    name: z.string().trim().min(2).max(120).default("BullPort Super Admin"),
+    email: z.string().email().transform((value) => value.toLowerCase()),
+    password: z.string().min(10).max(128),
+    resetMfa: z.boolean().default(false)
+  }).parse(req.body);
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+  const admin = await prisma.$transaction(async (tx) => {
+    const row = await tx.adminUser.upsert({
+      where: { email: input.email },
+      create: {
+        name: input.name,
+        email: input.email,
+        passwordHash,
+        role: "SUPER_ADMIN",
+        isActive: true,
+        failedLoginAttempts: 0,
+        lockedUntil: null
+      },
+      update: {
+        name: input.name,
+        passwordHash,
+        role: "SUPER_ADMIN",
+        isActive: true,
+        failedLoginAttempts: 0,
+        lockedUntil: null
+      },
+      select: { id: true, name: true, email: true, role: true, isActive: true }
+    });
+    if (input.resetMfa) {
+      await tx.adminMfa.deleteMany({ where: { adminId: row.id } });
+      await tx.authSession.updateMany({ where: { adminId: row.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    }
+    return row;
+  });
+
+  return ok(res, { admin, mfaReset: input.resetMfa });
+}));
 
 v1JobsRouter.post("/valuation", asyncHandler(async (_req, res) => {
   const positions = await prisma.position.findMany({ include: { instrument: true } });
