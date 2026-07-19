@@ -2115,17 +2115,18 @@
   function withdrawalFieldBuilder(fields, methodType) {
     const safeFields = (fields || []).filter((field) => methodType !== "BANK" || (field.id !== "bankName" && field.id !== "accountNumber"));
     const fixed = methodType === "BANK"
-      ? '<div class="modal-fieldset"><strong>Permanent bank fields</strong><p class="muted">Bank name and bank account number are always requested in the client portal and cannot be removed.</p></div>'
+      ? '<div class="payout-fixed-card"><div><span>Permanent bank fields</span><strong>Bank name and bank account number</strong><p>These are always requested in the client portal and cannot be removed.</p></div><div class="payout-fixed-pills"><em>Bank name</em><em>Bank account number</em></div></div>'
       : "";
     const rows = safeFields.map((field, index) => withdrawalFieldRow(field, index)).join("");
-    return fixed + '<div class="withdrawal-field-builder" data-withdrawal-field-builder><div class="builder-head"><div><strong>Custom verification fields</strong><span>These fields appear when a client adds a withdrawal destination and on the admin review page.</span></div><button class="btn" type="button" data-action="withdrawal-field-add">Add custom field</button></div><div data-withdrawal-field-list>' + rows + '</div></div>';
+    const empty = '<div class="payout-field-empty" data-withdrawal-field-empty><strong>No custom fields yet</strong><span>Add account name, sort code, bank country, source note, or any extra verification detail your operations team needs.</span></div>';
+    return fixed + '<div class="withdrawal-field-builder payout-field-builder" data-withdrawal-field-builder><div class="builder-head"><div><strong>Custom verification fields</strong><span>These fields appear when a client adds a payout destination and on the admin review page.</span></div><button class="btn primary" type="button" data-action="withdrawal-field-add">Add custom field</button></div><div data-withdrawal-field-list>' + rows + '</div>' + (rows ? "" : empty) + '</div>';
   }
 
   function withdrawalFieldRow(field, index) {
     field = field || {};
     const type = field.type || "TEXT";
     const options = ["TEXT", "NUMBER", "EMAIL", "TEL", "SELECT", "TEXTAREA"].map((item) => '<option value="' + item + '" ' + (type === item ? "selected" : "") + '>' + label(item) + '</option>').join("");
-    return '<div class="withdrawal-field-row" data-withdrawal-field data-field-index="' + index + '">' +
+    return '<div class="withdrawal-field-row payout-field-row" data-withdrawal-field data-field-index="' + index + '">' +
       '<label>Field key<input name="fieldId' + index + '" maxlength="80" value="' + escapeHtml(field.id || "") + '" placeholder="accountName"></label>' +
       '<label>Label<input name="fieldLabel' + index + '" maxlength="120" value="' + escapeHtml(field.label || "") + '" placeholder="Account name"></label>' +
       '<label>Type<select name="fieldType' + index + '">' + options + '</select></label>' +
@@ -2143,11 +2144,17 @@
     const rows = list.querySelectorAll("[data-withdrawal-field]");
     const nextIndex = rows.length ? Math.max(...Array.from(rows).map((row) => Number(row.dataset.fieldIndex || 0))) + 1 : 0;
     list.insertAdjacentHTML("beforeend", withdrawalFieldRow({ required: true }, nextIndex));
+    document.querySelector("[data-withdrawal-field-empty]")?.remove();
     bindActions();
   }
 
   function removeWithdrawalFieldRow(node) {
     node.closest("[data-withdrawal-field]")?.remove();
+    const list = document.querySelector("[data-withdrawal-field-list]");
+    const builder = document.querySelector("[data-withdrawal-field-builder]");
+    if (list && builder && !list.querySelector("[data-withdrawal-field]") && !builder.querySelector("[data-withdrawal-field-empty]")) {
+      builder.insertAdjacentHTML("beforeend", '<div class="payout-field-empty" data-withdrawal-field-empty><strong>No custom fields yet</strong><span>Add account name, sort code, bank country, source note, or any extra verification detail your operations team needs.</span></div>');
+    }
   }
 
   function depositProofFieldBuilder(fields) {
@@ -2190,8 +2197,8 @@
     const setting = withdrawalMethodsValue();
     const current = setting.methods.find((method) => method.id === id);
     const methodType = current?.type || type || "BANK";
-    const common = '<input type="hidden" name="withdrawalMethodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="withdrawalMethodType" value="' + methodType + '"><label>Method name<input name="withdrawalMethodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "Crypto withdrawal" : "Bank withdrawal")) + '"></label><label>Description<textarea name="withdrawalMethodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Currency<input name="withdrawalMethodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="withdrawalMethodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Review window<input name="withdrawalReviewWindow" maxlength="160" value="' + escapeHtml(current?.reviewWindow || (methodType === "CRYPTO" ? "Enhanced review before release" : "Same business day after finance review")) + '"></label><label>Cooling-off hours<input name="withdrawalCooldownHours" type="number" min="0" max="720" value="' + escapeHtml(String(current?.cooldownHours ?? (methodType === "CRYPTO" ? 48 : 24))) + '"></label><label>Client instructions<textarea name="withdrawalInstructions" maxlength="1000">' + escapeHtml(current?.instructions || "") + '</textarea></label>';
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Payout settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto payout form" : "bank payout form") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + common + withdrawalFieldBuilder(current?.fields || defaultWithdrawalMethods().methods.find((method) => method.type === methodType)?.fields || [], methodType) + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="withdrawal-method-save">Save payout form</button></div></section></div>';
+    const common = '<input type="hidden" name="withdrawalMethodId" value="' + escapeHtml(current?.id || "") + '"><input type="hidden" name="withdrawalMethodType" value="' + methodType + '"><div class="payout-editor-grid"><div class="payout-editor-card is-main"><span>Route identity</span><label>Method name<input name="withdrawalMethodName" maxlength="120" value="' + escapeHtml(current?.name || (methodType === "CRYPTO" ? "Crypto withdrawal" : "Bank withdrawal")) + '"></label><label>Description<textarea name="withdrawalMethodDescription" maxlength="500" placeholder="Explain how this route should appear in the client portal.">' + escapeHtml(current?.description || "") + '</textarea></label><label>Client instructions<textarea name="withdrawalInstructions" maxlength="1000" placeholder="Tell the client what happens after they submit this payout destination.">' + escapeHtml(current?.instructions || "") + '</textarea></label></div><div class="payout-editor-card"><span>Controls</span><label>Currency<input name="withdrawalMethodCurrency" maxlength="12" value="' + escapeHtml(current?.currency || (methodType === "CRYPTO" ? "USDT" : "USD")) + '"></label><label>Status<select name="withdrawalMethodStatus"><option value="ACTIVE" ' + (current?.status === "ACTIVE" || !current ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (current?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Review window<input name="withdrawalReviewWindow" maxlength="160" value="' + escapeHtml(current?.reviewWindow || (methodType === "CRYPTO" ? "Enhanced review before release" : "Same business day after finance review")) + '"></label><label>Cooling-off hours<input name="withdrawalCooldownHours" type="number" min="0" max="720" value="' + escapeHtml(String(current?.cooldownHours ?? (methodType === "CRYPTO" ? 48 : 24))) + '"></label></div></div>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide payout-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Payout settings</p><h2>' + (current ? "Edit " : "Add ") + (methodType === "CRYPTO" ? "crypto payout form" : "bank payout form") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body">' + common + withdrawalFieldBuilder(current?.fields || defaultWithdrawalMethods().methods.find((method) => method.type === methodType)?.fields || [], methodType) + '</div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="withdrawal-method-save">Save payout form</button></div></section></div>';
     bindActions();
   }
 

@@ -1381,6 +1381,140 @@ tr:last-child td {
   width: min(1320px, calc(100vw - 28px));
 }
 
+.payout-editor-modal .modal-body {
+  background:
+    linear-gradient(180deg, rgba(22, 163, 74, 0.045), rgba(255, 255, 255, 0) 220px),
+    white;
+}
+
+.payout-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.payout-editor-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 32px rgba(16, 24, 20, 0.06);
+  padding: 14px;
+}
+
+.payout-editor-card.is-main {
+  background: linear-gradient(180deg, #ffffff, #f8fbf8);
+}
+
+.payout-editor-card > span,
+.payout-fixed-card span {
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payout-fixed-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(22, 163, 74, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.1), rgba(246, 251, 247, 0.96));
+  padding: 14px;
+}
+
+.payout-fixed-card strong,
+.payout-fixed-card p {
+  display: block;
+}
+
+.payout-fixed-card strong {
+  margin-top: 5px;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.payout-fixed-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.payout-fixed-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.payout-fixed-pills em {
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  border-radius: 999px;
+  background: white;
+  color: var(--green-dark);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.payout-field-builder {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(16, 24, 20, 0.05);
+  padding: 14px;
+}
+
+.payout-field-builder .builder-head {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.payout-field-row {
+  position: relative;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(150px, 1.1fr) minmax(110px, 0.7fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(160px, 1.15fr) auto auto;
+  background: linear-gradient(180deg, #ffffff, #f8faf8);
+  box-shadow: inset 4px 0 0 rgba(22, 163, 74, 0.45);
+}
+
+.payout-field-row::before {
+  content: "Custom";
+  align-self: center;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--green-dark);
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.payout-field-empty {
+  display: grid;
+  gap: 5px;
+  border: 1px dashed rgba(22, 163, 74, 0.32);
+  border-radius: 12px;
+  background: rgba(22, 163, 74, 0.045);
+  color: var(--muted);
+  padding: 18px;
+  text-align: center;
+}
+
+.payout-field-empty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
 .modal-head,
 .modal-actions {
   display: flex;
@@ -1556,6 +1690,18 @@ tr:last-child td {
   .withdrawal-field-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .payout-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payout-field-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payout-field-row::before {
+    justify-self: start;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1693,6 +1839,19 @@ tr:last-child td {
   }
 
   .withdrawal-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .payout-fixed-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .payout-fixed-pills {
+    justify-content: flex-start;
+  }
+
+  .payout-field-row {
     grid-template-columns: 1fr;
   }
 
