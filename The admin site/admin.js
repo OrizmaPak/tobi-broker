@@ -843,7 +843,7 @@
 
     if (Array.isArray(instruments)) {
       data.instrumentRecords = instruments;
-      data.instruments = instruments.map((row) => [row.symbol, row.name, row.category, row.market, label(row.riskLevel), row.status]);
+      data.instruments = instruments.map((row) => [row.symbol, row.name, row.category, row.marketRecord?.name || row.market, label(row.riskLevel), row.status]);
     }
 
     if (Array.isArray(tickets)) {
@@ -930,6 +930,10 @@
   function currentFile() {
     const file = (location.pathname.split("/").pop() || "index.html").split(/[?#]/)[0];
     return file || "index.html";
+  }
+
+  function queryParam(name) {
+    return new URLSearchParams(location.search).get(name);
   }
 
   function activeNavFile() {
@@ -1227,8 +1231,12 @@
 
   function instrumentsPage() {
     const activeMarkets = data.marketRecords.filter((row) => row.status === "ACTIVE");
+    const marketFilter = queryParam("marketId") || "all";
+    const shownInstruments = marketFilter === "all" ? data.instrumentRecords : data.instrumentRecords.filter((row) => row.marketId === marketFilter);
+    const marketTabs = ['<a class="btn ' + (marketFilter === "all" ? "primary" : "") + '" href="instruments.html">All markets</a>'].concat(data.marketRecords.map((market) => '<a class="btn ' + (marketFilter === market.id ? "primary" : "") + '" href="instruments.html?marketId=' + encodeURIComponent(market.id) + '">' + escapeHtml(market.name) + '</a>')).join("");
     const action = activeMarkets.length ? '<button type="button" class="btn primary" data-action="instrument-new">Add instrument</button>' : linkButton("Create enabled market first", "markets.html", "primary");
-    return section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", filterableTable("Search symbol, market, category...", ["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], data.instrumentRecords.map((row) => [row.symbol, row.name, row.category, row.market, badge(label(row.riskLevel)), badge(label(row.status)), '<button class="btn" type="button" data-action="instrument-edit" data-instrument-id="' + escapeHtml(row.id) + '">Edit</button>'])), action);
+    return section("Market filter", "View instruments by their assigned market.", '<div class="action-row">' + marketTabs + "</div>") +
+      section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", filterableTable("Search symbol, market, category...", ["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], shownInstruments.map((row) => [row.symbol, row.name, row.category, row.marketRecord?.name || row.market, badge(label(row.riskLevel)), badge(label(row.status)), '<button class="btn" type="button" data-action="instrument-edit" data-instrument-id="' + escapeHtml(row.id) + '">Edit</button>'])), action);
   }
 
   function riskPage() {
@@ -2021,9 +2029,9 @@
     return copy[type] || copy.task;
   }
 
-  function marketOptions(selectedName) {
+  function marketOptions(selectedId) {
     const activeMarkets = data.marketRecords.filter((row) => row.status === "ACTIVE");
-    return activeMarkets.map((market) => '<option value="' + escapeHtml(market.name) + '" ' + (market.name === selectedName ? "selected" : "") + '>' + escapeHtml(market.name) + '</option>').join("");
+    return activeMarkets.map((market) => '<option value="' + escapeHtml(market.id) + '" ' + (market.id === selectedId ? "selected" : "") + '>' + escapeHtml(market.name) + '</option>').join("");
   }
 
   function openMarketEditor(id) {
@@ -2065,7 +2073,7 @@
   function openInstrumentEditor(id) {
     const root = document.querySelector("[data-modal-root]");
     const instrument = data.instrumentRecords.find((row) => row.id === id) || null;
-    const options = marketOptions(instrument?.market || "");
+    const options = marketOptions(instrument?.marketId || "");
     if (!root) return;
     if (!options) { toast("Create and enable a market before adding instruments."); return; }
     root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Instrument setup</p><h2>' + (instrument ? "Edit instrument" : "Add instrument") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><div class="product-editor-grid"><label>Symbol<input name="instrumentSymbol" maxlength="30" value="' + escapeHtml(instrument?.symbol || "") + '" placeholder="AAPL"></label><label>Name<input name="instrumentName" maxlength="160" value="' + escapeHtml(instrument?.name || "") + '" placeholder="Apple Inc."></label><label>Market<select name="instrumentMarket">' + options + '</select></label><label>Category<input name="instrumentCategory" maxlength="60" value="' + escapeHtml(instrument?.category || "") + '" placeholder="Stock"></label><label>Currency<input name="instrumentCurrency" maxlength="3" value="' + escapeHtml(instrument?.currency || "USD") + '"></label><label>Risk level<select name="instrumentRisk"><option value="LOW" ' + (instrument?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!instrument || instrument.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (instrument?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (instrument?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Status<select name="instrumentStatus"><option value="ACTIVE" ' + (!instrument || instrument.status === "ACTIVE" ? "selected" : "") + '>Active</option><option value="INACTIVE" ' + (instrument?.status === "INACTIVE" ? "selected" : "") + '>Inactive</option><option value="SUSPENDED" ' + (instrument?.status === "SUSPENDED" ? "selected" : "") + '>Suspended</option><option value="RESTRICTED" ' + (instrument?.status === "RESTRICTED" ? "selected" : "") + '>Restricted</option></select></label><label>Tradable<select name="instrumentTradable"><option value="true" ' + (instrument?.tradable ? "selected" : "") + '>Yes</option><option value="false" ' + (!instrument?.tradable ? "selected" : "") + '>No</option></select></label><label>Investable<select name="instrumentInvestable"><option value="true" ' + (instrument?.investable !== false ? "selected" : "") + '>Yes</option><option value="false" ' + (instrument?.investable === false ? "selected" : "") + '>No</option></select></label></div></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="instrument-save" data-instrument-id="' + escapeHtml(instrument?.id || "") + '">Save instrument</button></div></section></div>';
@@ -2077,7 +2085,7 @@
     const payload = {
       symbol: root?.querySelector('[name="instrumentSymbol"]')?.value.trim() || "",
       name: root?.querySelector('[name="instrumentName"]')?.value.trim() || "",
-      market: root?.querySelector('[name="instrumentMarket"]')?.value || "",
+      marketId: root?.querySelector('[name="instrumentMarket"]')?.value || "",
       category: root?.querySelector('[name="instrumentCategory"]')?.value.trim() || "",
       currency: (root?.querySelector('[name="instrumentCurrency"]')?.value.trim() || "USD").toUpperCase(),
       riskLevel: root?.querySelector('[name="instrumentRisk"]')?.value || "MODERATE",
@@ -2087,7 +2095,7 @@
     };
     if (!payload.symbol) { toast("Enter an instrument symbol."); return; }
     if (payload.name.length < 2) { toast("Enter an instrument name."); return; }
-    if (!payload.market) { toast("Select a market."); return; }
+    if (!payload.marketId) { toast("Select a market."); return; }
     if (payload.category.length < 2) { toast("Enter an instrument category."); return; }
     if (payload.currency.length !== 3) { toast("Currency must be a three-letter code such as USD."); return; }
     const saved = await api(id ? "/api/v1/admin/instruments/" + encodeURIComponent(id) : "/api/v1/admin/instruments", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });

@@ -50,6 +50,11 @@ async function activeMarketByName(name: string) {
   return prisma.market.findFirst({ where: { name: { equals: name, mode: "insensitive" }, status: "ACTIVE" } });
 }
 
+async function activeMarketById(id: string) {
+  await ensureDefaultMarkets();
+  return prisma.market.findFirst({ where: { id, status: "ACTIVE" } });
+}
+
 async function pendingApproval(tx: Prisma.TransactionClient, actionType: string, entityType: string, entityId: string, adminId: string, payload: Prisma.InputJsonObject) {
   const existing = await tx.approvalRequest.findFirst({ where: { actionType, entityType, entityId, status: "PENDING" } });
   if (existing) return existing;
@@ -254,7 +259,8 @@ v1AdminBrokerRouter.patch("/markets/:id", portfolioRoles, asyncHandler(async (re
 
 v1AdminBrokerRouter.get("/instruments", readRoles, asyncHandler(async (req, res) => {
   const category = typeof req.query.category === "string" ? req.query.category : undefined;
-  const rows = await prisma.instrument.findMany({ where: category ? { category: { equals: category, mode: "insensitive" } } : {}, include: { prices: { orderBy: { asOf: "desc" }, take: 10 }, _count: { select: { orders: true, positions: true, allocations: true } } }, orderBy: { symbol: "asc" } });
+  const marketId = typeof req.query.marketId === "string" ? req.query.marketId : undefined;
+  const rows = await prisma.instrument.findMany({ where: { ...(category ? { category: { equals: category, mode: "insensitive" } } : {}), ...(marketId ? { marketId } : {}) }, include: { marketRecord: true, prices: { orderBy: { asOf: "desc" }, take: 10 }, _count: { select: { orders: true, positions: true, allocations: true } } }, orderBy: [{ marketRecord: { sortOrder: "asc" } }, { symbol: "asc" }] });
   return ok(res, rows);
 }));
 
@@ -285,22 +291,38 @@ v1AdminBrokerRouter.post("/exchange-rates", portfolioRoles, asyncHandler(async (
   return ok(res, row, 201);
 }));
 
-const instrumentSchema = z.object({ symbol: z.string().trim().min(1).max(30).transform((value) => value.toUpperCase()), name: z.string().trim().min(2).max(160), category: z.string().trim().min(2).max(60), market: z.string().trim().min(2).max(60), currency: z.string().length(3).default("USD"), riskLevel: z.enum(["LOW", "MODERATE", "HIGH", "CUSTOM"]), dividendEligible: z.boolean().default(false), tradable: z.boolean().default(false), investable: z.boolean().default(true), status: z.enum(["ACTIVE", "INACTIVE", "SUSPENDED", "RESTRICTED"]).default("ACTIVE") });
+const instrumentSchema = z.object({
+  symbol: z.string().trim().min(1).max(30).transform((value) => value.toUpperCase()),
+  name: z.string().trim().min(2).max(160),
+  category: z.string().trim().min(2).max(60),
+  marketId: z.string().trim().min(1).optional(),
+  market: z.string().trim().min(2).max(60).optional(),
+  currency: z.string().length(3).default("USD"),
+  riskLevel: z.enum(["LOW", "MODERATE", "HIGH", "CUSTOM"]),
+  dividendEligible: z.boolean().default(false),
+  tradable: z.boolean().default(false),
+  investable: z.boolean().default(true),
+  status: z.enum(["ACTIVE", "INACTIVE", "SUSPENDED", "RESTRICTED"]).default("ACTIVE")
+}).refine((value) => value.marketId || value.market, { message: "Select a market before saving an instrument", path: ["marketId"] });
+
+async function resolveInstrumentMarket(input: z.infer<typeof instrumentSchema>) {
+  const market = input.marketId ? await activeMarketById(input.marketId) : input.market ? await activeMarketByName(input.market) : null;
+  if (!market) throw new ApiError(422, "Select an enabled market before saving an instrument", "MARKET_UNAVAILABLE");
+  return market;
+}
 
 v1AdminBrokerRouter.post("/instruments", portfolioRoles, asyncHandler(async (req, res) => {
   const input = instrumentSchema.parse(req.body);
-  const market = await activeMarketByName(input.market);
-  if (!market) throw new ApiError(422, "Select an enabled market before creating an instrument", "MARKET_UNAVAILABLE");
-  const row = await prisma.instrument.create({ data: input });
+  const market = await resolveInstrumentMarket(input);
+  const row = await prisma.instrument.create({ data: { ...input, marketId: market.id, market: market.name } });
   await writeAudit("createInstrument", "Instrument", row.id, undefined, { req });
   return ok(res, row, 201);
 }));
 
 v1AdminBrokerRouter.put("/instruments/:id", portfolioRoles, asyncHandler(async (req, res) => {
   const input = instrumentSchema.parse(req.body);
-  const market = await activeMarketByName(input.market);
-  if (!market) throw new ApiError(422, "Select an enabled market before updating an instrument", "MARKET_UNAVAILABLE");
-  const row = await prisma.instrument.update({ where: { id: String(req.params.id) }, data: input });
+  const market = await resolveInstrumentMarket(input);
+  const row = await prisma.instrument.update({ where: { id: String(req.params.id) }, data: { ...input, marketId: market.id, market: market.name } });
   await writeAudit("updateInstrument", "Instrument", row.id, undefined, { req });
   return ok(res, row);
 }));

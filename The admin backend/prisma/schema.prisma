@@ -894,6 +894,7 @@ model Instrument {
   name                String
   category            String
   market              String
+  marketId            String
   currency            String                @default("USD")
   currentPrice        Decimal?              @db.Decimal(24, 8)
   priceAsOf           DateTime?
@@ -915,6 +916,9 @@ model Instrument {
   optionContracts     OptionContract[]      @relation("OptionUnderlying")
   distributionBatches DistributionBatch[]
   riskAlerts          RiskAlert[]
+  marketRecord        Market                @relation(fields: [marketId], references: [id], onDelete: Restrict)
+
+  @@index([marketId])
 }
 
 model Market {
@@ -928,6 +932,7 @@ model Market {
   sortOrder   Int      @default(100)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  instruments Instrument[]
 
   @@index([status, sortOrder])
 }
