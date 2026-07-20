@@ -289,13 +289,14 @@
   function updateProductBannerPreview(root) {
     const preview = root?.querySelector("[data-product-banner-preview]");
     if (!preview) return;
+    const bannerInput = root?.querySelector("[data-product-banner-url]") || root?.querySelector('[name="productBannerUrl"]');
     const base = root === document
       ? (data.productDetail?.id ? data.productDetail : {})
       : (data.productRecords.find((row) => row.id === appState.pendingProductId) || {});
     preview.innerHTML = productBannerPreviewHtml({
       ...base,
       name: root?.querySelector('[name="productName"]')?.value.trim() || "Portfolio product",
-      bannerUrl: root?.querySelector('[name="productBannerUrl"]')?.value.trim() || "",
+      bannerUrl: bannerInput?.value.trim() || "",
       projectedReturnMin: root?.querySelector('[name="productReturnMin"]')?.value.trim() || "",
       projectedReturnMax: root?.querySelector('[name="productReturnMax"]')?.value.trim() || ""
     });
@@ -310,10 +311,15 @@
       method: "POST",
       body: JSON.stringify({ fileName: file.name, mimeType: file.type, base64 })
     });
-    const input = root?.querySelector('[name="productBannerUrl"]');
+    const input = root?.querySelector("[data-product-banner-url]") || root?.querySelector('[name="productBannerUrl"]');
     if (input && uploaded?.url) input.value = uploaded.url;
     updateProductBannerPreview(root);
-    toast("Product banner uploaded.");
+    if (root === document && liveRefs.productId && uploaded?.url) {
+      await persistProductBannerUrl(uploaded.url, true);
+      toast("Product banner uploaded and saved.");
+    } else {
+      toast("Product banner uploaded. Save the product to keep it.");
+    }
   }
 
   function bindProductBannerControls() {
@@ -2342,20 +2348,25 @@
     }
   }
 
-  async function submitProductBanner() {
+  async function persistProductBannerUrl(bannerUrl, silent) {
     const id = liveRefs.productId;
     if (!id) { toast("Open a product before saving a banner."); return; }
-    const bannerUrl = document.querySelector('[name="productBannerUrl"]')?.value.trim() || "";
+    const saved = await api("/api/v1/admin/portfolio-products/" + encodeURIComponent(id) + "/banner", {
+      method: "PATCH",
+      body: JSON.stringify({ bannerUrl })
+    });
+    data.productDetail.bannerUrl = saved.bannerUrl || "";
+    const record = data.productRecords.find((row) => row.id === id);
+    if (record) record.bannerUrl = saved.bannerUrl || "";
+    updateProductBannerPreview(document);
+    if (!silent) toast("Product banner saved.");
+  }
+
+  async function submitProductBanner() {
+    const input = document.querySelector(".product-banner-direct [data-product-banner-url]") || document.querySelector(".product-banner-direct [name='productBannerUrl']");
+    const bannerUrl = input?.value.trim() || "";
     try {
-      const saved = await api("/api/v1/admin/portfolio-products/" + encodeURIComponent(id) + "/banner", {
-        method: "PATCH",
-        body: JSON.stringify({ bannerUrl })
-      });
-      data.productDetail.bannerUrl = saved.bannerUrl || "";
-      const record = data.productRecords.find((row) => row.id === id);
-      if (record) record.bannerUrl = saved.bannerUrl || "";
-      updateProductBannerPreview(document);
-      toast("Product banner saved.");
+      await persistProductBannerUrl(bannerUrl, false);
     } catch (error) {
       toast(error?.message || "The product banner could not be saved.");
     }
