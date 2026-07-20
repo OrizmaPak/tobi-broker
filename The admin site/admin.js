@@ -1948,6 +1948,7 @@
     const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
     document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar">' + adminBrand("light", "Broker operations console") + '<nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button>' + adminAccountButton(initials) + '</div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
+    markRequiredFields();
     bindProductBannerControls();
     bindFilters();
   }
@@ -2006,6 +2007,7 @@
   }
 
   function bindActions() {
+    markRequiredFields();
     document.querySelectorAll("[data-action]").forEach((node) => {
       if (node.dataset.bound === "true") return;
       node.dataset.bound = "true";
@@ -2147,6 +2149,27 @@
       if (node.dataset.bound === "true") return;
       node.dataset.bound = "true";
       node.addEventListener("input", updateProductAllocationTotal);
+    });
+  }
+
+  function markRequiredFields() {
+    document.querySelectorAll("input[required], select[required], textarea[required]").forEach((control) => {
+      if (control.type === "hidden" || control.type === "search" || control.disabled) return;
+      const label = control.closest("label") || (control.id ? Array.from(document.querySelectorAll("label[for]")).find((item) => item.getAttribute("for") === control.id) : null);
+      if (!label || label.dataset.requiredMarked === "true") return;
+      if (label.classList.contains("modal-check") || label.classList.contains("checkbox-row")) {
+        label.dataset.requiredMarked = "true";
+        label.classList.add("has-required-field");
+        return;
+      }
+      const target = label.querySelector(":scope > span") || label;
+      const marker = document.createElement("span");
+      marker.className = "required-asterisk";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = "*";
+      target.appendChild(marker);
+      label.dataset.requiredMarked = "true";
+      label.classList.add("has-required-field");
     });
   }
 

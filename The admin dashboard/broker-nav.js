@@ -3879,6 +3879,7 @@
   }
 
   function bindActions() {
+    markRequiredFields();
     document.querySelectorAll("[data-broker-action]").forEach(function (node) {
       if (node.dataset.brokerBound === "true") return;
       node.dataset.brokerBound = "true";
@@ -3902,6 +3903,27 @@
     });
   }
 
+  function markRequiredFields() {
+    document.querySelectorAll("input[required], select[required], textarea[required]").forEach(function (control) {
+      if (control.type === "hidden" || control.type === "search" || control.disabled || control.name === "_mc4wp_honeypot") return;
+      const label = control.closest("label") || (control.id ? document.querySelector('label[for="' + CSS.escape(control.id) + '"]') : null);
+      if (!label || label.dataset.requiredMarked === "true") return;
+      if (label.classList.contains("bp-auth-terms") || label.classList.contains("bp-terms-check")) {
+        label.dataset.requiredMarked = "true";
+        label.classList.add("has-required-field");
+        return;
+      }
+      const textNode = label.querySelector(":scope > span") || label;
+      const marker = document.createElement("span");
+      marker.className = "required-asterisk";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = "*";
+      textNode.appendChild(marker);
+      label.dataset.requiredMarked = "true";
+      label.classList.add("has-required-field");
+    });
+  }
+
   function injectStyles() {
     if (document.getElementById("broker-portal-styles")) return;
     const style = document.createElement("style");
@@ -3914,6 +3936,7 @@
       + " main table{table-layout:auto}"
       + " main a{text-decoration:none}"
       + " main h1,main h2,main h3{letter-spacing:0}"
+      + " .required-asterisk{display:inline-flex;margin-left:4px;color:#ef4444;font-weight:950;line-height:1}.has-required-field>span:first-child .required-asterisk,.bp-auth-field>span .required-asterisk{color:#ef4444}.bp-auth-terms.has-required-field span:after,.bp-terms-check.has-required-field span:after{content:' *';color:#ef4444;font-weight:950}"
       + " main .rounded-xl{border-radius:12px}"
       + " main .rounded-2xl{border-radius:18px}"
       + " aside.bg-sidebar{background:#111b15!important;color:#dbe7dd;border-right:1px solid rgba(255,255,255,.08)}"

@@ -2470,3 +2470,23 @@ tr:last-child td {
     width: 100%;
   }
 }
+
+.required-asterisk {
+  color: #ef4444;
+  display: inline-flex;
+  font-weight: 950;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+.modal-check.has-required-field,
+.checkbox-row.has-required-field {
+  position: relative;
+}
+
+.modal-check.has-required-field::after,
+.checkbox-row.has-required-field::after {
+  color: #ef4444;
+  content: " *";
+  font-weight: 950;
+}

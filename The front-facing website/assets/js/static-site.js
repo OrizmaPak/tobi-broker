@@ -2052,6 +2052,22 @@
     table.dataset.marketMode = data.capabilities?.marketPriceMode || "admin-managed";
   }
 
+  function markRequiredFields() {
+    document.querySelectorAll("input[required], select[required], textarea[required]").forEach((control) => {
+      if (control.type === "hidden" || control.type === "search" || control.disabled || control.name === "_mc4wp_honeypot") return;
+      const label = control.closest("label") || (control.id ? Array.from(document.querySelectorAll("label[for]")).find((item) => item.getAttribute("for") === control.id) : null);
+      if (!label || label.dataset.requiredMarked === "true") return;
+      const target = label.querySelector(":scope > span, :scope > .label-text, :scope > p, :scope > strong") || label;
+      const marker = document.createElement("span");
+      marker.className = "required-asterisk";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = "*";
+      target.appendChild(marker);
+      label.dataset.requiredMarked = "true";
+      label.classList.add("has-required-field");
+    });
+  }
+
   function enhanceHome() {
     updateHero();
     enhanceTemplateHome();
@@ -2067,6 +2083,7 @@
     renderFooter();
     remapLegacyLinks();
     bindForms();
+    markRequiredFields();
     bindContactVideo();
     replaceBrandText();
     replaceLogos();
@@ -2096,5 +2113,8 @@
     boot();
   }
 
-  window.addEventListener("load", () => releasePageLoader());
+  window.addEventListener("load", () => {
+    releasePageLoader();
+    markRequiredFields();
+  });
 })();

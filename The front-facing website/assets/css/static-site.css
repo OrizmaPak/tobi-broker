@@ -2280,3 +2280,11 @@ body.app-nav-open {
   -webkit-transition: none !important;
   transition: none !important;
 }
+
+.required-asterisk {
+  color: #ef4444;
+  display: inline-flex;
+  font-weight: 950;
+  line-height: 1;
+  margin-left: 4px;
+}
