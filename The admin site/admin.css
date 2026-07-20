@@ -1705,24 +1705,97 @@ tr:last-child td {
   gap: 10px;
 }
 
-.market-logo-cell img,
+.market-logo-frame,
 .market-logo-placeholder {
   align-items: center;
-  background: rgba(15, 23, 42, 0.06);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, #eef6ff, #dbeafe);
+  border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 8px;
-  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 6px 16px rgba(15, 23, 42, 0.08);
+  color: #1d4ed8;
   display: inline-flex;
   font-size: 12px;
   font-weight: 800;
   height: 34px;
   justify-content: center;
-  padding: 6px;
   width: 34px;
 }
 
 .market-logo-cell img {
+  filter: brightness(0) saturate(100%) invert(27%) sepia(86%) saturate(1682%) hue-rotate(212deg) brightness(90%) contrast(96%);
+  height: 19px;
   object-fit: contain;
+  width: 19px;
+}
+
+.market-logo-item-us-stocks .market-logo-frame {
+  background: linear-gradient(135deg, #ecfdf5, #bbf7d0);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+
+.market-logo-item-us-stocks img {
+  filter: brightness(0) saturate(100%) invert(38%) sepia(71%) saturate(688%) hue-rotate(99deg) brightness(88%) contrast(89%);
+}
+
+.market-logo-item-global-etfs .market-logo-frame {
+  background: linear-gradient(135deg, #eff6ff, #bfdbfe);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.market-logo-item-crypto .market-logo-frame {
+  background: linear-gradient(135deg, #fff7ed, #fed7aa);
+  border-color: rgba(234, 88, 12, 0.2);
+}
+
+.market-logo-item-crypto img {
+  filter: brightness(0) saturate(100%) invert(45%) sepia(95%) saturate(1423%) hue-rotate(3deg) brightness(98%) contrast(92%);
+}
+
+.market-logo-item-forex .market-logo-frame {
+  background: linear-gradient(135deg, #ecfeff, #a5f3fc);
+  border-color: rgba(8, 145, 178, 0.22);
+}
+
+.market-logo-item-forex img {
+  filter: brightness(0) saturate(100%) invert(43%) sepia(94%) saturate(527%) hue-rotate(144deg) brightness(87%) contrast(95%);
+}
+
+.market-logo-item-commodities .market-logo-frame {
+  background: linear-gradient(135deg, #fefce8, #fde68a);
+  border-color: rgba(202, 138, 4, 0.24);
+}
+
+.market-logo-item-commodities img {
+  filter: brightness(0) saturate(100%) invert(53%) sepia(95%) saturate(577%) hue-rotate(8deg) brightness(92%) contrast(96%);
+}
+
+.market-logo-item-bonds .market-logo-frame,
+.market-logo-item-money-market .market-logo-frame {
+  background: linear-gradient(135deg, #f8fafc, #cbd5e1);
+  border-color: rgba(71, 85, 105, 0.24);
+}
+
+.market-logo-item-bonds img,
+.market-logo-item-money-market img {
+  filter: brightness(0) saturate(100%) invert(29%) sepia(13%) saturate(1024%) hue-rotate(176deg) brightness(89%) contrast(86%);
+}
+
+.market-logo-item-mutual-funds .market-logo-frame {
+  background: linear-gradient(135deg, #f5f3ff, #ddd6fe);
+  border-color: rgba(124, 58, 237, 0.2);
+}
+
+.market-logo-item-mutual-funds img {
+  filter: brightness(0) saturate(100%) invert(34%) sepia(74%) saturate(1878%) hue-rotate(248deg) brightness(91%) contrast(94%);
+}
+
+.market-logo-item-private-credit .market-logo-frame {
+  background: linear-gradient(135deg, #fff1f2, #fecdd3);
+  border-color: rgba(225, 29, 72, 0.2);
+}
+
+.market-logo-item-private-credit img {
+  filter: brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(2284%) hue-rotate(337deg) brightness(92%) contrast(91%);
 }
 
 .allocation-summary.is-ready,

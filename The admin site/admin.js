@@ -1215,14 +1215,14 @@
 
   function marketsPage() {
     const rows = data.marketRecords.map((row) => [
-      '<span class="market-logo-cell">' + (row.logoUrl ? '<img src="' + escapeHtml(row.logoUrl) + '" alt="" loading="lazy">' : '<span class="market-logo-placeholder">' + escapeHtml(row.name.slice(0, 1).toUpperCase()) + '</span>') + '<strong>' + escapeHtml(row.name) + '</strong></span>',
+      '<span class="market-logo-cell market-logo-' + escapeHtml(slugify(row.name, "item")) + '">' + (row.logoUrl ? '<span class="market-logo-frame"><img src="' + escapeHtml(row.logoUrl) + '" alt="" loading="lazy"></span>' : '<span class="market-logo-placeholder">' + escapeHtml(row.name.slice(0, 1).toUpperCase()) + '</span>') + '<strong>' + escapeHtml(row.name) + '</strong></span>',
       row.category,
       row.description || "-",
       badge(label(row.status), row.status === "ACTIVE" ? "success" : "warning"),
       String(row.sortOrder || 100),
       '<button class="btn" type="button" data-action="market-edit" data-market-id="' + escapeHtml(row.id) + '">Edit</button><button class="btn ' + (row.status === "ACTIVE" ? "danger" : "primary") + '" type="button" data-action="market-status-toggle" data-market-id="' + escapeHtml(row.id) + '" data-market-status="' + (row.status === "ACTIVE" ? "DISABLED" : "ACTIVE") + '">' + (row.status === "ACTIVE" ? "Disable" : "Enable") + "</button>"
     ]);
-    return section("Market management", "Create the markets instruments can belong to. Disabled markets remain in history but cannot be selected for new instruments.", filterableTable("Search market, category, status...", ["Market", "Category", "Description", "Status", "Order", "Action"], rows), '<button type="button" class="btn primary" data-action="market-new">New market</button>');
+    return section("Market management", "Create the markets instruments can belong to. Disabled markets remain in history but cannot be selected for new instruments. Display order controls table position; lower numbers appear first.", filterableTable("Search market, category, status...", ["Market", "Category", "Description", "Status", "Display order", "Action"], rows), '<button type="button" class="btn primary" data-action="market-new">New market</button>');
   }
 
   function instrumentsPage() {
