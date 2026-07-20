@@ -398,10 +398,13 @@
 
   function statusTone(value) {
     const v = String(value).toLowerCase();
+    if (v.indexOf("reject") !== -1 || v.indexOf("denied") !== -1 || v.indexOf("failed") !== -1 || v.indexOf("cancel") !== -1 || v.indexOf("suspend") !== -1 || v.indexOf("mismatch") !== -1) {
+      return "danger";
+    }
     if (v.indexOf("approved") !== -1 || v.indexOf("active") !== -1 || v.indexOf("completed") !== -1 || v.indexOf("posted") !== -1 || v.indexOf("ready") !== -1 || v.indexOf("credited") !== -1 || v.indexOf("resolved") !== -1 || v.indexOf("filled") !== -1 || v.indexOf("investable") !== -1 || v.indexOf("tradable") !== -1) {
       return "success";
     }
-    if (v.indexOf("pending") !== -1 || v.indexOf("review") !== -1 || v.indexOf("upcoming") !== -1 || v.indexOf("scheduled") !== -1 || v.indexOf("open") !== -1 || v.indexOf("suggested") !== -1) {
+    if (v.indexOf("pending") !== -1 || v.indexOf("review") !== -1 || v.indexOf("upcoming") !== -1 || v.indexOf("scheduled") !== -1 || v.indexOf("open") !== -1 || v.indexOf("suggested") !== -1 || v.indexOf("processing") !== -1 || v.indexOf("held") !== -1 || v.indexOf("hold") !== -1) {
       return "warning";
     }
     if (v.indexOf("restricted") !== -1 || v.indexOf("high") !== -1 || v.indexOf("required") !== -1) {
@@ -788,6 +791,105 @@
     });
   }
 
+  function transactionTimestamp(value) {
+    if (!value) return 0;
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function movementDirection(type, amount) {
+    const value = String(type || "").toLowerCase();
+    if (value.indexOf("withdraw") !== -1 || value.indexOf("fee") !== -1 || value.indexOf("subscription") !== -1 || value.indexOf("hold") !== -1 || value.indexOf("debit") !== -1 || value.indexOf("buy") !== -1) return "OUT";
+    if (value.indexOf("deposit") !== -1 || value.indexOf("credit") !== -1 || value.indexOf("dividend") !== -1 || value.indexOf("profit") !== -1 || value.indexOf("payout") !== -1 || value.indexOf("distribution") !== -1) return "IN";
+    return numberValue(amount) < 0 ? "OUT" : "IN";
+  }
+
+  function movementAmount(amount, direction) {
+    const value = Math.abs(numberValue(amount));
+    return (direction === "OUT" ? "-" : "+") + money(value);
+  }
+
+  function movementAmountPill(amount, direction, status) {
+    const tone = statusTone(status || "");
+    const amountTone = tone === "danger" || direction === "OUT" ? "danger" : tone === "warning" ? "warning" : "success";
+    return '<span class="broker-deposit-amount is-' + amountTone + '">' + movementAmount(amount, direction) + '</span>';
+  }
+
+  function transactionLedgerRows() {
+    const liveTransactions = (appState.data && Array.isArray(appState.data.transactions)) ? appState.data.transactions : [];
+    const sourceRows = liveTransactions.length ? liveTransactions : getState().transactions;
+    return sourceRows.map(function (row, index) {
+      const direction = movementDirection(row.type, row.amount);
+      const reference = row.reference || row.description || "Wallet movement";
+      return {
+        key: row.id || "ledger-" + reference + "-" + index,
+        timestamp: transactionTimestamp(row.date || row.createdAt || row.postedAt),
+        date: formatDate(row.date || row.createdAt || row.postedAt),
+        category: "Wallet",
+        type: labelize(row.type || "Wallet movement"),
+        reference: reference,
+        route: row.source || row.currency || "Wallet ledger",
+        amount: movementAmountPill(row.amount, direction, row.status),
+        status: badge(labelize(row.status || "Posted"), statusTone(row.status || "Posted"))
+      };
+    });
+  }
+
+  function transactionDepositRows() {
+    const deposits = (appState.data && Array.isArray(appState.data.deposits)) ? appState.data.deposits : [];
+    return deposits.map(function (row) {
+      return {
+        key: "deposit-" + (row.id || row.reference || ""),
+        timestamp: transactionTimestamp(row.submittedAt || row.createdAt || row.updatedAt),
+        date: formatDate(row.submittedAt || row.createdAt || row.updatedAt),
+        category: "Deposit",
+        type: labelize(row.method || row.rail || "Deposit"),
+        reference: row.reference || row.id || "Deposit request",
+        route: row.rail || row.method || "Funding route",
+        amount: movementAmountPill(row.amount, "IN", row.status),
+        status: depositStatusPill(row.status)
+      };
+    });
+  }
+
+  function transactionWithdrawalRows() {
+    const withdrawals = (appState.data && Array.isArray(appState.data.withdrawals)) ? appState.data.withdrawals : [];
+    return withdrawals.map(function (row) {
+      return {
+        key: "withdrawal-" + (row.id || row.reference || ""),
+        timestamp: transactionTimestamp(row.requestedAt || row.createdAt || row.updatedAt),
+        date: formatDate(row.requestedAt || row.createdAt || row.updatedAt),
+        category: "Withdrawal",
+        type: "Withdrawal request",
+        reference: row.reference || row.id || "Withdrawal request",
+        route: row.destination || row.beneficiary?.label || "Payout destination",
+        amount: movementAmountPill(row.amount, "OUT", row.status),
+        status: badge(labelize(row.status || "Pending"), statusTone(row.status || "Pending"))
+      };
+    });
+  }
+
+  function transactionHistoryRows() {
+    const seen = {};
+    return transactionDepositRows().concat(transactionWithdrawalRows(), transactionLedgerRows()).filter(function (row) {
+      if (!row.key || seen[row.key]) return false;
+      seen[row.key] = true;
+      return true;
+    }).sort(function (a, b) {
+      return b.timestamp - a.timestamp;
+    }).map(function (row) {
+      return [
+        row.date,
+        badge(row.category, row.category === "Withdrawal" ? "danger" : row.category === "Deposit" ? "success" : "info"),
+        escapeHtml(row.type),
+        escapeHtml(row.reference),
+        escapeHtml(row.route),
+        row.amount,
+        row.status
+      ];
+    });
+  }
+
   function fallbackWithdrawalMethods() {
     return {
       methods: [
@@ -923,7 +1025,7 @@
   }
 
   function numberValue(value) {
-    const next = Number(value);
+    const next = typeof value === "string" ? Number(value.replace(/[^0-9.-]/g, "")) : Number(value);
     return Number.isFinite(next) ? next : 0;
   }
 
@@ -2368,13 +2470,11 @@
         body = fundingBody("withdraw");
         break;
       case "transactions.html":
-        const txState = getState();
-        body = section("Cash movement history", "Funding, withdrawals, fees and income movement across the wallet.", table(
-          ["Date", "Type", "Reference", "Amount", "Status"],
-          txState.transactions.map(function (row) {
-            return [row.date, row.type, row.reference, row.amount, badge(row.status, statusTone(row.status))];
-          })
-        ));
+        const transactionRows = transactionHistoryRows();
+        body = section("Cash movement history", "Deposits, withdrawals, wallet ledger movements, fees, income postings and payout activity across the account.", transactionRows.length ? table(
+          ["Date", "Category", "Type", "Reference", "Route / Source", "Amount", "Status"],
+          transactionRows
+        ) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No wallet transaction activity has been recorded yet.</div>');
         break;
       case "investment-plans.html":
         body = plansBody();

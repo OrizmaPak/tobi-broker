@@ -5,7 +5,7 @@ import { encryptSecret } from "../../lib/crypto";
 import { ApiError, asyncHandler, ok, pageInput, pageMeta, reference } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
 import { requireClient, requireCsrf } from "../../middleware/auth";
-import { approvedKyc, clientDashboard, clientSnapshot } from "../../services/client.service";
+import { approvedKyc, clientDashboard, clientSnapshot, money } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { collectDepositProofData, findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
 import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
@@ -214,13 +214,62 @@ v1ClientRouter.get("/wallet", asyncHandler(async (req, res) => {
 v1ClientRouter.get("/transactions", asyncHandler(async (req, res) => {
   const id = clientId(req);
   const { page, limit, skip } = pageInput(req.query);
-  const account = await prisma.ledgerAccount.findFirst({ where: { wallet: { clientId: id }, kind: "CLIENT_CASH" } });
-  if (!account) return ok(res, [], 200, pageMeta(page, limit, 0));
-  const [entries, total] = await Promise.all([
-    prisma.ledgerEntry.findMany({ where: { accountId: account.id }, include: { transaction: true }, orderBy: { createdAt: "desc" }, skip, take: limit }),
-    prisma.ledgerEntry.count({ where: { accountId: account.id } })
+  const [account, deposits, withdrawals, distributions] = await Promise.all([
+    prisma.ledgerAccount.findFirst({
+      where: { wallet: { clientId: id }, kind: "CLIENT_CASH" },
+      include: { entries: { include: { transaction: true }, orderBy: { createdAt: "desc" }, take: 100 } }
+    }),
+    prisma.deposit.findMany({ where: { clientId: id }, orderBy: { createdAt: "desc" }, take: 100 }),
+    prisma.withdrawal.findMany({ where: { clientId: id }, orderBy: { createdAt: "desc" }, take: 100 }),
+    prisma.distributionItem.findMany({ where: { clientId: id }, include: { batch: true }, orderBy: { createdAt: "desc" }, take: 100 })
   ]);
-  return ok(res, entries.map((entry) => ({ ...entry.transaction, amount: entry.side === "DEBIT" ? entry.amount : entry.amount.negated(), side: entry.side })), 200, pageMeta(page, limit, total));
+  const rows = [
+    ...(account?.entries || []).map((entry) => ({
+      id: entry.transaction.id,
+      date: entry.transaction.postedAt || entry.transaction.createdAt,
+      category: "Wallet",
+      type: entry.transaction.type,
+      reference: entry.transaction.reference,
+      amount: entry.side === "CREDIT" ? money(entry.amount) : -money(entry.amount),
+      currency: entry.currency,
+      status: entry.transaction.status,
+      source: entry.transaction.description
+    })),
+    ...deposits.map((row) => ({
+      id: row.id,
+      date: row.submittedAt || row.createdAt,
+      category: "Deposit",
+      type: row.method,
+      reference: row.reference,
+      amount: money(row.amount),
+      currency: row.currency,
+      status: row.status,
+      source: row.rail
+    })),
+    ...withdrawals.map((row) => ({
+      id: row.id,
+      date: row.requestedAt || row.createdAt,
+      category: "Withdrawal",
+      type: "WITHDRAWAL",
+      reference: row.reference,
+      amount: -money(row.amount),
+      currency: row.currency,
+      status: row.status,
+      source: row.destination
+    })),
+    ...distributions.map((row) => ({
+      id: row.id,
+      date: row.createdAt,
+      category: "Distribution",
+      type: row.batch.type,
+      reference: row.batch.reference,
+      amount: row.mode === "REINVEST" ? 0 : money(row.netAmount),
+      currency: row.batch.currency,
+      status: row.status,
+      source: row.mode
+    }))
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return ok(res, rows.slice(skip, skip + limit), 200, pageMeta(page, limit, rows.length));
 }));
 
 v1ClientRouter.get("/beneficiaries", asyncHandler(async (req, res) => {
