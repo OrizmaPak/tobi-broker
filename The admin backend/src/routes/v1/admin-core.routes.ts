@@ -466,6 +466,37 @@ v1AdminCoreRouter.post("/beneficiaries/:id/decision", complianceRoles, asyncHand
   return ok(res, row);
 }));
 
+v1AdminCoreRouter.post("/beneficiaries/:id/waive-cooldown", complianceRoles, asyncHandler(async (req, res) => {
+  const input = z.object({
+    note: z.string().trim().min(5).max(1000).default("Cooling-off waived after manual payout destination review.")
+  }).parse(req.body);
+  const before = await prisma.beneficiary.findUnique({ where: { id: String(req.params.id) }, include: { client: true } });
+  if (!before) throw new ApiError(404, "Beneficiary not found", "BENEFICIARY_NOT_FOUND");
+  const hadActiveCooldown = Boolean(before.cooldownUntil && before.cooldownUntil > new Date());
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.beneficiary.update({
+      where: { id: before.id },
+      data: { cooldownUntil: null }
+    });
+    await notifyClientTx(tx, {
+      clientId: before.clientId,
+      email: before.client.email,
+      category: "Wallet",
+      eventKey: "beneficiary.cooldown_waived",
+      severity: "SUCCESS",
+      title: "Payout destination cooling-off waived",
+      body: hadActiveCooldown ? `${before.label} can now be used for withdrawal requests.` : `${before.label} has no active cooling-off restriction.`,
+      actionUrl: "withdraw.html",
+      entity: { type: "Beneficiary", id: before.id },
+      metadata: { beneficiaryId: before.id, hadActiveCooldown },
+      dedupeKey: `beneficiary.cooldown_waived:${before.id}:${hashValue(input.note)}`
+    });
+    return updated;
+  });
+  await writeAudit("waiveBeneficiaryCooldown", "Beneficiary", row.id, { cooldownUntil: null }, { req, reason: input.note, before, after: row });
+  return ok(res, row);
+}));
+
 v1AdminCoreRouter.get("/money/deposits", financeRoles, asyncHandler(async (req, res) => {
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;

@@ -404,6 +404,24 @@
     return date.toLocaleDateString();
   }
 
+  function formatDateTime(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  function coolingHoursLeft(value) {
+    if (!value) return 0;
+    const end = new Date(value).getTime();
+    if (Number.isNaN(end)) return 0;
+    return Math.max(Math.ceil((end - Date.now()) / (60 * 60 * 1000)), 0);
+  }
+
+  function coolingOffActive(row) {
+    return coolingHoursLeft(row?.cooldownUntil) > 0;
+  }
+
   function notificationRowsFromPayload(payload) {
     if (Array.isArray(payload)) return { rows: payload, unreadCount: null };
     if (payload && typeof payload === "object") {
@@ -1082,12 +1100,22 @@
     const pending = data.beneficiaries.filter((row) => row.status === "PENDING").length;
     const verified = data.beneficiaries.filter((row) => row.status === "VERIFIED").length;
     const bankCount = data.beneficiaries.filter((row) => row.type === "BANK").length;
+    const coolingRows = data.beneficiaries.filter(coolingOffActive);
     return '<div class="grid metrics">' + [
       metric("Pending review", String(pending), "Client-added banks and wallets awaiting approval.", "Pending"),
-      metric("Verified", String(verified), "Destinations available for withdrawal requests.", "Active"),
-      metric("Bank profiles", String(bankCount), "Client-added bank accounts.", "Bank"),
-      metric("Total destinations", String(data.beneficiaries.length), "All withdrawal destinations in the system.", "Review")
+      metric("Verified", String(verified), "Destinations approved by operations.", "Active"),
+      metric("Cooling-off active", String(coolingRows.length), "Approved destinations still inside the waiting period.", "Security"),
+      metric("Bank profiles", String(bankCount), "Client-added bank accounts.", "Bank")
     ].join("") + "</div>" +
+      section("Cooling-off queue", "Payout destinations still inside the fraud-prevention waiting period. Waive only after manual risk review.", coolingRows.length ? filterableTable("Search client, label, destination...", ["Client", "Label", "Type", "Destination", "Available at", "Time left", "Action"], coolingRows.map((row) => [
+        row.client?.name || "-",
+        escapeHtml(row.label || "-"),
+        badge(label(row.type), row.type === "BANK" ? "success" : "info"),
+        escapeHtml(beneficiaryDestination(row)),
+        escapeHtml(formatDateTime(row.cooldownUntil)),
+        badge(coolingHoursLeft(row.cooldownUntil) + " hr left", "warning"),
+        '<div class="action-row"><button class="btn primary" type="button" data-action="beneficiary-cooloff-waive" data-beneficiary-id="' + escapeHtml(row.id) + '">Waive cool-off</button>' + linkButton("Review", "beneficiary-review.html?id=" + encodeURIComponent(row.id)) + '</div>'
+      ])) : '<div class="empty-state">No payout destinations are currently under cooling-off.</div>') +
       section("Withdrawal destination verifications", "Review and approve the bank accounts or crypto wallets clients add before they can request withdrawals.", filterableTable("Search client, label, bank, wallet...", ["Client", "Label", "Type", "Currency", "Destination", "Status", "Action"], data.beneficiaries.map((row) => [
         row.client?.name || "-",
         escapeHtml(row.label || "-"),
@@ -1628,7 +1656,7 @@
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
       "task-status", "report-download", "deposit-method-save",
       "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
-      "withdrawal-method-toggle", "setting-save", "decision"
+      "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision"
     ].includes(action);
   }
 
@@ -1731,6 +1759,7 @@
           else if (action === "withdrawal-field-remove") removeWithdrawalFieldRow(node);
           else if (action === "withdrawal-method-save") await submitWithdrawalMethod();
           else if (action === "withdrawal-method-toggle") await toggleWithdrawalMethod(node.dataset.methodId);
+          else if (action === "beneficiary-cooloff-waive") await waiveBeneficiaryCooldown(node.dataset.beneficiaryId);
           else if (action === "approval-setting-toggle") await toggleDepositAutoApproval(node.dataset.autoApproveDeposits === "true");
           else if (action === "setting-edit") openSettingEditor(node.dataset.settingKey);
           else if (action === "setting-save") await submitSetting(node.dataset.settingKey);
@@ -1807,6 +1836,20 @@
     const method = ["saveProduct", "hideProduct"].includes(apiAction) ? "PATCH" : "POST";
     await api(route[0], { method, body: JSON.stringify(route[1]) });
     await loadBackendData();
+  }
+
+  async function waiveBeneficiaryCooldown(id) {
+    if (!id) {
+      toast("No payout destination selected.");
+      return;
+    }
+    await api("/api/v1/admin/beneficiaries/" + encodeURIComponent(id) + "/waive-cooldown", {
+      method: "POST",
+      body: JSON.stringify({ note: "Cooling-off waived after manual payout destination review." })
+    });
+    await loadBackendData();
+    render();
+    toast("Cooling-off period waived.");
   }
 
   function pageContext() {
