@@ -584,6 +584,25 @@
     return ["CANCELLED", "CLOSED"].indexOf(String(status || "").toUpperCase()) === -1;
   }
 
+  function investmentNextPayout(row) {
+    const status = String(row && row.status || "").toUpperCase();
+    if (status === "HELD") return { label: "On hold - payout paused", date: null };
+    if (status === "CANCELLED") return { label: "Cancelled and refunded", date: null };
+    if (status === "CLOSED") return { label: "Closed", date: null };
+    const product = row && row.product ? row.product : {};
+    const durationDays = Number(product.durationDays || 0);
+    if (!Number.isFinite(durationDays) || durationDays <= 0) return { label: "Not scheduled", date: null };
+    const start = new Date((row && (row.startDate || row.createdAt)) || Date.now());
+    if (Number.isNaN(start.getTime())) return { label: "Not scheduled", date: null };
+    const durationMs = durationDays * 24 * 60 * 60 * 1000;
+    const totalWindows = Math.max(0, Number(product.payoutCycleCount || 0)) + 1;
+    const elapsedWindows = Math.max(0, Math.floor((Date.now() - start.getTime()) / durationMs));
+    const nextWindow = Math.min(elapsedWindows + 1, totalWindows);
+    if (elapsedWindows >= totalWindows) return { label: "Payout cycle completed", date: null };
+    const nextDate = new Date(start.getTime() + (durationMs * nextWindow));
+    return { label: formatDate(nextDate), date: nextDate };
+  }
+
   function slugify(value) {
     return String(value || "")
       .toLowerCase()
@@ -1405,6 +1424,7 @@
     replaceList(DEMO.investments, investments.map(function (row) {
       const progress = investmentProgress(row);
       const status = String(row.status || "").toUpperCase();
+      const payoutSchedule = investmentNextPayout(row);
       return {
         id: row.id,
         name: row.product ? row.product.name : "Portfolio mandate",
@@ -1414,13 +1434,22 @@
         projectedProfit: progress.projectedProfit,
         actualizedPercent: progress.actualizedPercent,
         projected: progress.projectedProfit > 0 ? money(progress.projectedProfit) + " projected profit" : "Projected / market-based",
-        payout: row.nextAction || DEMO.client.nextPayout,
+        payout: payoutSchedule.label,
+        payoutDate: payoutSchedule.date,
+        actionNote: row.nextAction || "",
         status: labelize(row.status),
         rawStatus: status,
         canCancel: investmentCanCancel(status),
         action: "Review"
       };
     }));
+    const upcomingInvestmentPayouts = DEMO.investments
+      .map(function (row) { return row.payoutDate ? new Date(row.payoutDate) : null; })
+      .filter(function (date) { return date && !Number.isNaN(date.getTime()) && date.getTime() >= Date.now(); })
+      .sort(function (a, b) { return a.getTime() - b.getTime(); });
+    if (!metrics.nextPayoutDate && upcomingInvestmentPayouts.length) {
+      DEMO.client.nextPayout = formatDate(upcomingInvestmentPayouts[0]);
+    }
     const actualHoldings = investments.reduce(function (rows, investment) {
       return rows.concat((investment.holdings || []).map(function (holding) {
         const instrument = mapInstrument(holding.instrument || {});
@@ -1527,7 +1556,7 @@
     state.pendingDeposit = numberValue(metrics.pendingDeposits);
     state.pendingWithdrawal = numberValue(metrics.pendingWithdrawals);
     state.activeInvestments = numberValue(metrics.activeInvestments);
-    state.nextPayout = formatDate(metrics.nextPayoutDate);
+    state.nextPayout = metrics.nextPayoutDate ? formatDate(metrics.nextPayoutDate) : DEMO.client.nextPayout;
     state.kycStatus = client.kycStatus || state.kycStatus;
     state.profileCompletion = numberValue(metrics.profileCompletion || state.profileCompletion);
     state.notifications = DEMO.notifications.slice();
