@@ -190,6 +190,7 @@
     approveWithdrawal: "Approve withdrawal",
     holdWithdrawal: "Place withdrawal on hold",
     requestWithdrawalInfo: "Request withdrawal information",
+    settleWithdrawal: "Mark withdrawal paid",
     verifyBeneficiary: "Verify beneficiary",
     denyBeneficiary: "Deny beneficiary",
     requestBeneficiaryResubmission: "Request beneficiary resubmission",
@@ -900,6 +901,11 @@
           available: "Check wallet ledger",
           kyc: label(first.client?.status),
           status: label(first.status),
+          rawStatus: first.status,
+          approvalRequestId: first.approvalRequestId || "",
+          externalReference: first.externalReference || "",
+          approvedAt: first.approvedAt ? new Date(first.approvedAt).toLocaleString() : "",
+          paidAt: first.paidAt ? new Date(first.paidAt).toLocaleString() : "",
           checks: [["Current status", label(first.status)], ["Client", first.client?.accountNumber || "-"], ["Destination", first.destination], ["Review note", first.reviewNote || "No note yet"]]
         };
       }
@@ -1015,7 +1021,7 @@
         entity: row.entityType,
         entityId: row.entityId,
         entityLabel: row.entityLabel || (row.entityType === "PortfolioProduct" ? products?.find((product) => product.id === row.entityId)?.name : "") || row.entityType,
-        entityHref: row.entityType === "PortfolioProduct" ? "portfolio-product-detail.html?id=" + encodeURIComponent(row.entityId) : "",
+        entityHref: row.entityType === "PortfolioProduct" ? "portfolio-product-detail.html?id=" + encodeURIComponent(row.entityId) : row.entityType === "Withdrawal" ? "withdrawal-review.html?id=" + encodeURIComponent(row.entityId) : "",
         note: row.payload?.note || "No request note",
         version: row.payload?.version || null,
         maker: row.initiatedBy?.name || "Unknown admin",
@@ -1325,7 +1331,7 @@
     const autoApproveDeposits = approvalValue.autoApproveDeposits === true || approvalValue.depositCredits === false || approvalValue.makerChecker === false;
     const rows = data.approvals.map((row) => {
       const entity = row.entityHref
-        ? '<strong>' + escapeHtml(row.entityLabel) + '</strong><br>' + linkButton("Open product", row.entityHref)
+        ? '<strong>' + escapeHtml(row.entityLabel) + '</strong><br>' + linkButton(row.entity === "PortfolioProduct" ? "Open product" : "Open record", row.entityHref)
         : '<strong>' + escapeHtml(row.entityLabel) + '</strong><br><span class="muted">' + escapeHtml(row.entityId) + '</span>';
       const request = escapeHtml(row.note) + (row.version ? '<br><span class="muted">Terms version ' + escapeHtml(row.version) + '</span>' : "");
       return [row.action, entity, request, escapeHtml(row.maker + " (" + row.makerRole + ")"), row.createdAt, row.expiresAt, badge(row.status), '<div class="action-row"><button class="btn primary" type="button" data-action="approval-decision" data-approval-id="' + escapeHtml(row.id) + '" data-approval-decision="approve">Approve</button><button class="btn" type="button" data-action="approval-decision" data-approval-id="' + escapeHtml(row.id) + '" data-approval-decision="reject">Reject</button></div>'];
@@ -1525,10 +1531,23 @@
 
   function withdrawalReviewPage() {
     const r = data.withdrawalReview;
-    return workflowSteps(["Requested", "Eligibility checked", "Admin approval", "Released"], 1) +
+    const rawStatus = String(r.rawStatus || r.status || "").toUpperCase().replace(/\s+/g, "_");
+    const approvalHref = r.approvalRequestId ? "approvals.html?id=" + encodeURIComponent(r.approvalRequestId) : "approvals.html";
+    const workflowIndex = rawStatus === "PAID" ? 3 : rawStatus === "APPROVED" ? 2 : rawStatus === "AWAITING_APPROVAL" ? 2 : ["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "HELD"].includes(rawStatus) ? 1 : 0;
+    let decisionBody = "";
+    if (["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "HELD"].includes(rawStatus)) {
+      decisionBody = decisionButton("Send for approval", "primary", "Withdrawal sent for approval", "approveWithdrawal") + decisionButton("Place hold", "danger", "Withdrawal placed on hold", "holdWithdrawal") + decisionButton("Ask client for info", "", "Client information requested", "requestWithdrawalInfo");
+    } else if (rawStatus === "AWAITING_APPROVAL") {
+      decisionBody = '<div class="decision-state is-pending">' + badge("Awaiting checker approval", "warning") + '<span>This withdrawal already passed finance review. Use the approvals queue for the final maker-checker decision.</span></div><div class="action-row">' + linkButton("Open approval queue", approvalHref, "primary") + decisionButton("Place hold", "danger", "Withdrawal placed on hold", "holdWithdrawal") + decisionButton("Ask client for info", "", "Client information requested", "requestWithdrawalInfo") + '</div>';
+    } else if (rawStatus === "APPROVED") {
+      decisionBody = '<div class="decision-state is-pending">' + badge("Approved", "success") + '<span>Final approval is complete. Record the external settlement reference when funds are released.</span></div><div class="action-row">' + decisionButton("Mark paid", "primary", "Withdrawal paid", "settleWithdrawal") + decisionButton("Place hold", "danger", "Withdrawal placed on hold", "holdWithdrawal") + '</div>';
+    } else {
+      decisionBody = '<div class="decision-state is-pending">' + badge(r.status || "Closed") + '<span>This withdrawal is in a terminal or unsupported state, so release approval is no longer available.</span></div>';
+    }
+    return workflowSteps(["Requested", "Eligibility checked", "Admin approval", "Released"], workflowIndex) +
       '<div class="grid two">' +
-      section("Withdrawal request", "Review cleared balance, destination, risk checks, and KYC status before release.", details([["Reference", r.reference], ["Client", r.client], ["Amount", r.amount], ["Destination", r.destination], ["Available balance", r.available], ["KYC", badge(r.kyc)], ["Status", badge(r.status)]]) + "<h3>Approval checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Withdrawal decision", "Every withdrawal approval should capture the operational reason and approver.", decisionButton("Approve release", "primary", "Withdrawal approved", "approveWithdrawal") + decisionButton("Place hold", "danger", "Withdrawal placed on hold", "holdWithdrawal") + decisionButton("Ask client for info", "", "Client information requested", "requestWithdrawalInfo")) +
+      section("Withdrawal request", "Review cleared balance, destination, risk checks, and KYC status before release.", details([["Reference", r.reference], ["Client", r.client], ["Amount", r.amount], ["Destination", r.destination], ["Available balance", r.available], ["KYC", badge(r.kyc)], ["Status", badge(r.status)], ["Approval request", r.approvalRequestId ? escapeHtml(r.approvalRequestId) : "-"], ["Approved at", r.approvedAt || "-"], ["Settlement ref", r.externalReference || "-"]]) + "<h3>Approval checks</h3>" + checklist(r.checks)) +
+      reviewPanel("Withdrawal decision", "Use the action that matches the withdrawal state: finance review, checker approval, then external settlement.", decisionBody) +
       "</div>";
   }
 
@@ -2134,6 +2153,11 @@
   async function executeBackendAction(apiAction) {
     const note = document.querySelector(".review-panel textarea")?.value || "Updated from BullPort admin UI.";
     const kycOverride = Boolean(document.querySelector('[name="kycOverride"]')?.checked);
+    let settlementReference = "";
+    if (apiAction === "settleWithdrawal") {
+      settlementReference = window.prompt("Enter the external bank/crypto settlement reference for this payout.") || "";
+      if (settlementReference.trim().length < 4) throw new Error("Enter a valid external settlement reference.");
+    }
     const routes = {
       approveKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "APPROVED", note, overrideIncomplete: kycOverride }],
       rejectKyc: ["/api/v1/admin/kyc/" + liveRefs.kycReviewId + "/decision", { status: "REJECTED", note }],
@@ -2144,6 +2168,7 @@
       approveWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-approval", { note }],
       holdWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
       requestWithdrawalInfo: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-information", { note }],
+      settleWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/settle", { note, externalReference: settlementReference.trim() }],
       verifyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "VERIFIED", note }],
       denyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "REJECTED", note }],
       requestBeneficiaryResubmission: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "PENDING", note }],

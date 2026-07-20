@@ -561,6 +561,10 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/request-approval", financeRoles, 
   const input = z.object({ note: z.string().trim().min(5).max(1000), fee: moneySchema.optional() }).parse(req.body);
   const row = await prisma.withdrawal.findUnique({ where: { id: String(req.params.id) } });
   if (!row) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
+  if (row.status === "AWAITING_APPROVAL" && row.approvalRequestId) {
+    const existing = await prisma.approvalRequest.findUnique({ where: { id: row.approvalRequestId } });
+    if (existing?.status === "PENDING") return ok(res, existing);
+  }
   if (!["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "HELD"].includes(row.status)) throw new ApiError(409, "Withdrawal cannot enter approval from its current state", "INVALID_WITHDRAWAL_STATE");
   const approval = await prisma.$transaction(async (tx) => {
     const created = await createApproval({ tx, actionType: "APPROVE_WITHDRAWAL", entityType: "Withdrawal", entityId: row.id, payload: { note: input.note, fee: input.fee || 0 }, adminId: req.user!.id });
@@ -684,13 +688,18 @@ v1AdminCoreRouter.get("/approvals", operationalRoles, asyncHandler(async (req, r
   const status = typeof req.query.status === "string" ? req.query.status : "PENDING";
   const rows = await prisma.approvalRequest.findMany({ where: { status: status as never }, include: { initiatedBy: { select: { id: true, name: true, role: true } }, approvedBy: { select: { id: true, name: true, role: true } } }, orderBy: { createdAt: "asc" } });
   const productIds = rows.filter((row) => row.entityType === "PortfolioProduct").map((row) => row.entityId);
+  const withdrawalIds = rows.filter((row) => row.entityType === "Withdrawal").map((row) => row.entityId);
   const products = productIds.length
     ? await prisma.portfolioProduct.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true } })
     : [];
+  const withdrawals = withdrawalIds.length
+    ? await prisma.withdrawal.findMany({ where: { id: { in: withdrawalIds } }, select: { id: true, reference: true } })
+    : [];
   const productNames = new Map(products.map((product) => [product.id, product.name]));
+  const withdrawalNames = new Map(withdrawals.map((withdrawal) => [withdrawal.id, withdrawal.reference]));
   return ok(res, rows.map((row) => ({
     ...row,
-    entityLabel: row.entityType === "PortfolioProduct" ? productNames.get(row.entityId) || "Portfolio product" : null
+    entityLabel: row.entityType === "PortfolioProduct" ? productNames.get(row.entityId) || "Portfolio product" : row.entityType === "Withdrawal" ? withdrawalNames.get(row.entityId) || "Withdrawal request" : null
   })));
 }));
 
