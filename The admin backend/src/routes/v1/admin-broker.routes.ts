@@ -297,6 +297,7 @@ const instrumentSchema = z.object({
   category: z.string().trim().min(2).max(60),
   marketId: z.string().trim().min(1).optional(),
   market: z.string().trim().min(2).max(60).optional(),
+  logoUrl: z.string().trim().url().max(500).optional(),
   currency: z.string().length(3).default("USD"),
   riskLevel: z.enum(["LOW", "MODERATE", "HIGH", "CUSTOM"]),
   dividendEligible: z.boolean().default(false),

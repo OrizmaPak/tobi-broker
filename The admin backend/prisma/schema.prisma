@@ -895,6 +895,7 @@ model Instrument {
   category            String
   market              String
   marketId            String
+  logoUrl             String?
   currency            String                @default("USD")
   currentPrice        Decimal?              @db.Decimal(24, 8)
   priceAsOf           DateTime?
