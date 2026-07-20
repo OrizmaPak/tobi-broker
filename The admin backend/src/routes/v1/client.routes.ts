@@ -290,6 +290,56 @@ v1ClientRouter.post("/beneficiaries", requireCsrf, asyncHandler(async (req, res)
   return ok(res, row, 201);
 }));
 
+v1ClientRouter.put("/beneficiaries/:id", requireCsrf, asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  const input = z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("BANK"),
+      methodId: z.string().trim().max(80).optional(),
+      label: z.string().trim().min(2).max(80),
+      currency: z.string().length(3).default("USD"),
+      bankName: z.string().trim().min(2).max(100).optional(),
+      accountName: z.string().trim().min(2).max(120).optional(),
+      accountNumber: z.string().trim().min(4).max(80).optional(),
+      verificationData: z.record(z.string(), z.unknown()).default({})
+    }),
+    z.object({
+      type: z.literal("CRYPTO"),
+      methodId: z.string().trim().max(80).optional(),
+      label: z.string().trim().min(2).max(80),
+      currency: z.string().min(2).max(10).default("USDT"),
+      cryptoNetwork: z.string().trim().min(2).max(40).optional(),
+      walletAddress: z.string().trim().min(8).max(200).optional(),
+      verificationData: z.record(z.string(), z.unknown()).default({})
+    })
+  ]).parse(req.body);
+  const existing = await prisma.beneficiary.findFirst({ where: { id: String(req.params.id), clientId: id } });
+  if (!existing) throw new ApiError(404, "Withdrawal destination not found", "BENEFICIARY_NOT_FOUND");
+  if (existing.status === "VERIFIED") throw new ApiError(409, "A verified destination cannot be changed. Add a new destination instead.", "BENEFICIARY_LOCKED");
+  if (existing.type !== input.type) throw new ApiError(422, "Destination type cannot be changed", "BENEFICIARY_TYPE_MISMATCH");
+  const withdrawalMethods = await getWithdrawalMethodsSetting();
+  const method = findWithdrawalMethod(withdrawalMethods, input.type, input.methodId || existing.verificationMethodId);
+  if (!method) throw new ApiError(422, "This withdrawal destination type is not currently available", "WITHDRAWAL_METHOD_UNAVAILABLE");
+  const mergedVerificationData = {
+    ...input.verificationData,
+    ...(input.type === "BANK" ? {
+      bankName: input.bankName || input.verificationData.bankName,
+      accountName: input.accountName || input.verificationData.accountName,
+      accountNumber: input.accountNumber || input.verificationData.accountNumber
+    } : {
+      currency: input.currency || input.verificationData.currency,
+      cryptoNetwork: input.cryptoNetwork || input.verificationData.cryptoNetwork,
+      walletAddress: input.walletAddress || input.verificationData.walletAddress
+    })
+  };
+  const collected = collectWithdrawalVerificationData(method, mergedVerificationData);
+  if (Object.keys(collected.fields).length) throw new ApiError(422, "Complete the required withdrawal verification fields", "WITHDRAWAL_VERIFICATION_INCOMPLETE", collected.fields);
+  const row = input.type === "BANK"
+    ? await prisma.beneficiary.update({ where: { id: existing.id }, data: { label: input.label, currency: input.currency, bankName: collected.values.bankName || input.bankName, accountName: collected.values.accountName || input.accountName, accountNumberMasked: `****${String(collected.values.accountNumber || input.accountNumber).slice(-4)}`, accountToken: encryptSecret(String(collected.values.accountNumber || input.accountNumber)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, status: "PENDING", verifiedAt: null, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } })
+    : await prisma.beneficiary.update({ where: { id: existing.id }, data: { label: input.label, currency: collected.values.currency || input.currency, cryptoNetwork: collected.values.cryptoNetwork || input.cryptoNetwork, walletAddressMasked: `${String(collected.values.walletAddress || input.walletAddress).slice(0, 6)}...${String(collected.values.walletAddress || input.walletAddress).slice(-6)}`, walletAddressToken: encryptSecret(String(collected.values.walletAddress || input.walletAddress)), verificationMethodId: method.id, verificationData: collected.values as Prisma.InputJsonObject, status: "PENDING", verifiedAt: null, cooldownUntil: new Date(Date.now() + method.cooldownHours * 60 * 60 * 1000) } });
+  return ok(res, row);
+}));
+
 v1ClientRouter.post("/deposits", requireCsrf, asyncHandler(async (req, res) => {
   const id = clientId(req);
   const client = await verifiedClient(id);

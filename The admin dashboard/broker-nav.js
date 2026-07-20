@@ -826,6 +826,10 @@
     return configuredWithdrawalMethods().find(function (method) { return method.id === id; }) || null;
   }
 
+  function withdrawalMethodForBeneficiary(item) {
+    return withdrawalMethodById(item && item.verificationMethodId) || configuredWithdrawalMethods().find(function (method) { return item && method.type === item.type; }) || null;
+  }
+
   function beneficiariesByType(type) {
     return ((appState.data && appState.data.beneficiaries) || []).filter(function (item) { return item.type === type; });
   }
@@ -860,7 +864,10 @@
     const rows = beneficiariesByType(type);
     if (!rows.length) return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No ' + (type === "CRYPTO" ? "crypto wallet" : "bank account") + ' has been added yet.</div>';
     return '<div class="space-y-3">' + rows.map(function (row) {
-      return '<div class="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="min-w-0"><p class="text-sm font-semibold">' + escapeHtml(row.label || "Withdrawal destination") + '</p><p class="mt-1 break-all text-sm text-muted-foreground">' + escapeHtml(beneficiaryDestination(row)) + '</p></div>' + badge(labelize(row.status || "Pending"), statusTone(row.status || "PENDING")) + '</div>';
+      const needsUpdate = row.status !== "VERIFIED";
+      const method = withdrawalMethodForBeneficiary(row);
+      const action = needsUpdate && method ? '<button type="button" data-broker-action="beneficiary-resubmit" data-broker-beneficiary-id="' + escapeHtml(row.id) + '" class="inline-flex rounded-md border border-primary/30 px-3 py-2 text-sm font-medium text-primary">Update details</button>' : "";
+      return '<div class="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="min-w-0"><p class="text-sm font-semibold">' + escapeHtml(row.label || "Withdrawal destination") + '</p><p class="mt-1 break-all text-sm text-muted-foreground">' + escapeHtml(beneficiaryDestination(row)) + '</p></div><div class="flex flex-wrap items-center gap-2">' + badge(labelize(row.status || "Pending"), statusTone(row.status || "PENDING")) + action + '</div></div>';
     }).join("") + "</div>";
   }
 
@@ -2746,27 +2753,30 @@
     const name = "verify_" + field.id;
     const required = field.required !== false ? "required" : "";
     const help = field.helpText ? '<small>' + escapeHtml(field.helpText) + '</small>' : "";
+    const value = field.value || "";
     if (field.type === "SELECT") {
       const options = (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>'; }).join("");
-      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + options + '</select>' + help + '</label>';
+      const selectedOptions = (field.options || []).map(function (option) { return '<option value="' + escapeHtml(option) + '" ' + (String(value) === String(option) ? "selected" : "") + '>' + escapeHtml(option) + '</option>'; }).join("");
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><select name="' + escapeHtml(name) + '" ' + required + '>' + selectedOptions + '</select>' + help + '</label>';
     }
     if (field.type === "TEXTAREA") {
-      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '></textarea>' + help + '</label>';
+      return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + escapeHtml(value) + '</textarea>' + help + '</label>';
     }
-    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + withdrawalInputType(field) + '" value="" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
+    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + withdrawalInputType(field) + '" value="' + escapeHtml(value) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
   }
 
-  function openBeneficiaryModal(method) {
+  function openBeneficiaryModal(method, beneficiary) {
     if (!method) { toast("No active withdrawal setup is available for this route.", "warning"); return; }
     const fields = method.fields || [];
-    const defaultLabel = method.type === "CRYPTO" ? "Primary crypto wallet" : "Primary bank account";
+    const existingData = beneficiary && beneficiary.verificationData ? beneficiary.verificationData : {};
+    const defaultLabel = beneficiary?.label || (method.type === "CRYPTO" ? "Primary crypto wallet" : "Primary bank account");
     const fixedBankFields = method.type === "BANK"
-      ? modalField("Bank name", "verify_bankName", "text", "", 'required maxlength="100"') + modalField("Bank account number", "verify_accountNumber", "text", "", 'required maxlength="80"')
+      ? modalField("Bank name", "verify_bankName", "text", beneficiary?.bankName || existingData.bankName || "", 'required maxlength="100"') + modalField("Bank account number", "verify_accountNumber", "text", "", 'required maxlength="80"')
       : "";
     const customFields = fields.length
-      ? '<div class="broker-form-section"><p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional verification</p>' + fields.map(withdrawalVerificationField).join("") + "</div>"
+      ? '<div class="broker-form-section"><p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional verification</p>' + fields.map(function (field) { return withdrawalVerificationField({ ...field, value: existingData[field.id] || "" }); }).join("") + "</div>"
       : "";
-    showModal("Add " + (method.type === "CRYPTO" ? "crypto wallet" : "bank account"), '<p>' + escapeHtml(method.description || "Add destination details for admin review.") + '</p><div class="broker-form-grid"><input type="hidden" name="beneficiaryType" value="' + escapeHtml(method.type) + '"><input type="hidden" name="beneficiaryMethodId" value="' + escapeHtml(method.id) + '">' + modalField("Destination label", "beneficiaryLabel", "text", defaultLabel, 'required maxlength="80"') + fixedBankFields + customFields + '<p class="text-xs text-muted-foreground">' + escapeHtml(method.instructions || "The destination remains pending until BullPort verifies it.") + '</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="beneficiary-confirm">Submit for review</button>');
+    showModal((beneficiary ? "Update " : "Add ") + (method.type === "CRYPTO" ? "crypto wallet" : "bank account"), '<p>' + escapeHtml(beneficiary ? "Update the requested details and resubmit this destination for review." : method.description || "Add destination details for admin review.") + '</p><div class="broker-form-grid"><input type="hidden" name="beneficiaryId" value="' + escapeHtml(beneficiary?.id || "") + '"><input type="hidden" name="beneficiaryType" value="' + escapeHtml(method.type) + '"><input type="hidden" name="beneficiaryMethodId" value="' + escapeHtml(method.id) + '">' + modalField("Destination label", "beneficiaryLabel", "text", defaultLabel, 'required maxlength="80"') + fixedBankFields + customFields + '<p class="text-xs text-muted-foreground">' + escapeHtml(method.instructions || "The destination remains pending until BullPort verifies it.") + '</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="beneficiary-confirm">' + (beneficiary ? "Resubmit for review" : "Submit for review") + '</button>');
   }
 
   function modalVerificationData(method) {
@@ -2830,7 +2840,7 @@
       "toggle-password", "phone-country-toggle", "phone-country-select",
       "goto-deposit", "goto-kyc", "goto-reports",
       "deposit-card", "deposit-bank", "deposit-crypto",
-      "withdraw-bank", "withdraw-crypto", "beneficiary-add", "beneficiary-confirm", "subscribe-plan", "investment-action",
+      "withdraw-bank", "withdraw-crypto", "beneficiary-add", "beneficiary-resubmit", "beneficiary-confirm", "subscribe-plan", "investment-action",
       "order-create", "options-apply", "profile-edit", "password-change",
       "notifications-toggle", "notification-open", "user-menu-toggle",
       "goto-profile", "goto-settings", "support-create", "support-reply"
@@ -3104,11 +3114,18 @@
       case "beneficiary-add":
         openBeneficiaryModal(withdrawalMethodById(node.getAttribute("data-broker-method-id")) || configuredWithdrawalMethods()[0]);
         return;
+      case "beneficiary-resubmit": {
+        const beneficiary = ((appState.data && appState.data.beneficiaries) || []).find(function (item) { return item.id === node.getAttribute("data-broker-beneficiary-id"); });
+        if (!beneficiary) { toast("This payout destination could not be loaded.", "warning"); return; }
+        openBeneficiaryModal(withdrawalMethodForBeneficiary(beneficiary), beneficiary);
+        return;
+      }
       case "beneficiary-confirm":
         try {
           const method = withdrawalMethodById(modalValue("beneficiaryMethodId"));
           if (!method) throw new Error("This withdrawal setup is not available. Refresh and try again.");
           const verificationData = modalVerificationData(method);
+          const beneficiaryId = modalValue("beneficiaryId");
           const payload = {
             type: method.type,
             methodId: method.id,
@@ -3124,9 +3141,9 @@
             payload.cryptoNetwork = verificationData.cryptoNetwork;
             payload.walletAddress = verificationData.walletAddress;
           }
-          await apiRequest("/api/v1/client/beneficiaries", { method: "POST", headers: { "Idempotency-Key": requestKey("beneficiary") }, body: JSON.stringify(payload) }, false);
+          await apiRequest(beneficiaryId ? "/api/v1/client/beneficiaries/" + encodeURIComponent(beneficiaryId) : "/api/v1/client/beneficiaries", { method: beneficiaryId ? "PUT" : "POST", headers: { "Idempotency-Key": requestKey("beneficiary") }, body: JSON.stringify(payload) }, false);
           closeModal();
-          await refreshLiveView("Withdrawal destination submitted for admin verification.", "success");
+          await refreshLiveView(beneficiaryId ? "Withdrawal destination resubmitted for admin verification." : "Withdrawal destination submitted for admin verification.", "success");
         } catch (error) { toast((error && error.message) || "Could not submit the withdrawal destination.", "warning"); }
         return;
       case "withdraw-bank":
