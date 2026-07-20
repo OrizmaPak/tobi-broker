@@ -7,6 +7,7 @@
     "withdraw.html": { title: "Withdraw Funds", subtitle: "Request withdrawals from available wallet balance." },
     "transactions.html": { title: "Transactions", subtitle: "Wallet funding, withdrawals, fees and movement history." },
     "investment-plans.html": { title: "Investment Portfolios", subtitle: "Broker-managed portfolio models by risk and strategy." },
+    "plan-detail.html": { title: "Plan Detail", subtitle: "Review portfolio terms, allocation, risk and subscription details." },
     "active-investments.html": { title: "My Investments", subtitle: "Monitor active portfolio subscriptions, value and next payouts." },
     "portfolio.html": { title: "Portfolio Details", subtitle: "Allocation, holdings, performance and exposure." },
     "dividends.html": { title: "Dividends & Profits", subtitle: "Dividend postings, profit credits and reinvestment activity." },
@@ -88,6 +89,7 @@
     plans: [
       {
         name: "Conservative Income Portfolio",
+        id: "conservative-income-portfolio",
         risk: "Low",
         investor: "Beginners and capital-preservation investors",
         strategy: "Treasury bills, government bonds and money market instruments.",
@@ -99,6 +101,7 @@
       },
       {
         name: "Balanced Growth Portfolio",
+        id: "balanced-growth-portfolio",
         risk: "Moderate",
         investor: "Salary earners and steady-growth investors",
         strategy: "Blends fixed income, dividend stocks, ETFs and commodity exposure.",
@@ -110,6 +113,7 @@
       },
       {
         name: "Commodity Opportunity Portfolio",
+        id: "commodity-opportunity-portfolio",
         risk: "Moderate / High",
         investor: "Commodity-focused investors",
         strategy: "Commodity-linked products across gold, cocoa, grains and energy.",
@@ -121,6 +125,7 @@
       },
       {
         name: "Dividend Income Portfolio",
+        id: "dividend-income-portfolio",
         risk: "Moderate",
         investor: "Passive-income and long-term investors",
         strategy: "Income-led equity and fund exposure with REIT and bond support.",
@@ -132,6 +137,7 @@
       },
       {
         name: "Equity Growth Portfolio",
+        id: "equity-growth-portfolio",
         risk: "High",
         investor: "Growth-focused investors",
         strategy: "Blue-chip and growth equity exposure across sectors and geographies.",
@@ -143,6 +149,7 @@
       },
       {
         name: "Premium Managed Portfolio",
+        id: "premium-managed-portfolio",
         risk: "Custom",
         investor: "High-net-worth and bespoke managed accounts",
         strategy: "Broker-managed custom allocations across all supported asset classes.",
@@ -548,6 +555,22 @@
     if (!min && !max) return "Market-linked";
     if (!min || min === max) return max || min;
     return min.replace(/%$/, "") + " - " + max;
+  }
+
+  function slugify(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function currentQueryValue(name) {
+    try {
+      return new URLSearchParams(location.search).get(name) || "";
+    } catch (error) {
+      return "";
+    }
   }
 
   function projectedRangeLabel(plan) {
@@ -1228,6 +1251,8 @@
       returnRange: productReturnRange(product),
       allocations: productAllocationRows(product),
       bannerUrl: product.bannerUrl || "",
+      riskFactorPercent: product.riskFactorPercent == null ? 30 : product.riskFactorPercent,
+      termsUrl: product.termsUrl || "",
       minimum: money(numberValue(product.minimum)),
       payout: planPayoutLabel(product.payoutRule),
       term: planDurationLabel(product.durationDays),
@@ -1536,7 +1561,7 @@
         data[key] = transform ? transform(value) : value;
       }));
     }
-    if (["investment-plans.html"].includes(cur)) load("/api/v1/client/portfolios", "products");
+    if (["investment-plans.html", "plan-detail.html"].includes(cur)) load("/api/v1/client/portfolios", "products");
     if (["active-investments.html", "portfolio.html", "analytics.html"].includes(cur)) load("/api/v1/client/investments", "investments");
     if (["portfolio.html", "analytics.html", "market.html", "screener.html", "movers.html", "earnings.html", "trading.html"].includes(cur)) load("/api/v1/client/instruments", "instruments");
     if (cur === "watchlist.html") {
@@ -1990,6 +2015,53 @@
     return '<div class="bp-plan-allocation"><div class="bp-plan-allocation-head"><span>Allocation snapshot</span><em>Top holdings</em></div><div class="bp-plan-allocation-track">' + segments.join("") + '</div><div class="bp-plan-allocation-legend">' + legend.join("") + '</div></div>';
   }
 
+  function planByIdentifier(identifier) {
+    const value = String(identifier || "").trim();
+    if (!value) return DEMO.plans[0] || null;
+    const normalized = slugify(value);
+    return DEMO.plans.find(function (plan) {
+      return String(plan.id || "") === value || slugify(plan.id) === normalized || slugify(plan.name) === normalized;
+    }) || DEMO.plans[0] || null;
+  }
+
+  function planDetailUrl(plan) {
+    const id = plan && (plan.id || slugify(plan.name));
+    return "plan-detail.html?id=" + encodeURIComponent(id || "");
+  }
+
+  function planRiskFactor(plan) {
+    const raw = plan && plan.riskFactorPercent != null ? Number(plan.riskFactorPercent) : 30;
+    if (!Number.isFinite(raw) || raw <= 0) return 30;
+    return Math.min(raw, 100);
+  }
+
+  function planMinimumAmount(plan) {
+    const raw = Number(String(plan && plan.minimum ? plan.minimum : "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(raw) && raw > 0 ? raw : 2500;
+  }
+
+  function planTermsHref(plan) {
+    return plan && plan.termsUrl ? plan.termsUrl : "terms.html";
+  }
+
+  function planAllocationTable(plan) {
+    const rows = Array.isArray(plan && plan.allocations) ? plan.allocations : [];
+    if (!rows.length) {
+      return '<div class="bp-plan-empty">Detailed holdings will be posted once the manager publishes the final allocation for this product.</div>';
+    }
+    return table(["Instrument", "Name", "Target weight"], rows.map(function (row) {
+      return [escapeHtml(row.symbol || "Asset"), escapeHtml(row.name || row.symbol || "Portfolio asset"), escapeHtml(percentLabel(row.weight))];
+    }));
+  }
+
+  function relatedPlansHtml(activePlan) {
+    const rows = DEMO.plans.filter(function (plan) { return !activePlan || plan.id !== activePlan.id; }).slice(0, 3);
+    if (!rows.length) return "";
+    return '<div class="bp-related-plans">' + rows.map(function (plan) {
+      return '<a class="bp-related-plan" href="' + escapeHtml(planDetailUrl(plan)) + '"><span>' + escapeHtml(plan.risk || "Moderate") + ' risk</span><strong>' + escapeHtml(plan.name) + '</strong><em>' + escapeHtml(projectedRangeLabel(plan)) + ' projected</em></a>';
+    }).join("") + "</div>";
+  }
+
   function setPlanCardExpanded(card, expanded) {
     if (!card) return;
     card.classList.toggle("is-expanded", expanded);
@@ -2030,9 +2102,45 @@
         '</div>' +
         planAllocationHtml(plan) +
         '<div class="bp-plan-card-footer"><div class="bp-plan-fit"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="m16 11 2 2 4-4"></path></svg></i><div><span>Designed for</span><strong>' + escapeHtml(plan.investor) + '</strong></div></div>' +
-        '<button type="button" data-broker-action="subscribe-plan" data-broker-plan="' + escapeHtml(plan.name) + '" class="bp-plan-cta"><span>' + escapeHtml(plan.button || "Review portfolio") + '</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></button></div>' +
+        '<button type="button" data-broker-action="subscribe-plan" data-broker-plan="' + escapeHtml(plan.name) + '" data-broker-plan-id="' + escapeHtml(plan.id || "") + '" class="bp-plan-cta"><span>' + escapeHtml(plan.button || "Review portfolio") + '</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></button></div>' +
         '</div></div></div></article>';
     }).join("") + "</div>";
+  }
+
+  function planDetailBody() {
+    const plan = planByIdentifier(currentQueryValue("id") || currentQueryValue("plan"));
+    if (!plan) {
+      return section("Plan unavailable", "Choose a published portfolio product from the catalogue.", '<a class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" href="investment-plans.html">Back to portfolios</a>');
+    }
+    const riskFactor = planRiskFactor(plan);
+    const minimumAmount = planMinimumAmount(plan);
+    const atRiskAmount = Math.round(minimumAmount * riskFactor / 100);
+    const termsHref = planTermsHref(plan);
+    return '<div class="bp-plan-detail">' +
+      '<div class="bp-plan-detail-back"><a href="investment-plans.html">Back to portfolios</a></div>' +
+      '<section class="bp-plan-detail-hero">' +
+      planBannerHtml(plan) +
+      '<div class="bp-plan-detail-panel">' +
+      '<div><span class="bp-detail-eyebrow">Selected portfolio</span><h2>' + escapeHtml(plan.name) + '</h2><p>' + escapeHtml(plan.strategy) + '</p></div>' +
+      '<div class="bp-detail-actions"><a href="' + escapeHtml(termsHref) + '" target="_blank" rel="noopener">Terms &amp; conditions</a><button type="button" data-broker-action="plan-detail-submit" data-broker-plan-id="' + escapeHtml(plan.id || "") + '">Select plan</button></div>' +
+      '</div>' +
+      '</section>' +
+      '<div class="bp-plan-detail-grid">' +
+      '<section class="bp-plan-detail-section is-primary"><span class="bp-detail-eyebrow">Risk scenario</span><h3>' + escapeHtml(percentLabel(riskFactor)) + ' capital-at-risk view</h3><p>In a severe downside scenario, about ' + escapeHtml(percentLabel(riskFactor)) + ' of the subscription amount should be treated as exposed to market loss. For the minimum entry, that means roughly ' + escapeHtml(money(atRiskAmount)) + ' of ' + escapeHtml(money(minimumAmount)) + ' is the stress amount to understand before selecting this plan.</p><div class="bp-risk-meter"><i style="width:' + riskFactor + '%"></i></div></section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Investment setup</span><div class="bp-plan-detail-form"><input type="hidden" name="productId" value="' + escapeHtml(plan.id || "") + '">' + modalField("Investment amount (USD)", "amount", "number", String(minimumAmount), 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label><label class="bp-terms-check"><input name="acceptedPlanTerms" type="checkbox"> <span>I have reviewed the plan terms, risk scenario and disclosures.</span></label></div></section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Plan facts</span>' + keyValueRows([
+        { label: "Risk label", value: escapeHtml(plan.risk || "Moderate") },
+        { label: "Projected return", value: escapeHtml(projectedRangeLabel(plan)) },
+        { label: "Minimum entry", value: escapeHtml(plan.minimum || money(minimumAmount)) },
+        { label: "Payout cadence", value: escapeHtml(plan.payout || "Scheduled payout") },
+        { label: "Time horizon", value: escapeHtml(plan.term || "Open-ended") },
+        { label: "Investor fit", value: escapeHtml(plan.investor || "Balanced investors") }
+      ]) + '</section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Allocation</span>' + planAllocationHtml(plan) + '<div class="mt-4">' + planAllocationTable(plan) + '</div></section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Disclosures</span><p>Projected returns are market-based and not guaranteed. Subscription approval requires cleared wallet funds, approved KYC, and suitability checks. Read the <a href="' + escapeHtml(termsHref) + '" target="_blank" rel="noopener">terms and conditions</a> before submitting.</p></section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Other portfolios</span>' + relatedPlansHtml(plan) + '</section>' +
+      '</div>' +
+      '</div>';
   }
 
   function investmentsBody() {
@@ -2629,6 +2737,9 @@
       case "investment-plans.html":
         body = plansBody();
         break;
+      case "plan-detail.html":
+        body = planDetailBody();
+        break;
       case "active-investments.html":
         body = investmentsBody();
         break;
@@ -2998,6 +3109,13 @@
     return field ? field.value.trim() : "";
   }
 
+  function pageFieldValue(name) {
+    const field = document.querySelector('[name="' + name + '"]');
+    if (!field) return "";
+    if (field.type === "checkbox") return field.checked ? "true" : "";
+    return String(field.value || "").trim();
+  }
+
   function modalFile(name) {
     const field = document.querySelector('#broker-modal [name="' + name + '"]');
     return field && field.files && field.files[0] ? field.files[0] : null;
@@ -3114,7 +3232,7 @@
   function showSecureNavigationState(page) {
     if (isAuthPage()) return;
     const targetPage = String(page || "").split(/[?#]/)[0];
-    const targetTitle = (pages[targetPage] && pages[targetPage].title) || "BullPort";
+    const targetTitle = (PAGE_META[targetPage] && PAGE_META[targetPage].title) || "BullPort";
     appState.apiLoaded = false;
     appState.apiMessage = "Securing your BullPort session before opening " + targetTitle + ".";
     renderPortalState(appState.apiMessage, false);
@@ -3500,9 +3618,22 @@
         togglePlanCard(node);
         return;
       case "subscribe-plan":
-        const plan = DEMO.plans.find(function (item) { return item.name === node.getAttribute("data-broker-plan"); });
+        const plan = DEMO.plans.find(function (item) {
+          return item.id === node.getAttribute("data-broker-plan-id") || item.name === node.getAttribute("data-broker-plan");
+        });
         if (!plan || !plan.id) { toast("This portfolio is not currently open for subscription.", "warning"); return; }
-        showModal("Subscribe to " + plan.name, planBannerHtml(plan) + '<p class="mt-4">Subscriptions require approved KYC, suitable risk classification, and cleared wallet funds. Returns remain projected and market-based.</p><div class="broker-form-grid">' + modalField("Investment amount (USD)", "amount", "number", String(Number(String(plan.minimum).replace(/[^0-9.]/g, "")) || 2500), 'min="1" step="0.01"') + '<input type="hidden" name="productId" value="' + plan.id + '"><label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="subscribe-plan-confirm">Confirm subscription</button>');
+        navigateTo(planDetailUrl(plan));
+        return;
+      case "plan-detail-submit":
+        try {
+          const selectedPlanId = node.getAttribute("data-broker-plan-id") || pageFieldValue("productId");
+          const selectedPlan = planByIdentifier(selectedPlanId);
+          if (!selectedPlan || !selectedPlan.id) throw new Error("This portfolio is not currently open for subscription.");
+          if (pageFieldValue("acceptedPlanTerms") !== "true") throw new Error("Review and accept the plan terms before selecting this plan.");
+          await apiRequest("/api/v1/client/investments", { method: "POST", headers: { "Idempotency-Key": requestKey("investment") }, body: JSON.stringify({ productId: selectedPlan.id, amount: Number(pageFieldValue("amount")), reinvestPreference: pageFieldValue("reinvestPreference") || "WALLET" }) }, false);
+          await refreshLiveView("Portfolio subscription is active in My Investments.", "success");
+          navigateTo("active-investments.html");
+        } catch (error) { toast((error && error.message) || "Could not create the subscription.", "warning"); }
         return;
       case "subscribe-plan-confirm":
         try {
@@ -3794,8 +3925,10 @@
       + " .bp-plan-card-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #e5ebe6;padding-top:18px}.bp-plan-fit{display:grid;grid-template-columns:38px minmax(0,1fr);align-items:center;gap:10px;min-width:0}.bp-plan-fit>i{display:flex;height:38px;width:38px;align-items:center;justify-content:center;border-radius:12px;background:#edf8ef;color:#15803d}.bp-plan-fit svg{height:18px;width:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.bp-plan-fit span{display:block;color:#7a867c;font-size:9px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}.bp-plan-fit strong{display:block;margin-top:3px;color:#253127;font-size:11px;font-weight:850;line-height:1.4}.bp-plan-cta{display:inline-flex;min-height:46px;flex:none;align-items:center;justify-content:center;gap:12px;border:0;border-radius:999px;background:#19b72f;color:#fff;padding:0 17px;font:inherit;font-size:12px;font-weight:900;cursor:pointer;box-shadow:0 14px 30px rgba(25,183,47,.24);transition:transform .18s ease,background .18s ease,box-shadow .18s ease}.bp-plan-cta:hover{background:#129d27;transform:translateY(-1px);box-shadow:0 18px 34px rgba(25,183,47,.3)}.bp-plan-cta:focus-visible{outline:3px solid rgba(25,183,47,.26);outline-offset:3px}.bp-plan-cta svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}.bp-plan-cta:hover svg{transform:translateX(3px)}"
       + " .dark .bp-plan-card{border-color:rgba(148,163,184,.16);background:#111a14;box-shadow:0 24px 70px rgba(0,0,0,.26)}.dark .bp-plan-card.is-expanded{border-color:rgba(74,222,128,.3)}.dark .bp-plan-toggle{border-color:rgba(148,163,184,.15);background:linear-gradient(135deg,#111a14,#16231a);color:#eef7f0}.dark .bp-plan-toggle:hover,.dark .bp-plan-card.is-expanded .bp-plan-toggle{background:linear-gradient(135deg,#16251b,#111a14)}.dark .bp-plan-toggle-copy small{color:#8fa094}.dark .bp-plan-toggle-icon{border-color:rgba(74,222,128,.2);background:rgba(34,197,94,.12);color:#86efac}.dark .bp-plan-strategy p,.dark .bp-plan-allocation.is-summary p{color:#a7b4aa}.dark .bp-plan-facts{border-color:rgba(148,163,184,.17);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.015))}.dark .bp-plan-facts>div+div{border-color:rgba(148,163,184,.17)}.dark .bp-plan-facts span,.dark .bp-plan-allocation-head em,.dark .bp-plan-allocation-legend em,.dark .bp-plan-fit span{color:#8fa094}.dark .bp-plan-facts strong,.dark .bp-plan-fit strong{color:#eef7f0}.dark .bp-plan-allocation{border-color:rgba(74,222,128,.15);background:linear-gradient(135deg,rgba(20,83,45,.18),rgba(15,23,18,.52))}.dark .bp-plan-allocation-legend>span{color:#c3d0c6}.dark .bp-plan-card-footer{border-color:rgba(148,163,184,.16)}.dark .bp-plan-fit>i{background:rgba(34,197,94,.13);color:#86efac}"
       + " .broker-modal-body .bp-plan-banner{min-height:250px;border-radius:16px}.broker-modal-body .bp-plan-banner-copy{left:18px;bottom:18px}.broker-modal-body .bp-plan-banner-copy h3{font-size:28px}.broker-modal-body .bp-plan-return{right:16px;bottom:16px}"
+      + " .bp-plan-detail{display:grid;gap:18px}.bp-plan-detail-back a{display:inline-flex;align-items:center;border:1px solid rgba(25,183,47,.18);border-radius:999px;background:rgba(25,183,47,.08);padding:8px 12px;color:#128225;font-size:12px;font-weight:900;text-decoration:none}.bp-plan-detail-back a:before{content:'\\2190';margin-right:7px}.bp-plan-detail-hero{overflow:hidden;border:1px solid rgba(15,23,42,.1);border-radius:24px;background:#fff;box-shadow:0 24px 70px rgba(15,23,42,.1)}.bp-plan-detail-hero>.bp-plan-banner{min-height:430px}.bp-plan-detail-panel{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px}.bp-detail-eyebrow{display:block;color:#128225;font-size:10px;font-weight:950;letter-spacing:.13em;text-transform:uppercase}.bp-plan-detail-panel h2{margin:7px 0 0;color:#152119;font-family:'Chakra Petch',sans-serif;font-size:30px;font-weight:700;line-height:1.05}.bp-plan-detail-panel p{max-width:760px;margin:9px 0 0;color:#536055;font-size:14px;line-height:1.65}.bp-detail-actions{display:flex;flex:none;flex-wrap:wrap;gap:10px;justify-content:flex-end}.bp-detail-actions a,.bp-detail-actions button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:999px;padding:0 16px;font-size:12px;font-weight:900;text-decoration:none}.bp-detail-actions a{border:1px solid #cfe3d2;background:#fff;color:#128225}.bp-detail-actions button{border:0;background:#19b72f;color:#fff;box-shadow:0 14px 30px rgba(25,183,47,.22);cursor:pointer}.bp-plan-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.bp-plan-detail-section{min-width:0;border:1px solid rgba(15,23,42,.09);border-radius:18px;background:#fff;padding:18px;box-shadow:0 14px 34px rgba(15,23,42,.06)}.bp-plan-detail-section.is-primary{background:linear-gradient(135deg,#f7fff8,#fff)}.bp-plan-detail-section h3{margin:8px 0 0;color:#152119;font-family:'Chakra Petch',sans-serif;font-size:25px;font-weight:700}.bp-plan-detail-section p{margin:10px 0 0;color:#536055;font-size:14px;line-height:1.65}.bp-plan-detail-section a{color:#128225;font-weight:900}.bp-risk-meter{height:10px;margin-top:16px;overflow:hidden;border-radius:999px;background:#e2e8f0}.bp-risk-meter i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#19b72f,#eab308,#ef4444)}.bp-plan-detail-form{display:grid;gap:12px}.bp-terms-check{display:flex;align-items:flex-start;gap:10px;border:1px solid #dbe7dd;border-radius:14px;background:#f8fbf8;padding:12px;color:#536055;font-size:13px;font-weight:750;line-height:1.45}.bp-terms-check input{margin-top:2px;accent-color:#19b72f}.bp-plan-empty{border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;padding:14px;color:#64748b;font-size:13px;line-height:1.5}.bp-related-plans{display:grid;gap:10px}.bp-related-plan{display:grid;gap:5px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fbf8;padding:13px;text-decoration:none}.bp-related-plan span{color:#128225;font-size:10px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.bp-related-plan strong{color:#152119;font-size:14px;font-weight:900}.bp-related-plan em{color:#64748b;font-size:12px;font-style:normal;font-weight:750}.dark .bp-plan-detail-hero,.dark .bp-plan-detail-section{border-color:rgba(148,163,184,.16);background:#111a14;box-shadow:0 24px 70px rgba(0,0,0,.22)}.dark .bp-plan-detail-section.is-primary{background:linear-gradient(135deg,rgba(20,83,45,.18),rgba(15,23,18,.9))}.dark .bp-plan-detail-panel h2,.dark .bp-plan-detail-section h3,.dark .bp-related-plan strong{color:#eef7f0}.dark .bp-plan-detail-panel p,.dark .bp-plan-detail-section p{color:#a7b4aa}.dark .bp-detail-actions a{border-color:rgba(74,222,128,.2);background:rgba(15,23,18,.72);color:#86efac}.dark .bp-terms-check,.dark .bp-related-plan{border-color:rgba(148,163,184,.17);background:rgba(255,255,255,.035);color:#a7b4aa}.dark .bp-plan-empty{border-color:rgba(148,163,184,.24);background:rgba(255,255,255,.035);color:#94a3b8}"
       + " @media (max-width:1180px){.bp-plan-grid,.bp-plan-grid.is-single{grid-template-columns:1fr;justify-content:stretch}}"
-      + " @media (max-width:640px){.bp-plan-grid{gap:18px}.bp-plan-card{border-radius:20px}.bp-plan-banner{width:100%;min-width:0;min-height:350px;aspect-ratio:auto}.bp-plan-banner-top{top:16px;left:16px;right:16px}.bp-plan-managed,.bp-plan-risk{padding:7px 9px;font-size:9px}.bp-plan-banner-copy{left:17px;right:auto;bottom:18px;width:calc(100% - 34px);max-width:calc(100% - 34px)}.bp-plan-banner-copy h3{display:block!important;width:100%;max-width:100%;height:auto!important;max-height:none!important;overflow:visible!important;font-size:clamp(26px,7.5vw,30px);line-height:1.02;overflow-wrap:break-word;text-overflow:clip!important;white-space:normal!important;-webkit-line-clamp:unset!important}.bp-plan-banner-copy p{padding-right:0;font-size:9px}.bp-plan-return{top:62px;right:16px;bottom:auto;width:132px;padding:12px}.bp-plan-return strong{font-size:22px}.bp-plan-toggle{min-height:66px;padding:12px 16px}.bp-plan-toggle-copy strong{font-size:12px}.bp-plan-toggle-copy small{font-size:9px}.bp-plan-toggle-icon{height:36px;width:36px}.bp-plan-card-body{gap:16px;padding:17px}.bp-plan-facts{grid-template-columns:1fr 1fr}.bp-plan-facts>div:nth-child(3){grid-column:1/-1;border-top:1px solid #e2e8f0;border-left:0}.dark .bp-plan-facts>div:nth-child(3){border-color:rgba(148,163,184,.17)}.bp-plan-card-footer{align-items:stretch;flex-direction:column}.bp-plan-cta{width:100%}.broker-modal-body .bp-plan-banner{min-height:330px}.broker-modal-body .bp-plan-return{top:62px;right:14px;bottom:auto}}"
+      + " @media (max-width:900px){.bp-plan-detail-panel,.bp-detail-actions{display:grid;justify-content:stretch}.bp-plan-detail-grid{grid-template-columns:1fr}.bp-detail-actions a,.bp-detail-actions button{width:100%}}"
+      + " @media (max-width:640px){.bp-plan-grid{gap:18px}.bp-plan-card{border-radius:20px}.bp-plan-banner{width:100%;min-width:0;min-height:350px;aspect-ratio:auto}.bp-plan-banner-top{top:16px;left:16px;right:16px}.bp-plan-managed,.bp-plan-risk{padding:7px 9px;font-size:9px}.bp-plan-banner-copy{left:17px;right:auto;bottom:18px;width:calc(100% - 34px);max-width:calc(100% - 34px)}.bp-plan-banner-copy h3{display:block!important;width:100%;max-width:100%;height:auto!important;max-height:none!important;overflow:visible!important;font-size:clamp(26px,7.5vw,30px);line-height:1.02;overflow-wrap:break-word;text-overflow:clip!important;white-space:normal!important;-webkit-line-clamp:unset!important}.bp-plan-banner-copy p{padding-right:0;font-size:9px}.bp-plan-return{top:62px;right:16px;bottom:auto;width:132px;padding:12px}.bp-plan-return strong{font-size:22px}.bp-plan-toggle{min-height:66px;padding:12px 16px}.bp-plan-toggle-copy strong{font-size:12px}.bp-plan-toggle-copy small{font-size:9px}.bp-plan-toggle-icon{height:36px;width:36px}.bp-plan-card-body{gap:16px;padding:17px}.bp-plan-facts{grid-template-columns:1fr 1fr}.bp-plan-facts>div:nth-child(3){grid-column:1/-1;border-top:1px solid #e2e8f0;border-left:0}.dark .bp-plan-facts>div:nth-child(3){border-color:rgba(148,163,184,.17)}.bp-plan-card-footer{align-items:stretch;flex-direction:column}.bp-plan-cta{width:100%}.bp-plan-detail-hero{border-radius:20px}.bp-plan-detail-hero>.bp-plan-banner{min-height:390px}.bp-plan-detail-panel{padding:17px}.bp-plan-detail-panel h2{font-size:25px}.bp-plan-detail-section{padding:16px}.broker-modal-body .bp-plan-banner{min-height:330px}.broker-modal-body .bp-plan-return{top:62px;right:14px;bottom:auto}}"
       + " @media (prefers-reduced-motion:reduce){.bp-plan-card,.bp-plan-cta,.bp-plan-cta svg,.bp-plan-toggle,.bp-plan-toggle-icon,.bp-plan-toggle-icon svg,.bp-plan-expandable,.bp-plan-banner-media img{transition:none}.bp-plan-card:hover,.bp-plan-cta:hover{transform:none}}"
       + " .broker-command-strip{box-shadow:0 10px 30px rgba(15,23,42,.06)}"
       + " .broker-command-strip .broker-dashboard-hero-glow{right:-110px;top:-160px;width:320px;height:320px;opacity:.78}"
