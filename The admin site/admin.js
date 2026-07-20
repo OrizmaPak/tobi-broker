@@ -239,6 +239,24 @@
     return '<div class="' + className + '">' + media + '<div class="product-banner-overlay"><strong>' + escapeHtml(name) + '</strong><small>' + escapeHtml(productReturnText(product)) + '</small></div></div>';
   }
 
+  function productBannerPrompt(product) {
+    const allocations = (product?.allocations || []).slice(0, 6).map((allocation) => {
+      const instrument = allocation.instrument || {};
+      return (instrument.symbol || instrument.name || "Instrument") + " " + Number(allocation.targetWeight || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
+    }).join(", ");
+    return [
+      "Create a premium investment product banner image at exactly 1600 x 900 pixels, 16:9 aspect ratio.",
+      "Product name: " + (product?.name || "Portfolio product") + ".",
+      "Advertised return: " + productReturnText(product) + ".",
+      "Risk profile: " + (product?.risk || product?.riskLevel || "Moderate") + ".",
+      "Strategy: " + (product?.description || "Broker-managed diversified investment portfolio.") + ".",
+      allocations ? "Portfolio allocation cues to represent subtly: " + allocations + "." : "Use abstract diversified portfolio cues, market charts, global finance, and disciplined allocation.",
+      "Visual direction: modern institutional wealth management, cinematic lighting, clean financial confidence, premium but not flashy, deep navy, emerald green, warm gold accents.",
+      "Composition: leave dark clean negative space on the lower-left and center-left for text overlay; keep important objects away from the bottom-left 45% of the image.",
+      "Do not include readable text, logos, watermarks, people, hands, currency notes, or cluttered chart labels. Make it suitable for a client investment portal banner."
+    ].join("\n");
+  }
+
   function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1534,7 +1552,7 @@
     }
     const publicationPanel = '<aside class="review-panel"><h2>Publication action</h2><p>' + publicationMessage + '</p><div class="decision-state" data-decision-state>' + badge(p.visibility) + '<span>Terms version ' + p.version + '</span></div><label>Publication note<textarea placeholder="Explain the strategy, allocation review, and reason this product is ready."></textarea></label><div class="action-row">' + publicationActions + '</div></aside>';
     const returnRange = productReturnText(p);
-    const bannerManager = section("Product banner", "Upload the marketing banner clients will see on this product, or paste a hosted banner URL.", '<div class="product-banner-direct"><input type="hidden" name="productName" value="' + escapeHtml(p.name) + '"><input type="hidden" name="productReturnMin" value="' + escapeHtml(p.projectedReturnMin) + '"><input type="hidden" name="productReturnMax" value="' + escapeHtml(p.projectedReturnMax) + '"><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerHtml(p, "thumb") + '</div><div class="product-banner-controls"><label class="product-banner-field">Upload banner image <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" data-product-banner-file type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Banner URL <span class="field-optional">Saved to product</span><input name="productBannerUrl" data-product-banner-url maxlength="1000" value="' + escapeHtml(p.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div></div>', '<button class="btn primary" type="button" data-action="product-banner-save">Save banner</button>');
+    const bannerManager = section("Product banner", "Upload the marketing banner clients will see on this product, or generate a product-specific AI image prompt with the required 1600 x 900 dimension.", '<div class="product-banner-direct"><input type="hidden" name="productName" value="' + escapeHtml(p.name) + '"><input type="hidden" name="productReturnMin" value="' + escapeHtml(p.projectedReturnMin) + '"><input type="hidden" name="productReturnMax" value="' + escapeHtml(p.projectedReturnMax) + '"><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerHtml(p, "thumb") + '</div><div class="product-banner-controls"><label class="product-banner-field">Upload banner image <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" data-product-banner-file type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Banner URL <span class="field-optional">Saved to product</span><input name="productBannerUrl" data-product-banner-url maxlength="1000" value="' + escapeHtml(p.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div><div class="product-banner-prompt-panel"><div class="product-banner-prompt-head"><div><strong>AI image prompt</strong><span>Predefined size: 1600 x 900px. Uses this product name, return, risk, strategy, and allocation.</span></div><div class="action-row"><button class="btn" type="button" data-action="product-banner-prompt">Generate prompt</button><button class="btn" type="button" data-action="product-banner-prompt-copy">Copy prompt</button></div></div><textarea data-product-banner-prompt readonly placeholder="Click Generate prompt to create a ready-to-use banner image prompt for this product."></textarea></div></div>', '<button class="btn primary" type="button" data-action="product-banner-save">Save banner</button>');
     return workflowSteps(["Terms saved", "Allocation ready", "Approval requested", "Published to clients"], workflowIndex) +
       productBannerHtml(p, "hero") +
       bannerManager +
@@ -1993,6 +2011,8 @@
           else if (action === "instrument-save") await submitInstrument(node.dataset.instrumentId);
           else if (action === "product-new") openProductEditor();
           else if (action === "product-edit") openProductEditor(liveRefs.productId);
+          else if (action === "product-banner-prompt") generateProductBannerPrompt();
+          else if (action === "product-banner-prompt-copy") await copyProductBannerPrompt();
           else if (action === "product-banner-save") await submitProductBanner();
           else if (action === "product-save") await submitProductEditor();
           else if (action === "product-allocation-edit") openProductAllocationEditor(liveRefs.productId);
@@ -2314,6 +2334,27 @@
       toast("Product banner saved.");
     } catch (error) {
       toast(error?.message || "The product banner could not be saved.");
+    }
+  }
+
+  function generateProductBannerPrompt() {
+    const prompt = productBannerPrompt(data.productDetail);
+    const output = document.querySelector("[data-product-banner-prompt]");
+    if (output) output.value = prompt;
+    toast("Banner prompt generated.");
+  }
+
+  async function copyProductBannerPrompt() {
+    const output = document.querySelector("[data-product-banner-prompt]");
+    const prompt = output?.value || productBannerPrompt(data.productDetail);
+    if (output && !output.value) output.value = prompt;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast("Banner prompt copied.");
+    } catch {
+      output?.focus();
+      output?.select();
+      toast("Prompt selected. Copy it from the box.");
     }
   }
 

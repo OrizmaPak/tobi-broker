@@ -1754,6 +1754,45 @@ tr:last-child td {
   margin: 12px 0 0;
 }
 
+.product-banner-prompt-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.03);
+  padding: 14px;
+}
+
+.product-banner-prompt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.product-banner-prompt-head strong,
+.product-banner-prompt-head span {
+  display: block;
+}
+
+.product-banner-prompt-head span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.product-banner-prompt-panel textarea {
+  width: 100%;
+  min-height: 190px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 12px;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+}
+
 .product-empty-state {
   display: block;
 }
