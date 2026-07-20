@@ -34,6 +34,36 @@ async function kycRequired(id: string) {
 
 const moneySchema = z.coerce.number().positive().max(100_000_000);
 
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function productReturnLabel(product: { projectedReturnMin?: Prisma.Decimal | number | string | null; projectedReturnMax?: Prisma.Decimal | number | string | null; projectedReturnMode?: string | null }) {
+  const min = product.projectedReturnMin == null ? null : Number(product.projectedReturnMin);
+  const max = product.projectedReturnMax == null ? null : Number(product.projectedReturnMax);
+  if (product.projectedReturnMode === "FIXED" && min !== null && Number.isFinite(min)) return `${min}% fixed projected return`;
+  if (min !== null && max !== null && Number.isFinite(min) && Number.isFinite(max)) return `${min}% to ${max}% projected return range`;
+  if (min !== null && Number.isFinite(min)) return `${min}% projected return`;
+  return "Projected, market-based performance";
+}
+
+function productPayoutSchedule(product: { durationDays?: number | null; payoutCycleCount?: number | null }) {
+  const interval = Number(product.durationDays || 0);
+  if (!Number.isFinite(interval) || interval <= 0) return { nextPayoutDate: null as Date | null, maturityDate: null as Date | null, nextAction: "Monitor valuation and the next distribution window" };
+  const start = new Date();
+  const cycleCount = Math.max(0, Number(product.payoutCycleCount || 0));
+  const totalWindows = cycleCount + 1;
+  const nextPayoutDate = addDays(start, interval);
+  const maturityDate = addDays(start, interval * totalWindows);
+  return {
+    nextPayoutDate,
+    maturityDate,
+    nextAction: `Next payout window ${nextPayoutDate.toISOString().slice(0, 10)}; ${totalWindows} ${totalWindows === 1 ? "cycle" : "cycles"} total`
+  };
+}
+
 function suitabilityScore(questionnaire: Record<string, unknown>) {
   const value = (key: string) => String(questionnaire[key] || "").toLowerCase();
   const objective = value("objective");
@@ -603,10 +633,14 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
   const product = await prisma.portfolioProduct.findFirst({ where: { id: input.productId, status: "PUBLISHED" } });
   if (!product) throw new ApiError(404, "Portfolio was not found or is not open", "PORTFOLIO_UNAVAILABLE");
   if (new Prisma.Decimal(input.amount).lessThan(product.minimum)) throw new ApiError(422, `Minimum subscription is ${product.currency} ${product.minimum}`, "BELOW_MINIMUM");
+  if (product.subscriptionType === "FIXED" && !new Prisma.Decimal(input.amount).equals(product.minimum)) {
+    throw new ApiError(422, `This portfolio uses a fixed subscription amount of ${product.currency} ${product.minimum}`, "FIXED_SUBSCRIPTION_AMOUNT_REQUIRED");
+  }
   const levels = { LOW: 1, MODERATE: 2, HIGH: 3, CUSTOM: 4 };
   if (levels[product.riskLevel] > levels[client.riskLevel] + 1) throw new ApiError(403, "This portfolio is outside your approved risk profile", "RISK_PROFILE_MISMATCH");
   const productVersion = await prisma.portfolioProductVersion.findFirst({ where: { productId: product.id, status: "PUBLISHED" }, orderBy: { version: "desc" } });
   if (!productVersion) throw new ApiError(409, "This portfolio does not have published terms", "PRODUCT_VERSION_REQUIRED");
+  const schedule = productPayoutSchedule(product);
   const result = await idempotentMutation(req, id, "POST:/client/investments", async (tx) => {
     const ledger = await debitClientCashTx(tx, { clientId: id, amount: input.amount, type: "INVESTMENT_SUBSCRIPTION", description: `Subscription to ${product.name}`, currency: product.currency, idempotencyKey: req.get("idempotency-key")!, initiatedBy: id, metadata: { productId: product.id } });
     const investment = await tx.clientInvestment.create({
@@ -614,7 +648,7 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
         clientId: id, productId: product.id, productVersionId: productVersion.id,
         investedAmount: input.amount, currentValue: input.amount, units: input.amount,
         currency: product.currency, status: "ACTIVE", reinvestPreference: input.reinvestPreference,
-        projectedReturnLabel: "Projected, market-based performance", nextAction: "Monitor valuation and the next distribution window",
+        projectedReturnLabel: productReturnLabel(product), nextAction: schedule.nextAction, maturityDate: schedule.maturityDate,
         transactions: { create: { reference: reference("INV"), type: "SUBSCRIPTION", amount: input.amount, units: input.amount, unitPrice: 1, ledgerTransactionId: ledger.id } },
         valuations: { create: { value: input.amount, unitPrice: 1, source: "Subscription value", asOf: new Date() } }
       },

@@ -19,6 +19,9 @@ const complianceRoles = requireAdminRoles("SUPER_ADMIN", "COMPLIANCE");
 const readRoles = requireAdminRoles("SUPER_ADMIN", "COMPLIANCE", "FINANCE", "PORTFOLIO_MANAGER", "SUPPORT", "AUDITOR");
 
 const money = z.coerce.number().nonnegative().max(1_000_000_000);
+const productSubscriptionTypes = ["FIXED", "FLEXIBLE"] as const;
+const productReturnTypes = ["FIXED", "FLEXIBLE"] as const;
+const productReturnModes = ["FIXED", "RANGE"] as const;
 
 function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -93,15 +96,44 @@ const productSchema = z.object({
   description: z.string().trim().min(10).max(4000),
   riskLevel: z.enum(["LOW", "MODERATE", "HIGH", "CUSTOM"]),
   minimum: z.coerce.number().positive(),
+  subscriptionType: z.enum(productSubscriptionTypes).default("FLEXIBLE"),
   currency: z.string().length(3).default("USD"),
   payoutRule: z.string().trim().min(3).max(200),
   durationDays: z.coerce.number().int().positive().optional(),
+  payoutCycleCount: z.coerce.number().int().nonnegative().max(120).default(0),
   projectedReturnMin: z.coerce.number().nonnegative().max(100).optional(),
   projectedReturnMax: z.coerce.number().nonnegative().max(100).optional(),
+  projectedReturnType: z.enum(productReturnTypes).default("FLEXIBLE"),
+  projectedReturnMode: z.enum(productReturnModes).default("RANGE"),
   bannerUrl: z.string().trim().max(1000).optional().transform((value) => value || undefined),
   disclosure: z.string().trim().min(20).max(4000).default("Returns are projected and market-based. Capital and income are not guaranteed."),
   eligibility: z.record(z.string(), z.unknown()).default({})
-}).refine((value) => value.projectedReturnMin === undefined || value.projectedReturnMax === undefined || value.projectedReturnMin <= value.projectedReturnMax, { message: "Projected return minimum cannot exceed maximum", path: ["projectedReturnMin"] });
+}).superRefine((value, ctx) => {
+  if (value.projectedReturnType === "FIXED" && value.projectedReturnMode !== "FIXED") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMode"], message: "Fixed projected returns must use fixed return mode" });
+  }
+  if (value.projectedReturnType === "FLEXIBLE" && value.projectedReturnMode !== "RANGE") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMode"], message: "Flexible projected returns must use range mode" });
+  }
+  if (value.projectedReturnMode === "FIXED") {
+    if (value.projectedReturnMin === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMin"], message: "Enter the fixed projected return" });
+    }
+    if (value.projectedReturnMax !== undefined && value.projectedReturnMin !== undefined && value.projectedReturnMax !== value.projectedReturnMin) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMax"], message: "Fixed projected return must use one value" });
+    }
+  }
+  if (value.projectedReturnMode === "RANGE") {
+    if (value.projectedReturnMin === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMin"], message: "Enter projected return minimum" });
+    if (value.projectedReturnMax === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMax"], message: "Enter projected return maximum" });
+    if (value.projectedReturnMin !== undefined && value.projectedReturnMax !== undefined && value.projectedReturnMin > value.projectedReturnMax) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["projectedReturnMin"], message: "Projected return minimum cannot exceed maximum" });
+    }
+  }
+}).transform((value) => ({
+  ...value,
+  projectedReturnMax: value.projectedReturnMode === "FIXED" ? value.projectedReturnMin : value.projectedReturnMax
+}));
 
 v1AdminBrokerRouter.post("/portfolio-products/banner-upload", portfolioRoles, asyncHandler(async (req, res) => {
   const input = z.object({

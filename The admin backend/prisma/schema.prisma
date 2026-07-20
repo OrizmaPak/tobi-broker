@@ -753,11 +753,15 @@ model PortfolioProduct {
   slug               String?                   @unique
   riskLevel          RiskLevel
   minimum            Decimal                   @db.Decimal(18, 2)
+  subscriptionType   String                    @default("FLEXIBLE")
   currency           String                    @default("USD")
   payoutRule         String
   durationDays       Int?
+  payoutCycleCount   Int                       @default(0)
   projectedReturnMin Decimal?                  @db.Decimal(8, 4)
   projectedReturnMax Decimal?                  @db.Decimal(8, 4)
+  projectedReturnType String                   @default("FLEXIBLE")
+  projectedReturnMode String                   @default("RANGE")
   bannerUrl          String?
   disclosure         String?
   eligibility        Json?

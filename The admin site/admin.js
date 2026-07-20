@@ -227,7 +227,28 @@
     const min = product?.projectedReturnMin ?? "";
     const max = product?.projectedReturnMax ?? "";
     if (min === "" && max === "") return "No projected range configured";
+    if (product?.projectedReturnMode === "FIXED" || String(product?.projectedReturnType || "").toUpperCase() === "FIXED" || String(min) === String(max)) return (min === "" ? max : min) + "% fixed projected";
     return (min === "" ? "0" : min) + "% to " + (max === "" ? "-" : max) + "% projected";
+  }
+
+  function productSubscriptionText(product) {
+    return label(product?.subscriptionType || "FLEXIBLE") + " subscription";
+  }
+
+  function productReturnTypeText(product) {
+    return label(product?.projectedReturnType || "FLEXIBLE") + " / " + label(product?.projectedReturnMode || "RANGE");
+  }
+
+  function productCycleText(product) {
+    const duration = Number(product?.durationDays || 0);
+    const cycleCount = Math.max(0, Number(product?.payoutCycleCount || 0));
+    if (!Number.isFinite(duration) || duration <= 0) return "Open-ended";
+    const windows = cycleCount + 1;
+    return duration + " days x " + windows + " payout " + (windows === 1 ? "window" : "windows");
+  }
+
+  function selectedAttr(value, expected) {
+    return String(value || "") === expected ? "selected" : "";
   }
 
   function productInstrumentSummary(product) {
@@ -939,7 +960,7 @@
       data.productRecords = products;
       data.products = products.map((row) => {
         const allocationTotal = (row.allocations || []).reduce((sum, allocation) => sum + Number(allocation.targetWeight || 0), 0);
-        return [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status), row.id, allocationTotal];
+        return [row.name, label(row.riskLevel), formatMoney(row.minimum), productSubscriptionText(row), row.payoutRule, productCycleText(row), productReturnText(row), label(row.status), row.id, allocationTotal];
       });
       const premium = products.find((row) => row.id === requestedRecordId) || products[0];
       if (premium) {
@@ -952,6 +973,7 @@
           riskLevel: premium.riskLevel,
           minimum: formatMoney(premium.minimum),
           minimumValue: Number(premium.minimum || 0),
+          subscriptionType: premium.subscriptionType || "FLEXIBLE",
           currency: premium.currency || "USD",
           payout: premium.payoutRule,
           visibility: label(premium.status),
@@ -959,8 +981,11 @@
           version: Number(premium.version || 1),
           description: premium.description || "",
           durationDays: premium.durationDays || "",
+          payoutCycleCount: premium.payoutCycleCount ?? 0,
           projectedReturnMin: premium.projectedReturnMin ?? "",
           projectedReturnMax: premium.projectedReturnMax ?? "",
+          projectedReturnType: premium.projectedReturnType || "FLEXIBLE",
+          projectedReturnMode: premium.projectedReturnMode || "RANGE",
           bannerUrl: premium.bannerUrl || "",
           disclosure: premium.disclosure || "",
           eligibility: premium.eligibility || {},
@@ -1346,14 +1371,17 @@
         productBannerHtml(row, "thumb"),
         badge(label(row.riskLevel)),
         formatMoney(row.minimum),
+        badge(label(row.subscriptionType || "FLEXIBLE")),
         escapeHtml(row.payoutRule || "-"),
+        escapeHtml(productCycleText(row)),
+        escapeHtml(productReturnText(row)),
         badge(Math.abs(Number(allocationTotal) - 100) < 0.001 ? "100% ready" : Number(allocationTotal || 0) + "% configured", Math.abs(Number(allocationTotal) - 100) < 0.001 ? "success" : "warning"),
         badge(label(row.status)),
         linkButton("Open", "portfolio-product-detail.html?id=" + encodeURIComponent(row.id))
       ];
     });
-    return section("Portfolio product catalog", "Create the terms, configure the allocation, submit for approval, and track client visibility.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Allocation", "Status", "Action"], rows), '<button type="button" class="btn primary" data-action="product-new">New product</button>') +
-      section("Publication path", "A product does not enter Approvals until every required setup step is complete.", details([["1. Terms", "Name, risk, minimum, payout, disclosure"], ["2. Instruments", "At least one active, investable instrument"], ["3. Allocation", "Target weights must total exactly 100%"], ["4. Approval", "An authorized checker publishes the submitted version"]]));
+    return section("Portfolio product catalog", "Create the terms, configure the allocation, submit for approval, and track client visibility.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Subscription", "Payout", "Cycle", "Return", "Allocation", "Status", "Action"], rows), '<button type="button" class="btn primary" data-action="product-new">New product</button>') +
+      section("Publication path", "A product does not enter Approvals until every required setup step is complete.", details([["1. Terms", "Name, risk, subscription type, payout duration, cycles, return type, disclosure"], ["2. Instruments", "At least one active, investable instrument"], ["3. Allocation", "Target weights must total exactly 100%"], ["4. Approval", "An authorized checker publishes the submitted version"]]));
   }
 
   function investmentsPage() {
@@ -1607,12 +1635,12 @@
       productBannerHtml(p, "hero") +
       bannerManager +
       '<div class="grid two">' +
-      section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
+      section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Subscription type", badge(label(p.subscriptionType || "FLEXIBLE"))], ["Payout rule", escapeHtml(p.payout)], ["Duration", p.durationDays ? escapeHtml(String(p.durationDays) + " days") : "Open-ended"], ["Cycles", escapeHtml(productCycleText(p))], ["Projected return type", escapeHtml(productReturnTypeText(p))], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
       section("Publication readiness", "Every check must be complete before a request can enter Approvals.", checklist([["Terms version", "Version " + p.version + " ready"], ["Active instruments", allocationInstrumentsAvailable ? "Available" : "Required"], ["Allocation total", allocationReady ? "100% ready" : allocationTotal + "% configured"], ["Approval state", p.status === "PENDING_APPROVAL" ? "Pending" : p.status === "PUBLISHED" ? "Approved" : "Not requested"]])) +
       "</div>" +
       section("Portfolio allocation", "Only active, investable instruments can be included. Saving changes returns a published or pending product to draft.", allocationBody, allocationAction) +
       '<div class="grid two">' + publicationPanel +
-      section("Client impact preview", "Only a published product is returned to the client investment catalog.", productBannerHtml(p, "thumb") + details([["Client name", escapeHtml(p.name)], ["Strategy", escapeHtml(p.description || "Managed portfolio")], ["Advertised return", escapeHtml(returnRange)], ["Risk label", escapeHtml(p.risk)], ["Minimum subscription", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Disclosure", escapeHtml(p.disclosure || "Required before publication")]])) +
+      section("Client impact preview", "Only a published product is returned to the client investment catalog.", productBannerHtml(p, "thumb") + details([["Client name", escapeHtml(p.name)], ["Strategy", escapeHtml(p.description || "Managed portfolio")], ["Advertised return", escapeHtml(returnRange)], ["Risk label", escapeHtml(p.risk)], ["Minimum subscription", p.minimum + " " + escapeHtml(p.currency)], ["Subscription type", escapeHtml(label(p.subscriptionType || "FLEXIBLE"))], ["Payout", escapeHtml(p.payout)], ["Cycle", escapeHtml(productCycleText(p))], ["Disclosure", escapeHtml(p.disclosure || "Required before publication")]])) +
       "</div>";
   }
 
@@ -2338,13 +2366,53 @@
     toast(saved.symbol + " instrument saved.");
   }
 
+  function updateProductTermControls(root) {
+    if (!root) return;
+    const returnType = root.querySelector('[name="productReturnType"]');
+    const returnMode = root.querySelector('[name="productReturnMode"]');
+    const returnMaxWrap = root.querySelector("[data-return-max-field]");
+    const returnMax = root.querySelector('[name="productReturnMax"]');
+    const returnMin = root.querySelector('[name="productReturnMin"]');
+    const typeValue = returnType?.value || "FLEXIBLE";
+    if (returnMode) returnMode.value = typeValue === "FIXED" ? "FIXED" : "RANGE";
+    const fixed = typeValue === "FIXED" || returnMode?.value === "FIXED";
+    if (returnMaxWrap) returnMaxWrap.style.display = fixed ? "none" : "";
+    if (returnMax) {
+      returnMax.disabled = fixed;
+      if (fixed) returnMax.value = returnMin?.value || "";
+    }
+    const duration = Number(root.querySelector('[name="productDuration"]')?.value || 0);
+    const cycles = Math.max(0, Number(root.querySelector('[name="productCycleCount"]')?.value || 0));
+    const preview = root.querySelector("[data-product-cycle-preview]");
+    if (preview) preview.textContent = Number.isFinite(duration) && duration > 0
+      ? "Cycle preview: " + duration + " days x " + (cycles + 1) + " payout " + ((cycles + 1) === 1 ? "window" : "windows") + "."
+      : "Cycle preview: open-ended until a payout duration is entered.";
+  }
+
   function openProductEditor(id) {
     const root = document.querySelector("[data-modal-root]");
     if (!root) return;
     const product = data.productRecords.find((row) => row.id === id) || null;
     appState.pendingProductId = product?.id || null;
     const editingLiveProduct = product && ["PENDING_APPROVAL", "PUBLISHED"].includes(product.status);
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal product-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio setup</p><h2>' + (product ? "Edit product terms" : "Create portfolio product") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + (editingLiveProduct ? "Saving these changes returns the product to draft and cancels any pending publication request." : "Save the terms first. You will configure the 100% instrument allocation on the next screen.") + '</p><div class="product-editor-grid"><label>Product name<input name="productName" maxlength="120" value="' + escapeHtml(product?.name || "") + '" placeholder="e.g. Global Income Portfolio"></label><label>Risk level<select name="productRisk"><option value="LOW" ' + (product?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!product || product.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (product?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (product?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Minimum subscription<input name="productMinimum" type="number" min="0.01" step="0.01" value="' + escapeHtml(product?.minimum ?? 100) + '"></label><label>Currency<input name="productCurrency" maxlength="3" value="' + escapeHtml(product?.currency || "USD") + '"></label><label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Quarterly"></label><label>Duration in days <span class="field-optional">Optional</span><input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="Leave blank for open-ended"></label><label>Projected return minimum (%) <span class="field-optional">Optional</span><input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label><label>Projected return maximum (%) <span class="field-optional">Optional</span><input name="productReturnMax" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMax ?? "") + '"></label></div><div class="product-banner-controls"><label class="product-banner-field">Upload product banner <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Product banner URL <span class="field-optional">Optional</span><input name="productBannerUrl" maxlength="1000" value="' + escapeHtml(product?.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerPreviewHtml(product || { name: "Portfolio product" }) + '</div><label>Strategy description<textarea name="productDescription" maxlength="4000" placeholder="Describe the strategy, objective, and intended investor profile.">' + escapeHtml(product?.description || "") + '</textarea></label><label>Risk disclosure<textarea name="productDisclosure" maxlength="4000">' + escapeHtml(product?.disclosure || "Returns are projected and market-based. Capital and income are not guaranteed.") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-save">' + (product ? "Save terms and return to draft" : "Create and configure allocation") + '</button></div></section></div>';
+    const subscriptionType = product?.subscriptionType || "FLEXIBLE";
+    const returnType = product?.projectedReturnType || (String(product?.projectedReturnMin ?? "") !== "" && String(product?.projectedReturnMin ?? "") === String(product?.projectedReturnMax ?? "") ? "FIXED" : "FLEXIBLE");
+    const returnMode = product?.projectedReturnMode || (returnType === "FIXED" ? "FIXED" : "RANGE");
+    const termsGrid = '<div class="product-editor-grid">' +
+      '<label>Product name<input name="productName" maxlength="120" value="' + escapeHtml(product?.name || "") + '" placeholder="e.g. Global Income Portfolio"></label>' +
+      '<label>Risk level<select name="productRisk"><option value="LOW" ' + selectedAttr(product?.riskLevel, "LOW") + '>Low</option><option value="MODERATE" ' + (!product || product.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + selectedAttr(product?.riskLevel, "HIGH") + '>High</option><option value="CUSTOM" ' + selectedAttr(product?.riskLevel, "CUSTOM") + '>Custom</option></select></label>' +
+      '<label>Minimum subscription<input name="productMinimum" type="number" min="0.01" step="0.01" value="' + escapeHtml(product?.minimum ?? 100) + '"></label>' +
+      '<label>Subscription type<select name="productSubscriptionType"><option value="FLEXIBLE" ' + selectedAttr(subscriptionType, "FLEXIBLE") + '>Flexible - client can subscribe above minimum</option><option value="FIXED" ' + selectedAttr(subscriptionType, "FIXED") + '>Fixed - exact subscription amount</option></select></label>' +
+      '<label>Currency<input name="productCurrency" maxlength="3" value="' + escapeHtml(product?.currency || "USD") + '"></label>' +
+      '<label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Every cycle"></label>' +
+      '<label>Payout duration in days<input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="e.g. 30"></label>' +
+      '<label>Cycle count<input name="productCycleCount" type="number" min="0" max="120" step="1" value="' + escapeHtml(product?.payoutCycleCount ?? 0) + '"></label>' +
+      '<label>Projected return type<select name="productReturnType"><option value="FLEXIBLE" ' + selectedAttr(returnType, "FLEXIBLE") + '>Flexible return</option><option value="FIXED" ' + selectedAttr(returnType, "FIXED") + '>Fixed return</option></select></label>' +
+      '<label>Return value mode<select name="productReturnMode"><option value="RANGE" ' + selectedAttr(returnMode, "RANGE") + '>Range - minimum and maximum</option><option value="FIXED" ' + selectedAttr(returnMode, "FIXED") + '>Fixed - one value</option></select></label>' +
+      '<label>Projected return minimum / fixed (%)<input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label>' +
+      '<label data-return-max-field>Projected return maximum (%)<input name="productReturnMax" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMax ?? "") + '"></label>' +
+      '</div><p class="modal-guidance" data-product-cycle-preview>' + escapeHtml(productCycleText({ durationDays: product?.durationDays, payoutCycleCount: product?.payoutCycleCount ?? 0 })) + '</p>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal product-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio setup</p><h2>' + (product ? "Edit product terms" : "Create portfolio product") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + (editingLiveProduct ? "Saving these changes returns the product to draft and cancels any pending publication request." : "Save the terms first. You will configure the 100% instrument allocation on the next screen.") + '</p>' + termsGrid + '<div class="product-banner-controls"><label class="product-banner-field">Upload product banner <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Product banner URL <span class="field-optional">Optional</span><input name="productBannerUrl" maxlength="1000" value="' + escapeHtml(product?.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerPreviewHtml(product || { name: "Portfolio product" }) + '</div><label>Strategy description<textarea name="productDescription" maxlength="4000" placeholder="Describe the strategy, objective, and intended investor profile.">' + escapeHtml(product?.description || "") + '</textarea></label><label>Risk disclosure<textarea name="productDisclosure" maxlength="4000">' + escapeHtml(product?.disclosure || "Returns are projected and market-based. Capital and income are not guaranteed.") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-save">' + (product ? "Save terms and return to draft" : "Create and configure allocation") + '</button></div></section></div>';
     root.querySelector('[name="productBannerFile"]')?.addEventListener("change", async (event) => {
       const file = event.target?.files?.[0];
       try { await uploadProductBanner(file, root); } catch (error) { toast(error?.message || "The product banner could not be uploaded."); }
@@ -2353,6 +2421,17 @@
     root.querySelector('[name="productName"]')?.addEventListener("input", () => updateProductBannerPreview(root));
     root.querySelector('[name="productReturnMin"]')?.addEventListener("input", () => updateProductBannerPreview(root));
     root.querySelector('[name="productReturnMax"]')?.addEventListener("input", () => updateProductBannerPreview(root));
+    root.querySelector('[name="productReturnType"]')?.addEventListener("change", () => updateProductTermControls(root));
+    root.querySelector('[name="productReturnMode"]')?.addEventListener("change", () => {
+      const type = root.querySelector('[name="productReturnType"]');
+      const mode = root.querySelector('[name="productReturnMode"]');
+      if (type && mode) type.value = mode.value === "FIXED" ? "FIXED" : "FLEXIBLE";
+      updateProductTermControls(root);
+    });
+    root.querySelector('[name="productReturnMin"]')?.addEventListener("input", () => updateProductTermControls(root));
+    root.querySelector('[name="productDuration"]')?.addEventListener("input", () => updateProductTermControls(root));
+    root.querySelector('[name="productCycleCount"]')?.addEventListener("input", () => updateProductTermControls(root));
+    updateProductTermControls(root);
     bindActions();
   }
 
@@ -2367,25 +2446,36 @@
       description: root?.querySelector('[name="productDescription"]')?.value.trim() || "",
       riskLevel: root?.querySelector('[name="productRisk"]')?.value || "MODERATE",
       minimum: Number(root?.querySelector('[name="productMinimum"]')?.value || 0),
+      subscriptionType: root?.querySelector('[name="productSubscriptionType"]')?.value || "FLEXIBLE",
       currency: (root?.querySelector('[name="productCurrency"]')?.value.trim() || "USD").toUpperCase(),
       payoutRule: root?.querySelector('[name="productPayout"]')?.value.trim() || "",
       durationDays: optionalNumber("productDuration"),
+      payoutCycleCount: optionalNumber("productCycleCount") ?? 0,
       projectedReturnMin: optionalNumber("productReturnMin"),
       projectedReturnMax: optionalNumber("productReturnMax"),
+      projectedReturnType: root?.querySelector('[name="productReturnType"]')?.value || "FLEXIBLE",
+      projectedReturnMode: root?.querySelector('[name="productReturnMode"]')?.value || "RANGE",
       bannerUrl: root?.querySelector('[name="productBannerUrl"]')?.value.trim() || undefined,
       disclosure: root?.querySelector('[name="productDisclosure"]')?.value.trim() || "",
       eligibility: data.productRecords.find((row) => row.id === appState.pendingProductId)?.eligibility || {}
     };
+    if (payload.projectedReturnMode === "FIXED") payload.projectedReturnMax = payload.projectedReturnMin;
     if (payload.name.length < 3) { toast("Enter a product name of at least three characters."); return; }
     if (payload.description.length < 10) { toast("Add a strategy description of at least ten characters."); return; }
     if (!Number.isFinite(payload.minimum) || payload.minimum <= 0) { toast("Enter a valid minimum subscription amount."); return; }
+    if (!["FIXED", "FLEXIBLE"].includes(payload.subscriptionType)) { toast("Choose a valid subscription type."); return; }
     if (payload.currency.length !== 3) { toast("Currency must use a three-letter code such as USD."); return; }
     if (payload.payoutRule.length < 3) { toast("Enter a clear payout rule."); return; }
     if (payload.disclosure.length < 20) { toast("Add a risk disclosure of at least twenty characters."); return; }
     if (payload.durationDays !== undefined && (!Number.isInteger(payload.durationDays) || payload.durationDays <= 0)) { toast("Duration must be a positive whole number of days."); return; }
-    if (payload.projectedReturnMin !== undefined && (payload.projectedReturnMin < 0 || payload.projectedReturnMin > 100)) { toast("Projected return minimum must be between 0% and 100%."); return; }
-    if (payload.projectedReturnMax !== undefined && (payload.projectedReturnMax < 0 || payload.projectedReturnMax > 100)) { toast("Projected return maximum must be between 0% and 100%."); return; }
-    if (payload.projectedReturnMin !== undefined && payload.projectedReturnMax !== undefined && payload.projectedReturnMin > payload.projectedReturnMax) { toast("Projected return minimum cannot exceed the maximum."); return; }
+    if (!Number.isInteger(payload.payoutCycleCount) || payload.payoutCycleCount < 0) { toast("Cycle count must be a non-negative whole number."); return; }
+    if (!["FIXED", "FLEXIBLE"].includes(payload.projectedReturnType)) { toast("Choose a valid projected return type."); return; }
+    if (!["FIXED", "RANGE"].includes(payload.projectedReturnMode)) { toast("Choose fixed or range return mode."); return; }
+    if (payload.projectedReturnType === "FIXED" && payload.projectedReturnMode !== "FIXED") { toast("Fixed projected return must use fixed return mode."); return; }
+    if (payload.projectedReturnType === "FLEXIBLE" && payload.projectedReturnMode !== "RANGE") { toast("Flexible projected return must use range mode."); return; }
+    if (payload.projectedReturnMin === undefined || payload.projectedReturnMin < 0 || payload.projectedReturnMin > 100) { toast("Projected return minimum or fixed value must be between 0% and 100%."); return; }
+    if (payload.projectedReturnMode === "RANGE" && (payload.projectedReturnMax === undefined || payload.projectedReturnMax < 0 || payload.projectedReturnMax > 100)) { toast("Projected return maximum must be between 0% and 100%."); return; }
+    if (payload.projectedReturnMode === "RANGE" && payload.projectedReturnMax !== undefined && payload.projectedReturnMin > payload.projectedReturnMax) { toast("Projected return minimum cannot exceed the maximum."); return; }
     try {
       const id = appState.pendingProductId;
       const saved = await api(id ? "/api/v1/admin/portfolio-products/" + encodeURIComponent(id) : "/api/v1/admin/portfolio-products", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -3036,7 +3126,7 @@
         await api("/api/v1/admin/tasks", { method: "POST", body: JSON.stringify({ title: values[0] || "Operational follow-up", description: note, category: pageContext(), priority: values.some((value) => /high|urgent/i.test(value)) ? "High" : "Normal" }) });
       } else if (apiAction === "createPortfolioProduct") {
         const risk = /high/i.test(values[1]) ? "HIGH" : /low/i.test(values[1]) ? "LOW" : /custom/i.test(values[1]) ? "CUSTOM" : "MODERATE";
-        await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), currency: "USD", payoutRule: "Quarterly", disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
+        await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), subscriptionType: "FLEXIBLE", currency: "USD", payoutRule: "Quarterly", durationDays: 90, payoutCycleCount: 0, projectedReturnType: "FLEXIBLE", projectedReturnMode: "RANGE", projectedReturnMin: 4, projectedReturnMax: 8, disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
       } else if (apiAction === "upsertInstrument") {
         const risk = /high/i.test(values[5]) ? "HIGH" : /low/i.test(values[5]) ? "LOW" : /custom/i.test(values[5]) ? "CUSTOM" : "MODERATE";
         const status = /inactive/i.test(values[6]) ? "INACTIVE" : /suspend/i.test(values[6]) ? "SUSPENDED" : /restrict/i.test(values[6]) ? "RESTRICTED" : "ACTIVE";

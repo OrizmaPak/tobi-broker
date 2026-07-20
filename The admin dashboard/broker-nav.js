@@ -540,6 +540,7 @@
     const min = product && product.projectedReturnMin != null ? product.projectedReturnMin : "";
     const max = product && product.projectedReturnMax != null ? product.projectedReturnMax : "";
     if (min === "" && max === "") return "Projected market-based performance; returns are not guaranteed.";
+    if (product && (product.projectedReturnMode === "FIXED" || product.projectedReturnType === "FIXED" || String(min) === String(max))) return (min === "" ? max : min) + "% fixed projected";
     return (min === "" ? "0" : min) + "% to " + (max === "" ? "-" : max) + "% projected";
   }
 
@@ -553,6 +554,7 @@
     const min = product && product.projectedReturnMin != null ? percentLabel(product.projectedReturnMin) : "";
     const max = product && product.projectedReturnMax != null ? percentLabel(product.projectedReturnMax) : "";
     if (!min && !max) return "Market-linked";
+    if (product && (product.projectedReturnMode === "FIXED" || product.projectedReturnType === "FIXED")) return max || min;
     if (!min || min === max) return max || min;
     return min.replace(/%$/, "") + " - " + max;
   }
@@ -1236,6 +1238,14 @@
     return value + (value === 1 ? " day" : " days");
   }
 
+  function planCycleLabel(plan) {
+    const days = Number(plan && plan.durationDays != null ? plan.durationDays : plan && plan.durationDaysRaw);
+    const cycles = Math.max(0, Number(plan && plan.payoutCycleCount != null ? plan.payoutCycleCount : 0));
+    if (!Number.isFinite(days) || days <= 0) return "Open-ended";
+    const windows = cycles + 1;
+    return days + " days x " + windows + " payout " + (windows === 1 ? "window" : "windows");
+  }
+
   function planPayoutLabel(value) {
     const raw = String(value || "Scheduled").trim();
     if (/no scheduled (income|payout|distribution)/i.test(raw)) return "No scheduled payout";
@@ -1268,9 +1278,15 @@
       bannerUrl: product.bannerUrl || "",
       riskFactorPercent: product.riskFactorPercent == null ? 30 : product.riskFactorPercent,
       termsUrl: product.termsUrl || "",
+      subscriptionType: product.subscriptionType || "FLEXIBLE",
       minimum: money(numberValue(product.minimum)),
       payout: planPayoutLabel(product.payoutRule),
+      durationDaysRaw: product.durationDays || null,
+      payoutCycleCount: product.payoutCycleCount == null ? 0 : product.payoutCycleCount,
+      projectedReturnType: product.projectedReturnType || "FLEXIBLE",
+      projectedReturnMode: product.projectedReturnMode || "RANGE",
       term: planDurationLabel(product.durationDays),
+      cycle: planCycleLabel(product),
       button: "Review plan"
     };
   }
@@ -2113,7 +2129,7 @@
         '<div class="bp-plan-facts">' +
         '<div><span>Minimum entry</span><strong>' + escapeHtml(plan.minimum) + '</strong></div>' +
         '<div><span>Payout cadence</span><strong>' + escapeHtml(plan.payout) + '</strong></div>' +
-        '<div><span>Time horizon</span><strong>' + escapeHtml(plan.term || "Open-ended") + '</strong></div>' +
+        '<div><span>Cycle</span><strong>' + escapeHtml(plan.cycle || plan.term || "Open-ended") + '</strong></div>' +
         '</div>' +
         planAllocationHtml(plan) +
         '<div class="bp-plan-card-footer"><div class="bp-plan-fit"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="m16 11 2 2 4-4"></path></svg></i><div><span>Designed for</span><strong>' + escapeHtml(plan.investor) + '</strong></div></div>' +
@@ -2131,6 +2147,8 @@
     const minimumAmount = planMinimumAmount(plan);
     const atRiskAmount = Math.round(minimumAmount * riskFactor / 100);
     const termsHref = planTermsHref(plan);
+    const fixedSubscription = plan.subscriptionType === "FIXED";
+    const amountInputExtra = fixedSubscription ? 'min="1" step="0.01" readonly aria-readonly="true"' : 'min="1" step="0.01"';
     return '<div class="bp-plan-detail">' +
       '<div class="bp-plan-detail-back"><a href="investment-plans.html">Back to portfolios</a></div>' +
       '<section class="bp-plan-detail-hero">' +
@@ -2142,13 +2160,15 @@
       '</section>' +
       '<div class="bp-plan-detail-grid">' +
       '<section class="bp-plan-detail-section is-primary"><span class="bp-detail-eyebrow">Risk scenario</span><h3>' + escapeHtml(percentLabel(riskFactor)) + ' capital-at-risk view</h3><p>In a severe downside scenario, about ' + escapeHtml(percentLabel(riskFactor)) + ' of the subscription amount should be treated as exposed to market loss. For the minimum entry, that means roughly ' + escapeHtml(money(atRiskAmount)) + ' of ' + escapeHtml(money(minimumAmount)) + ' is the stress amount to understand before selecting this plan.</p><div class="bp-risk-meter"><i style="width:' + riskFactor + '%"></i></div></section>' +
-      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Investment setup</span><div class="bp-plan-detail-form"><input type="hidden" name="productId" value="' + escapeHtml(plan.id || "") + '">' + modalField("Investment amount (USD)", "amount", "number", String(minimumAmount), 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label><label class="bp-terms-check"><input name="acceptedPlanTerms" type="checkbox"> <span>I have reviewed the plan terms, risk scenario and disclosures.</span></label></div></section>' +
+      '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Investment setup</span><div class="bp-plan-detail-form"><input type="hidden" name="productId" value="' + escapeHtml(plan.id || "") + '">' + modalField(fixedSubscription ? "Fixed subscription amount (USD)" : "Investment amount (USD)", "amount", "number", String(minimumAmount), amountInputExtra) + '<label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label><label class="bp-terms-check"><input name="acceptedPlanTerms" type="checkbox"> <span>I have reviewed the plan terms, risk scenario and disclosures.</span></label></div></section>' +
       '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Plan facts</span>' + keyValueRows([
         { label: "Risk label", value: escapeHtml(plan.risk || "Moderate") },
+        { label: "Subscription", value: escapeHtml(labelize(plan.subscriptionType || "FLEXIBLE")) },
+        { label: "Return type", value: escapeHtml(labelize(plan.projectedReturnType || "FLEXIBLE") + " / " + labelize(plan.projectedReturnMode || "RANGE")) },
         { label: "Projected return", value: escapeHtml(projectedRangeLabel(plan)) },
         { label: "Minimum entry", value: escapeHtml(plan.minimum || money(minimumAmount)) },
         { label: "Payout cadence", value: escapeHtml(plan.payout || "Scheduled payout") },
-        { label: "Time horizon", value: escapeHtml(plan.term || "Open-ended") },
+        { label: "Cycle", value: escapeHtml(plan.cycle || plan.term || "Open-ended") },
         { label: "Investor fit", value: escapeHtml(plan.investor || "Balanced investors") }
       ]) + '</section>' +
       '<section class="bp-plan-detail-section"><span class="bp-detail-eyebrow">Allocation</span>' + planAllocationHtml(plan) + '<div class="mt-4">' + planAllocationTable(plan) + '</div></section>' +
