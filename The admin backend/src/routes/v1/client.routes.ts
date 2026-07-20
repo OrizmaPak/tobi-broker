@@ -457,7 +457,12 @@ v1ClientRouter.post("/withdrawals", requireCsrf, asyncHandler(async (req, res) =
   const input = z.object({ amount: moneySchema, currency: z.string().length(3).default("USD"), beneficiaryId: z.string().min(1) }).parse(req.body);
   const beneficiary = await prisma.beneficiary.findFirst({ where: { id: input.beneficiaryId, clientId: id } });
   if (!beneficiary || beneficiary.status !== "VERIFIED") throw new ApiError(403, "A verified beneficiary is required", "BENEFICIARY_NOT_VERIFIED");
-  if (beneficiary.cooldownUntil && beneficiary.cooldownUntil > new Date()) throw new ApiError(409, "The beneficiary security cooling-off period is still active", "BENEFICIARY_COOLDOWN");
+  if (beneficiary.cooldownUntil && beneficiary.cooldownUntil > new Date()) {
+    const remainingMs = beneficiary.cooldownUntil.getTime() - Date.now();
+    const remainingHours = Math.max(Math.ceil(remainingMs / (60 * 60 * 1000)), 1);
+    const waitLabel = remainingHours >= 48 && remainingHours % 24 === 0 ? `${remainingHours / 24} days` : `${remainingHours} hours`;
+    throw new ApiError(409, `This payout destination is still in its security cooling-off period. For fraud prevention, withdrawals are allowed after the configured waiting period has passed. Please try again in about ${waitLabel}.`, "BENEFICIARY_COOLDOWN", { cooldownUntil: [beneficiary.cooldownUntil.toISOString()], remainingHours: [String(remainingHours)] });
+  }
   if (beneficiary.currency !== input.currency) throw new ApiError(422, "Beneficiary currency does not match the withdrawal", "CURRENCY_MISMATCH");
   const result = await idempotentMutation(req, id, "POST:/client/withdrawals", async (tx) => {
     const hold = await placeWalletHoldTx(tx, id, input.amount, `Withdrawal to ${beneficiary.label}`, input.currency);

@@ -843,6 +843,34 @@
     return [item.currency, item.cryptoNetwork, item.walletAddressMasked].filter(Boolean).join(" / ") || "Wallet under review";
   }
 
+  function formatCoolingOff(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return "";
+    const remainingMs = date.getTime() - Date.now();
+    if (remainingMs <= 0) return "";
+    const hours = Math.max(Math.ceil(remainingMs / 3600000), 1);
+    const duration = hours >= 48 && hours % 24 === 0 ? String(hours / 24) + " days" : String(hours) + " hours";
+    return "For fraud prevention, this destination can be used after the security cooling-off period ends in about " + duration + ".";
+  }
+
+  function coolingOffPanel(rows) {
+    const active = rows.map(function (row) {
+      const message = formatCoolingOff(row.cooldownUntil);
+      return message ? '<li><strong>' + escapeHtml(row.label || "Payout destination") + '</strong><span>' + escapeHtml(message) + '</span></li>' : "";
+    }).filter(Boolean).join("");
+    if (!active) {
+      return '<div class="broker-cooling-note" data-withdrawal-modal-note><strong>Security cooling-off</strong><span>Newly verified payout destinations may have a short fraud-prevention waiting period before withdrawals are allowed.</span></div>';
+    }
+    return '<div class="broker-cooling-note is-active" data-withdrawal-modal-note><strong>Security cooling-off active</strong><span>Withdrawals are allowed after the configured waiting period following verification.</span><ul>' + active + '</ul></div>';
+  }
+
+  function setWithdrawalModalNotice(message) {
+    const target = document.querySelector("[data-withdrawal-modal-note]");
+    if (!target) return;
+    target.classList.add("is-active");
+    target.innerHTML = '<strong>Security cooling-off active</strong><span>' + escapeHtml(message) + '</span>';
+  }
+
   function withdrawalMethodCard(method, index, isOpen) {
     const code = String(index + 1).padStart(2, "0");
     const fields = method.fields || [];
@@ -3154,7 +3182,7 @@
           else toast("No active bank withdrawal setup is available.", "warning");
           return;
         }
-        showModal("Withdraw to bank", '<p>Cleared funds are reserved immediately and remain held until finance, risk, and maker-checker review completes.</p><div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified beneficiary</span><select name="beneficiaryId">' + beneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.accountNumberMasked || "verified") + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
+        showModal("Withdraw to bank", '<p>Cleared funds are reserved immediately and remain held until finance, risk, and maker-checker review completes.</p>' + coolingOffPanel(beneficiaries) + '<div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified beneficiary</span><select name="beneficiaryId">' + beneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.accountNumberMasked || "verified") + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
         return;
       case "withdraw-crypto":
         const cryptoBeneficiaries = ((appState.data && appState.data.beneficiaries) || []).filter(function (item) { return item.type === "CRYPTO" && item.status === "VERIFIED"; });
@@ -3164,14 +3192,17 @@
           else toast("No active crypto withdrawal setup is available.", "warning");
           return;
         }
-        showModal("Withdraw to crypto", '<p>Crypto withdrawals require approved KYC, a screened beneficiary, and enhanced risk review.</p><div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified wallet</span><select name="beneficiaryId">' + cryptoBeneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.walletAddressMasked || item.cryptoNetwork) + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
+        showModal("Withdraw to crypto", '<p>Crypto withdrawals require approved KYC, a screened beneficiary, and enhanced risk review.</p>' + coolingOffPanel(cryptoBeneficiaries) + '<div class="broker-form-grid">' + modalField("Amount (USD)", "amount", "number", "1200", 'min="1" step="0.01"') + '<label class="broker-form-field"><span>Verified wallet</span><select name="beneficiaryId">' + cryptoBeneficiaries.map(function (item) { return '<option value="' + item.id + '">' + item.label + ' - ' + (item.walletAddressMasked || item.cryptoNetwork) + '</option>'; }).join("") + '</select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="withdraw-confirm">Submit withdrawal</button>');
         return;
       case "withdraw-confirm":
         try {
           await apiRequest("/api/v1/client/withdrawals", { method: "POST", headers: { "Idempotency-Key": requestKey("withdrawal") }, body: JSON.stringify({ amount: Number(modalValue("amount")), currency: "USD", beneficiaryId: modalValue("beneficiaryId") }) }, false);
           closeModal();
           await refreshLiveView("Withdrawal submitted for finance and risk review.", "success");
-        } catch (error) { toast((error && error.message) || "Could not submit the withdrawal.", "warning"); }
+        } catch (error) {
+          if (error && error.code === "BENEFICIARY_COOLDOWN") setWithdrawalModalNotice(error.message);
+          toast((error && error.message) || "Could not submit the withdrawal.", "warning");
+        }
         return;
       case "subscribe-plan":
         const plan = DEMO.plans.find(function (item) { return item.name === node.getAttribute("data-broker-plan"); });
@@ -3498,6 +3529,7 @@
       + " .broker-form-field span{display:flex;align-items:center;justify-content:space-between;gap:8px}.broker-form-field small{color:#64748b;font-size:12px;font-weight:600;line-height:1.45}"
       + " .broker-form-field input,.broker-form-field select,.broker-form-field textarea{width:100%;min-height:46px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#0f172a;padding:10px 12px;font:inherit;font-weight:600;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.broker-form-field input:focus,.broker-form-field select:focus,.broker-form-field textarea:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.broker-form-field textarea{min-height:96px;resize:vertical}"
       + " .broker-form-field input[type=file]{min-height:52px;padding:12px;background:#f8fafc;border-style:dashed}.broker-form-field input[type=file]::file-selector-button{margin-right:12px;border:0;border-radius:10px;background:#eef8f0;color:#15803d;padding:8px 11px;font:inherit;font-size:12px;font-weight:850;cursor:pointer}"
+      + " .broker-cooling-note{display:grid;gap:6px;margin:14px 0 0;border:1px solid rgba(22,163,74,.18);border-radius:14px;background:#f0fdf4;color:#166534;padding:12px 14px;font-size:13px;line-height:1.45}.broker-cooling-note.is-active{border-color:rgba(217,119,6,.24);background:#fffbeb;color:#92400e}.broker-cooling-note strong{color:inherit;font-size:13px;font-weight:900}.broker-cooling-note span{color:inherit}.broker-cooling-note ul{display:grid;gap:6px;margin:4px 0 0;padding-left:18px}.broker-cooling-note li strong,.broker-cooling-note li span{display:block}"
       + " .broker-deposit-proof-modal{display:grid;gap:16px}.broker-deposit-proof-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid rgba(22,163,74,.18);border-radius:18px;background:linear-gradient(135deg,rgba(240,253,244,.92),rgba(255,255,255,.92));padding:14px 16px}.broker-deposit-proof-intro span{display:inline-flex;flex:none;border-radius:999px;background:#16a34a;color:#fff;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.broker-deposit-proof-intro p{margin:0;color:#475569;font-size:13px;line-height:1.55}.broker-deposit-proof-layout{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1fr);gap:16px;align-items:start}.broker-deposit-proof-card,.broker-deposit-proof-form{min-width:0;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#fff;padding:16px;box-shadow:0 14px 32px rgba(15,23,42,.06)}.broker-deposit-proof-card{position:sticky;top:0;background:linear-gradient(180deg,#ffffff,#f8fbf9)}.broker-deposit-proof-card>small{display:block;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-card>strong{display:block;margin-top:6px;color:#101713;font-size:18px;font-weight:900;line-height:1.25}.broker-deposit-proof-card .grid{margin-top:14px}.broker-deposit-proof-note{margin-top:12px;border-radius:14px;background:#f8fafc;padding:12px}.broker-deposit-proof-note span{display:block;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-note p{margin:5px 0 0;color:#101713;font-size:13px;font-weight:750;line-height:1.45}.broker-deposit-proof-instructions{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-deposit-proof-form .broker-form-grid{margin-top:0;grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-proof-form .broker-form-field:has(textarea),.broker-deposit-proof-form .broker-form-field:has(input[type=file]),.broker-deposit-proof-form .text-xs{grid-column:1/-1}.broker-deposit-proof-form .text-xs{margin:-4px 0 0;color:#64748b;font-size:12px;line-height:1.45}"
       + " .broker-deposit-status{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}.broker-deposit-status i{height:7px;width:7px;border-radius:999px;background:currentColor;box-shadow:0 0 0 4px currentColor;opacity:.72}.broker-deposit-status.is-success{border-color:rgba(22,163,74,.22);background:rgba(22,163,74,.1);color:#15803d}.broker-deposit-status.is-warning{border-color:rgba(217,119,6,.22);background:rgba(245,158,11,.12);color:#b45309}.broker-deposit-status.is-danger{border-color:rgba(225,29,72,.22);background:rgba(244,63,94,.1);color:#be123c}.broker-deposit-status.is-info{border-color:rgba(2,132,199,.22);background:rgba(14,165,233,.1);color:#0369a1}.broker-deposit-status i{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}.broker-deposit-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;border-radius:12px;padding:7px 10px;font-size:13px;font-weight:950;letter-spacing:0}.broker-deposit-amount.is-success{background:linear-gradient(135deg,rgba(22,163,74,.14),rgba(240,253,244,.92));color:#15803d}.broker-deposit-amount.is-warning{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(255,251,235,.94));color:#b45309}.broker-deposit-amount.is-danger{background:linear-gradient(135deg,rgba(244,63,94,.13),rgba(255,241,242,.94));color:#be123c}.broker-deposit-amount.is-info{background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(240,249,255,.94));color:#0369a1}.dark .broker-deposit-status.is-success,.dark .broker-deposit-amount.is-success{color:#86efac}.dark .broker-deposit-status.is-warning,.dark .broker-deposit-amount.is-warning{color:#fcd34d}.dark .broker-deposit-status.is-danger,.dark .broker-deposit-amount.is-danger{color:#fda4af}.dark .broker-deposit-status.is-info,.dark .broker-deposit-amount.is-info{color:#7dd3fc}"
       + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
