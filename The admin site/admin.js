@@ -1973,7 +1973,7 @@
       product: ["Create portfolio product", "createPortfolioProduct", [["Name", "New portfolio product"], ["Risk", "Select risk level"], ["Minimum", "Set minimum amount"]]],
       "allocation-note": ["Create allocation note", "createAllocationNote", [["Client", data.clientProfile.name], ["Portfolio", data.productDetail.name], ["Note", "Record the allocation note for this backend mandate."]]],
       payout: ["Post payout", "postPayout", [["Source", "Select backend distribution source"], ["Amount", "Set payout amount"], ["Mode", "Wallet credit or reinvestment"]]],
-      instrument: ["Instrument setup", "upsertInstrument", [["Symbol", "Enter symbol"], ["Category", "Select category"], ["Status", "Select status"]]],
+      instrument: ["Instrument setup", "upsertInstrument", [["Symbol", "AAPL"], ["Name", "Apple Inc."], ["Category", "Stock"], ["Market", "US Stocks"], ["Currency", "USD"], ["Risk level", "Moderate"], ["Status", "Active"], ["Trading", "Tradable"], ["Investment", "Investable"]]],
       report: ["Generate report", "generateReport", [["Report", "Select report type"], ["Period", "Select reporting period"], ["Format", "CSV or PDF"]]],
       "report-download": ["Download report", "downloadReport", [["Report", "June 2026 Account Statement"], ["Format", "PDF"], ["Access", "Audited download"]]],
       notification: ["Create notification", "createNotification", [["Audience", "Clients with pending KYC"], ["Template", "KYC update"], ["Channel", "Dashboard notification"]]],
@@ -2632,7 +2632,9 @@
         const risk = /high/i.test(values[1]) ? "HIGH" : /low/i.test(values[1]) ? "LOW" : /custom/i.test(values[1]) ? "CUSTOM" : "MODERATE";
         await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), currency: "USD", payoutRule: "Quarterly", disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
       } else if (apiAction === "upsertInstrument") {
-        await api("/api/v1/admin/instruments", { method: "POST", body: JSON.stringify({ symbol: values[0], name: values[0] + " instrument", category: values[1] || "Stock", market: "Global", currency: "USD", riskLevel: "MODERATE", tradable: /tradable/i.test(values[2]), investable: true, status: "ACTIVE" }) });
+        const risk = /high/i.test(values[5]) ? "HIGH" : /low/i.test(values[5]) ? "LOW" : /custom/i.test(values[5]) ? "CUSTOM" : "MODERATE";
+        const status = /inactive/i.test(values[6]) ? "INACTIVE" : /suspend/i.test(values[6]) ? "SUSPENDED" : /restrict/i.test(values[6]) ? "RESTRICTED" : "ACTIVE";
+        await api("/api/v1/admin/instruments", { method: "POST", body: JSON.stringify({ symbol: values[0], name: values[1] || values[0] + " instrument", category: values[2] || "Stock", market: values[3] || "Global", currency: (values[4] || "USD").toUpperCase(), riskLevel: risk, tradable: /tradable|yes|true/i.test(values[7]), investable: !/not|no|false/i.test(values[8]), status }) });
       } else if (["generateReport", "exportCurrentView"].includes(apiAction)) {
         await api("/api/v1/admin/reports", { method: "POST", body: JSON.stringify({ name: values[0] || pageContext() + " export", type: /audit/i.test(pageContext()) ? "AUDIT" : /kyc/i.test(pageContext()) ? "KYC" : /deposit/i.test(pageContext()) ? "DEPOSITS" : /withdraw/i.test(pageContext()) ? "WITHDRAWALS" : /investment/i.test(pageContext()) ? "INVESTMENTS" : "CLIENTS", format: /pdf/i.test(values[2]) ? "PDF" : "CSV", period: values[1] || "Current view", filters: {} }) });
       } else if (apiAction === "createNotification") {
