@@ -1745,6 +1745,11 @@ tr:last-child td {
   margin-top: 12px;
 }
 
+.product-banner-direct {
+  display: grid;
+  gap: 12px;
+}
+
 .product-banner-editor-preview {
   margin: 12px 0 0;
 }

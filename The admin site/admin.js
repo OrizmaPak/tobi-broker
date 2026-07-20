@@ -274,6 +274,22 @@
     toast("Product banner uploaded.");
   }
 
+  function bindProductBannerControls() {
+    document.querySelectorAll("[data-product-banner-file]").forEach((node) => {
+      if (node.dataset.bound === "true") return;
+      node.dataset.bound = "true";
+      node.addEventListener("change", async (event) => {
+        const file = event.target?.files?.[0];
+        try { await uploadProductBanner(file, document); } catch (error) { toast(error?.message || "The product banner could not be uploaded."); }
+      });
+    });
+    document.querySelectorAll("[data-product-banner-url]").forEach((node) => {
+      if (node.dataset.previewBound === "true") return;
+      node.dataset.previewBound = "true";
+      node.addEventListener("input", () => updateProductBannerPreview(document));
+    });
+  }
+
   function safeData(value) {
     if (typeof value === "string") return escapeHtml(value);
     if (Array.isArray(value)) return value.map(safeData);
@@ -1518,8 +1534,10 @@
     }
     const publicationPanel = '<aside class="review-panel"><h2>Publication action</h2><p>' + publicationMessage + '</p><div class="decision-state" data-decision-state>' + badge(p.visibility) + '<span>Terms version ' + p.version + '</span></div><label>Publication note<textarea placeholder="Explain the strategy, allocation review, and reason this product is ready."></textarea></label><div class="action-row">' + publicationActions + '</div></aside>';
     const returnRange = productReturnText(p);
+    const bannerManager = section("Product banner", "Upload the marketing banner clients will see on this product, or paste a hosted banner URL.", '<div class="product-banner-direct"><input type="hidden" name="productName" value="' + escapeHtml(p.name) + '"><input type="hidden" name="productReturnMin" value="' + escapeHtml(p.projectedReturnMin) + '"><input type="hidden" name="productReturnMax" value="' + escapeHtml(p.projectedReturnMax) + '"><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerHtml(p, "thumb") + '</div><div class="product-banner-controls"><label class="product-banner-field">Upload banner image <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" data-product-banner-file type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Banner URL <span class="field-optional">Saved to product</span><input name="productBannerUrl" data-product-banner-url maxlength="1000" value="' + escapeHtml(p.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div></div>', '<button class="btn primary" type="button" data-action="product-banner-save">Save banner</button>');
     return workflowSteps(["Terms saved", "Allocation ready", "Approval requested", "Published to clients"], workflowIndex) +
       productBannerHtml(p, "hero") +
+      bannerManager +
       '<div class="grid two">' +
       section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
       section("Publication readiness", "Every check must be complete before a request can enter Approvals.", checklist([["Terms version", "Version " + p.version + " ready"], ["Active instruments", allocationInstrumentsAvailable ? "Available" : "Required"], ["Allocation total", allocationReady ? "100% ready" : allocationTotal + "% configured"], ["Approval state", p.status === "PENDING_APPROVAL" ? "Pending" : p.status === "PUBLISHED" ? "Approved" : "Not requested"]])) +
@@ -1862,6 +1880,7 @@
     const initials = (appState.admin?.name || "Admin").split(/\s+/).map((part) => part.charAt(0)).join("").slice(0, 2).toUpperCase();
     document.getElementById("admin-root").innerHTML = '<div class="app"><aside class="sidebar">' + adminBrand("light", "Broker operations console") + '<nav aria-label="Admin navigation">' + buildNav() + '</nav></aside><div class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:12px;min-width:0"><button class="menu-button" type="button" data-action="toggle-menu" aria-label="Open menu">' + svg("list") + '</button><div class="top-title"><p class="eyebrow">Internal operations</p><p class="name">' + meta[0] + '</p></div></div><div class="top-actions">' + apiState + '<label class="search">' + svg("grid") + '<input data-global-search placeholder="Search clients, tickets, references..." /></label>' + adminNotificationButton() + '<button class="btn" type="button" data-action="open-modal" data-modal="quick-action">Quick action</button>' + adminAccountButton(initials) + '</div></header><main class="content">' + mobileTabs() + '<div class="page-head"><div><h1>' + meta[0] + '</h1><p>' + meta[1] + '</p></div><div class="action-row">' + modalButton("Export", "export") + modalButton("New task", "task", "primary") + '</div></div>' + bodyFor(file) + auditPanel() + '</main></div></div><div class="toast-root" aria-live="polite"></div><div class="modal-root" data-modal-root></div>';
     bindActions();
+    bindProductBannerControls();
     bindFilters();
   }
 
@@ -1974,6 +1993,7 @@
           else if (action === "instrument-save") await submitInstrument(node.dataset.instrumentId);
           else if (action === "product-new") openProductEditor();
           else if (action === "product-edit") openProductEditor(liveRefs.productId);
+          else if (action === "product-banner-save") await submitProductBanner();
           else if (action === "product-save") await submitProductEditor();
           else if (action === "product-allocation-edit") openProductAllocationEditor(liveRefs.productId);
           else if (action === "product-allocation-row-add") addProductAllocationRow();
@@ -2275,6 +2295,25 @@
       location.href = "portfolio-product-detail.html?id=" + encodeURIComponent(saved.id);
     } catch (error) {
       toast(error?.message || "The product terms could not be saved.");
+    }
+  }
+
+  async function submitProductBanner() {
+    const id = liveRefs.productId;
+    if (!id) { toast("Open a product before saving a banner."); return; }
+    const bannerUrl = document.querySelector('[name="productBannerUrl"]')?.value.trim() || "";
+    try {
+      const saved = await api("/api/v1/admin/portfolio-products/" + encodeURIComponent(id) + "/banner", {
+        method: "PATCH",
+        body: JSON.stringify({ bannerUrl })
+      });
+      data.productDetail.bannerUrl = saved.bannerUrl || "";
+      const record = data.productRecords.find((row) => row.id === id);
+      if (record) record.bannerUrl = saved.bannerUrl || "";
+      updateProductBannerPreview(document);
+      toast("Product banner saved.");
+    } catch (error) {
+      toast(error?.message || "The product banner could not be saved.");
     }
   }
 
