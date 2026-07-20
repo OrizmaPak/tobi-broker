@@ -656,6 +656,11 @@
     return [];
   }
 
+  function cryptoDepositAsset(method) {
+    if (!method) return "Crypto";
+    return String(method.currency || method.asset || method.symbol || method.name || "Crypto").trim() || "Crypto";
+  }
+
   function depositMethodById(id) {
     return configuredDepositMethods().find(function (method) { return method.id === id; }) || null;
   }
@@ -775,8 +780,15 @@
     if (!isResubmission) fields.push(modalField("Amount (USD)", "amount", "number", "2500", 'min="1" step="0.01"'));
     if (method.requireReference !== false) fields.push(modalField(method.type === "BANK" ? "Bank transfer reference" : "Transfer reference", "externalReference", "text", deposit?.externalReference || "", 'required maxlength="120"'));
     if (method.requireTransactionHash === true) fields.push(modalField("Transaction hash", "transactionHash", "text", deposit?.transactionHash || "", 'required minlength="8" maxlength="200"'));
-    (method.proofFields || []).forEach(function (field) {
-      fields.push(depositProofField(field, deposit && deposit.proofData ? deposit.proofData[field.id] : ""));
+    const proofFields = (method.proofFields || []).slice();
+    if (method.type === "CRYPTO" && !proofFields.some(function (field) { return field.id === "sentAsset"; })) {
+      proofFields.unshift({ id: "sentAsset", label: "Asset sent", type: "TEXT", required: true, locked: true, options: [] });
+    }
+    proofFields.forEach(function (field) {
+      const value = method.type === "CRYPTO" && field.id === "sentAsset"
+        ? cryptoDepositAsset(method)
+        : deposit && deposit.proofData ? deposit.proofData[field.id] : "";
+      fields.push(depositProofField(method.type === "CRYPTO" && field.id === "sentAsset" ? { ...field, type: "TEXT", locked: true } : field, value));
     });
     if (method.requireReceiptUpload === true) fields.push('<label class="broker-form-field"><span>Receipt / screenshot</span><input name="depositProofFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="text-xs text-muted-foreground">Accepted formats: PDF, JPG and PNG. Maximum file size: 5 MB.</p>');
     return fields.join("");
@@ -793,7 +805,9 @@
       return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><textarea name="' + escapeHtml(name) + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + escapeHtml(value || "") + '</textarea>' + help + '</label>';
     }
     const type = field.type === "NUMBER" ? "number" : field.type === "EMAIL" ? "email" : field.type === "TEL" ? "tel" : field.type === "DATE" ? "date" : "text";
-    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + type + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + '>' + help + '</label>';
+    const locked = field.locked === true ? ' readonly aria-readonly="true" class="is-readonly"' : "";
+    const lockedHelp = field.locked === true ? '<small>This value is fixed by the selected funding route.</small>' : help;
+    return '<label class="broker-form-field"><span>' + escapeHtml(field.label) + '</span><input name="' + escapeHtml(name) + '" type="' + type + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(field.placeholder || "") + '" ' + required + locked + '>' + lockedHelp + '</label>';
   }
 
   function depositProofData(method) {
@@ -801,6 +815,7 @@
     (method.proofFields || []).forEach(function (field) {
       data[field.id] = modalValue("proof_" + field.id);
     });
+    if (method.type === "CRYPTO") data.sentAsset = cryptoDepositAsset(method);
     return data;
   }
 
