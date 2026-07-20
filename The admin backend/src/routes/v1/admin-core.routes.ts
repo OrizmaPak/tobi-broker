@@ -66,10 +66,11 @@ async function depositAutoApprovalEnabled() {
   return policy.autoApproveDeposits === true || policy.depositCredits === false || policy.makerChecker === false;
 }
 
-async function createApproval(input: { actionType: string; entityType: string; entityId: string; payload?: Prisma.InputJsonObject; adminId: string }) {
-  const existing = await prisma.approvalRequest.findFirst({ where: { actionType: input.actionType, entityType: input.entityType, entityId: input.entityId, status: "PENDING" } });
+async function createApproval(input: { tx?: Prisma.TransactionClient; actionType: string; entityType: string; entityId: string; payload?: Prisma.InputJsonObject; adminId: string }) {
+  const db = input.tx || prisma;
+  const existing = await db.approvalRequest.findFirst({ where: { actionType: input.actionType, entityType: input.entityType, entityId: input.entityId, status: "PENDING" } });
   if (existing) return existing;
-  return prisma.approvalRequest.create({
+  return db.approvalRequest.create({
     data: {
       actionType: input.actionType,
       entityType: input.entityType,
@@ -561,8 +562,23 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/request-approval", financeRoles, 
   const row = await prisma.withdrawal.findUnique({ where: { id: String(req.params.id) } });
   if (!row) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   if (!["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "HELD"].includes(row.status)) throw new ApiError(409, "Withdrawal cannot enter approval from its current state", "INVALID_WITHDRAWAL_STATE");
-  const approval = await createApproval({ actionType: "APPROVE_WITHDRAWAL", entityType: "Withdrawal", entityId: row.id, payload: { note: input.note, fee: input.fee || 0 }, adminId: req.user!.id });
-  await prisma.withdrawal.update({ where: { id: row.id }, data: { status: "AWAITING_APPROVAL", reviewNote: input.note, fee: input.fee || 0, netAmount: new Prisma.Decimal(row.amount).minus(input.fee || 0), approvalRequestId: approval.id } });
+  const approval = await prisma.$transaction(async (tx) => {
+    const created = await createApproval({ tx, actionType: "APPROVE_WITHDRAWAL", entityType: "Withdrawal", entityId: row.id, payload: { note: input.note, fee: input.fee || 0 }, adminId: req.user!.id });
+    await tx.withdrawal.update({ where: { id: row.id }, data: { status: "AWAITING_APPROVAL", reviewNote: input.note, fee: input.fee || 0, netAmount: new Prisma.Decimal(row.amount).minus(input.fee || 0), approvalRequestId: created.id } });
+    await notifyClientTx(tx, {
+      clientId: row.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.awaiting_approval",
+      severity: "INFO",
+      title: "Withdrawal is awaiting final approval",
+      body: `${row.reference} passed finance review and is awaiting final approval.`,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: row.id },
+      metadata: { reference: row.reference, fee: String(input.fee || 0) },
+      dedupeKey: `withdrawal.awaiting_approval:${row.id}:${created.id}`
+    });
+    return created;
+  });
   return ok(res, approval, 201);
 }));
 
@@ -572,7 +588,20 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/reject", financeRoles, asyncHandl
   if (!row) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   const updated = await prisma.$transaction(async (tx) => {
     if (row.holdReference) await releaseWalletHoldTx(tx, row.holdReference);
-    return tx.withdrawal.update({ where: { id: row.id }, data: { status: "REJECTED", reviewNote: input.note } });
+    const rejected = await tx.withdrawal.update({ where: { id: row.id }, data: { status: "REJECTED", reviewNote: input.note } });
+    await notifyClientTx(tx, {
+      clientId: row.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.rejected",
+      severity: "WARNING",
+      title: "Withdrawal rejected",
+      body: input.note,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: row.id },
+      metadata: { reference: row.reference },
+      dedupeKey: `withdrawal.rejected:${row.id}:${hashValue(input.note)}`
+    });
+    return rejected;
   });
   await writeAudit("rejectWithdrawal", "Withdrawal", row.id, undefined, { req, reason: input.note });
   return ok(res, updated);
@@ -584,7 +613,18 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/hold", financeRoles, asyncHandler
   if (!withdrawal) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   if (["PAID", "REJECTED", "CANCELLED", "FAILED"].includes(withdrawal.status)) throw new ApiError(409, "This withdrawal can no longer be held", "INVALID_WITHDRAWAL_STATE");
   const row = await prisma.$transaction(async (tx) => {
-    await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal review extended", body: input.note, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
+    await notifyClientTx(tx, {
+      clientId: withdrawal.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.held",
+      severity: "WARNING",
+      title: "Withdrawal review extended",
+      body: input.note,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: withdrawal.id },
+      metadata: { reference: withdrawal.reference },
+      dedupeKey: `withdrawal.held:${withdrawal.id}:${hashValue(input.note)}`
+    });
     return tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "HELD", reviewNote: input.note } });
   });
   await writeAudit("holdWithdrawal", "Withdrawal", row.id, undefined, { req, reason: input.note });
@@ -596,7 +636,18 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/request-information", financeRole
   const withdrawal = await prisma.withdrawal.findUnique({ where: { id: String(req.params.id) } });
   if (!withdrawal) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   const row = await prisma.$transaction(async (tx) => {
-    await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal information required", body: input.note, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
+    await notifyClientTx(tx, {
+      clientId: withdrawal.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.information_required",
+      severity: "WARNING",
+      title: "Withdrawal information required",
+      body: input.note,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: withdrawal.id },
+      metadata: { reference: withdrawal.reference },
+      dedupeKey: `withdrawal.information_required:${withdrawal.id}:${hashValue(input.note)}`
+    });
     return tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "UNDER_REVIEW", reviewNote: input.note } });
   });
   await writeAudit("requestWithdrawalInformation", "Withdrawal", row.id, undefined, { req, reason: input.note });
@@ -611,7 +662,18 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/settle", financeRoles, asyncHandl
   if (row.status !== "APPROVED" || !row.holdReference) throw new ApiError(409, "Withdrawal must complete maker-checker approval before settlement", "WITHDRAWAL_NOT_APPROVED");
   const updated = await prisma.$transaction(async (tx) => {
     const ledger = await captureWalletHoldTx(tx, row.holdReference!, { clientId: row.clientId, description: `Withdrawal ${row.reference}`, externalReference: input.externalReference, idempotencyKey: `settle:${row.id}`, initiatedBy: req.user!.id, approvedBy: req.user!.id });
-    await notifyClientTx(tx, { clientId: row.clientId, category: "Wallet", title: "Withdrawal paid", body: `${row.reference} has been settled.`, actionUrl: "transactions.html", entity: { type: "Withdrawal", id: row.id } });
+    await notifyClientTx(tx, {
+      clientId: row.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.paid",
+      severity: "SUCCESS",
+      title: "Withdrawal paid",
+      body: `${row.reference} has been settled.`,
+      actionUrl: "transactions.html",
+      entity: { type: "Withdrawal", id: row.id },
+      metadata: { reference: row.reference, externalReference: input.externalReference },
+      dedupeKey: `withdrawal.paid:${row.id}:${input.externalReference}`
+    });
     return tx.withdrawal.update({ where: { id: row.id }, data: { status: "PAID", externalReference: input.externalReference, ledgerTransactionId: ledger.id, paidAt: new Date(), reviewNote: input.note } });
   });
   await writeAudit("settleWithdrawal", "Withdrawal", row.id, { externalReference: input.externalReference }, { req, reason: input.note });
@@ -650,7 +712,18 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
       const withdrawal = await tx.withdrawal.findUnique({ where: { id: approval.entityId } });
       if (!withdrawal || withdrawal.status !== "AWAITING_APPROVAL") throw new ApiError(409, "Withdrawal is not awaiting approval", "INVALID_WITHDRAWAL_STATE");
       entity = await tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "APPROVED", approvedAt: new Date() } });
-      await notifyClientTx(tx, { clientId: withdrawal.clientId, category: "Wallet", title: "Withdrawal approved", body: `${withdrawal.reference} is approved and awaiting external settlement.`, actionUrl: "withdraw.html", entity: { type: "Withdrawal", id: withdrawal.id } });
+      await notifyClientTx(tx, {
+        clientId: withdrawal.clientId,
+        category: "Wallet",
+        eventKey: "withdrawal.approved",
+        severity: "SUCCESS",
+        title: "Withdrawal approved",
+        body: `${withdrawal.reference} is approved and awaiting external settlement.`,
+        actionUrl: "withdraw.html",
+        entity: { type: "Withdrawal", id: withdrawal.id },
+        metadata: { reference: withdrawal.reference, approvalId: approval.id },
+        dedupeKey: `withdrawal.approved:${withdrawal.id}:${approval.id}`
+      });
     } else if (approval.actionType === "PUBLISH_PRODUCT") {
       entity = await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "PUBLISHED", publishedAt: new Date(), version: { increment: 1 } } });
       await tx.portfolioProductVersion.updateMany({ where: { productId: approval.entityId, status: { in: ["REVIEW", "PENDING_APPROVAL"] } }, data: { status: "PUBLISHED", approvedBy: req.user!.id, publishedAt: new Date() } });
@@ -691,7 +764,21 @@ v1AdminCoreRouter.post("/approvals/:id/reject", requireAdminRoles("SUPER_ADMIN",
   await prisma.$transaction(async (tx) => {
     await tx.approvalRequest.update({ where: { id: approval.id }, data: { status: "REJECTED", approvedByAdminId: req.user!.id, decisionNote: input.note, decidedAt: new Date() } });
     if (approval.actionType === "CREDIT_DEPOSIT") await tx.deposit.update({ where: { id: approval.entityId }, data: { status: "IN_REVIEW", reviewNote: input.note } });
-    if (approval.actionType === "APPROVE_WITHDRAWAL") await tx.withdrawal.update({ where: { id: approval.entityId }, data: { status: "IN_REVIEW", reviewNote: input.note } });
+    if (approval.actionType === "APPROVE_WITHDRAWAL") {
+      const withdrawal = await tx.withdrawal.update({ where: { id: approval.entityId }, data: { status: "IN_REVIEW", reviewNote: input.note } });
+      await notifyClientTx(tx, {
+        clientId: withdrawal.clientId,
+        category: "Wallet",
+        eventKey: "withdrawal.approval_rejected",
+        severity: "WARNING",
+        title: "Withdrawal approval needs more review",
+        body: input.note,
+        actionUrl: "withdraw.html",
+        entity: { type: "Withdrawal", id: withdrawal.id },
+        metadata: { reference: withdrawal.reference, approvalId: approval.id },
+        dedupeKey: `withdrawal.approval_rejected:${withdrawal.id}:${approval.id}`
+      });
+    }
     if (approval.actionType === "PUBLISH_PRODUCT") await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "REVIEW" } });
     if (approval.actionType === "POST_DISTRIBUTION") await tx.distributionBatch.update({ where: { id: approval.entityId }, data: { status: "CALCULATED" } });
   });

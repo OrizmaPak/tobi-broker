@@ -240,7 +240,7 @@
     }
   };
 
-  const STATE_KEY = "bullport-portal-state-v1";
+  const STATE_KEY = "bullport-portal-state-v3";
   const TAB_SESSION_KEY = "bullport-client-tab-session-v1";
   const LIVE_SESSION_KEY = "bullport-client-live-session-v1";
   const LIVE_SESSION_TTL = 12000;
@@ -254,6 +254,7 @@
     nextPayout: "12 Jul 2026",
     notifications: DEMO.notifications.slice(),
     transactions: DEMO.transactions.slice(),
+    withdrawals: [],
     payouts: DEMO.payouts.slice()
   };
 
@@ -765,6 +766,28 @@
     });
   }
 
+  function submittedWithdrawalRows() {
+    const withdrawals = (appState.data && Array.isArray(appState.data.withdrawals)) ? appState.data.withdrawals : [];
+    return withdrawals.map(function (row) {
+      const amount = numberValue(row.amount);
+      const fee = numberValue(row.fee);
+      const netAmount = row.netAmount == null ? Math.max(amount - fee, 0) : numberValue(row.netAmount);
+      return [
+        formatDate(row.requestedAt || row.createdAt || row.updatedAt),
+        escapeHtml(row.reference || row.id || "-"),
+        escapeHtml(row.destination || "Withdrawal destination"),
+        "-" + money(amount),
+        fee ? money(fee) : "-",
+        money(netAmount),
+        badge(labelize(row.status || "PENDING"), statusTone(row.status || "PENDING")),
+        row.approvedAt ? formatDate(row.approvedAt) : "-",
+        row.paidAt ? formatDate(row.paidAt) : "-",
+        escapeHtml(row.externalReference || "-"),
+        escapeHtml(row.reviewNote || "-")
+      ];
+    });
+  }
+
   function fallbackWithdrawalMethods() {
     return {
       methods: [
@@ -1047,6 +1070,7 @@
     const client = data.client || {};
     const wallet = data.wallet || {};
     const transactions = cloneList(data.transactions);
+    const withdrawals = cloneList(data.withdrawals);
     const products = cloneList(data.products);
     const investments = cloneList(data.investments);
     const instruments = cloneList(data.instruments);
@@ -1232,6 +1256,22 @@
         reference: row.reference,
         amount: signedMoney(row.amount),
         status: row.status
+      };
+    });
+    state.withdrawals = withdrawals.map(function (row) {
+      const amount = numberValue(row.amount);
+      const fee = numberValue(row.fee);
+      const netAmount = row.netAmount == null ? Math.max(amount - fee, 0) : numberValue(row.netAmount);
+      return {
+        id: row.id,
+        date: formatDate(row.requestedAt || row.createdAt || row.updatedAt),
+        reference: row.reference || row.id,
+        destination: row.destination || "Withdrawal destination",
+        amount: "-" + money(amount),
+        fee: fee ? money(fee) : "-",
+        netAmount: money(netAmount),
+        status: labelize(row.status || "PENDING"),
+        note: row.reviewNote || "-"
       };
     });
     state.payouts = DEMO.payouts.slice();
@@ -1715,6 +1755,13 @@
       section("Bank destinations", "Add one or more bank accounts, then wait for operations to verify the destination before use.", beneficiaryList("BANK") + '<div class="mt-4"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(bankMethod ? bankMethod.id : "") + '" class="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add bank account</button></div>') +
       section("Crypto destinations", "Add a screened wallet address for crypto withdrawals. New wallets remain pending until reviewed.", beneficiaryList("CRYPTO") + '<div class="mt-4"><button type="button" data-broker-action="beneficiary-add" data-broker-method-id="' + escapeHtml(cryptoMethod ? cryptoMethod.id : "") + '" class="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Add crypto wallet</button></div>') +
       "</div>";
+    const withdrawalRows = submittedWithdrawalRows();
+    const withdrawalActivity = withdrawalRows.length
+      ? table(
+          ["Requested", "Reference", "Destination", "Amount", "Fee", "Net", "Status", "Approved", "Paid", "External Ref", "Note"],
+          withdrawalRows
+        )
+      : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No withdrawal request has been submitted yet.</div>';
     return '' +
       section("Choose withdrawal route", "Withdrawals are available through verified bank accounts or approved crypto wallets only.", routes) +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
@@ -1727,12 +1774,7 @@
       '<div class="xl:col-span-5">' + section("Review flow", "New destinations are reviewed before withdrawals can be released.", '<div class="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">Add destination details, wait for admin verification, then submit a withdrawal against the verified bank or crypto wallet.</div>') + "</div>" +
       "</div>" +
       destinationPanel +
-      section("Withdrawal activity", "Recent withdrawal requests and related wallet movement.", table(
-        ["Date", "Type", "Reference", "Amount", "Status"],
-        state.transactions.map(function (row) {
-          return [row.date, row.type, row.reference, row.amount, badge(row.status, statusTone(row.status))];
-        })
-      ));
+      section("Withdrawal activity", "Recent withdrawal requests only.", withdrawalActivity);
   }
 
   function plansBody() {

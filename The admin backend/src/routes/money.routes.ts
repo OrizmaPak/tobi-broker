@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asyncHandler, ok } from "../lib/http";
 import { prisma } from "../lib/prisma";
 import { writeAudit } from "../services/audit.service";
+import { notifyClientTx } from "../services/notification.service";
 
 export const moneyRouter = Router();
 
@@ -77,9 +78,24 @@ moneyRouter.get("/withdrawals", asyncHandler(async (_req, res) => {
 moneyRouter.post("/withdrawals/:id/approve", asyncHandler(async (req, res) => {
   const input = noteSchema.parse(req.body);
   const withdrawalId = String(req.params.id);
-  const withdrawal = await prisma.withdrawal.update({
-    where: { id: withdrawalId },
-    data: { status: "APPROVED", reviewNote: input.note }
+  const withdrawal = await prisma.$transaction(async (tx) => {
+    const row = await tx.withdrawal.update({
+      where: { id: withdrawalId },
+      data: { status: "APPROVED", reviewNote: input.note }
+    });
+    await notifyClientTx(tx, {
+      clientId: row.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.approved",
+      severity: "SUCCESS",
+      title: "Withdrawal approved",
+      body: `${row.reference} has been approved.`,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: row.id },
+      metadata: { reference: row.reference },
+      dedupeKey: `withdrawal.approved:${row.id}:legacy`
+    });
+    return row;
   });
   await writeAudit("approveWithdrawal", "Withdrawal", withdrawal.id, { reference: withdrawal.reference });
   return ok(res, withdrawal);
@@ -88,9 +104,25 @@ moneyRouter.post("/withdrawals/:id/approve", asyncHandler(async (req, res) => {
 moneyRouter.post("/withdrawals/:id/hold", asyncHandler(async (req, res) => {
   const input = noteSchema.parse(req.body);
   const withdrawalId = String(req.params.id);
-  const withdrawal = await prisma.withdrawal.update({
-    where: { id: withdrawalId },
-    data: { status: "HELD", reviewNote: input.note }
+  const note = input.note || "Withdrawal review is taking longer than expected.";
+  const withdrawal = await prisma.$transaction(async (tx) => {
+    const row = await tx.withdrawal.update({
+      where: { id: withdrawalId },
+      data: { status: "HELD", reviewNote: input.note }
+    });
+    await notifyClientTx(tx, {
+      clientId: row.clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.held",
+      severity: "WARNING",
+      title: "Withdrawal review extended",
+      body: note,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: row.id },
+      metadata: { reference: row.reference },
+      dedupeKey: `withdrawal.held:${row.id}:legacy`
+    });
+    return row;
   });
   await writeAudit("holdWithdrawal", "Withdrawal", withdrawal.id, { note: input.note });
   return ok(res, withdrawal);

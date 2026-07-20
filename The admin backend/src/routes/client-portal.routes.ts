@@ -259,6 +259,8 @@ clientPortalRouter.post("/deposits", asyncHandler(async (req, res) => {
 clientPortalRouter.post("/withdrawals", asyncHandler(async (req, res) => {
   const input = moneyActionSchema.parse(req.body);
   const clientId = activeClientId(req);
+  const client = await prisma.client.findUnique({ where: { id: clientId } });
+  if (!client) throw new ApiError(404, "Client not found");
   const status = await latestKycStatus(clientId);
   if (status !== "APPROVED") {
     throw new ApiError(403, "KYC approval is required before withdrawal");
@@ -297,14 +299,32 @@ clientPortalRouter.post("/withdrawals", asyncHandler(async (req, res) => {
       }
     });
 
-    return created;
-  });
+    await notifyClientTx(tx, {
+      clientId,
+      category: "Wallet",
+      eventKey: "withdrawal.submitted",
+      severity: "INFO",
+      title: "Withdrawal submitted for review",
+      body: `${created.reference} is now waiting for finance approval.`,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: created.id },
+      metadata: { reference: created.reference, amount: String(created.amount), currency: created.currency },
+      dedupeKey: `withdrawal.submitted:${created.id}`
+    });
+    await notifyAdminTx(tx, {
+      clientId,
+      category: "Withdrawals",
+      eventKey: "withdrawal.created",
+      severity: "INFO",
+      title: "Withdrawal submitted",
+      body: `${client.name} (${client.accountNumber}) requested ${created.currency} ${created.amount} to ${created.destination}.`,
+      actionUrl: `withdrawal-review.html?id=${created.id}`,
+      entity: { type: "Withdrawal", id: created.id },
+      metadata: { clientId, accountNumber: client.accountNumber, reference: created.reference, amount: String(created.amount), currency: created.currency },
+      dedupeKey: `withdrawal.created:${created.id}`
+    });
 
-  await notifyClient({
-    clientId,
-    category: "Wallet",
-    title: "Withdrawal submitted for review",
-    body: `${withdrawal.reference} is now waiting for finance approval.`
+    return created;
   });
 
   return ok(res, withdrawal, 201);

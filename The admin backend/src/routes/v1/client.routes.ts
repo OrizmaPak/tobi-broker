@@ -466,7 +466,7 @@ v1ClientRouter.post("/withdrawals", requireCsrf, asyncHandler(async (req, res) =
   if (beneficiary.currency !== input.currency) throw new ApiError(422, "Beneficiary currency does not match the withdrawal", "CURRENCY_MISMATCH");
   const result = await idempotentMutation(req, id, "POST:/client/withdrawals", async (tx) => {
     const hold = await placeWalletHoldTx(tx, id, input.amount, `Withdrawal to ${beneficiary.label}`, input.currency);
-    return tx.withdrawal.create({
+    const withdrawal = await tx.withdrawal.create({
       data: {
         reference: reference("WDR"), clientId: id, beneficiaryId: beneficiary.id,
         destination: beneficiary.label, currency: input.currency, amount: input.amount,
@@ -474,19 +474,58 @@ v1ClientRouter.post("/withdrawals", requireCsrf, asyncHandler(async (req, res) =
         reviewNote: "Submitted through the client portal"
       }
     });
+    await notifyClientTx(tx, {
+      clientId: id,
+      email: client.email,
+      category: "Wallet",
+      eventKey: "withdrawal.submitted",
+      severity: "INFO",
+      title: "Withdrawal submitted",
+      body: `Withdrawal ${withdrawal.reference} is awaiting finance and risk review.`,
+      actionUrl: "withdraw.html",
+      entity: { type: "Withdrawal", id: withdrawal.id },
+      metadata: { reference: withdrawal.reference, amount: String(withdrawal.amount), currency: withdrawal.currency, beneficiaryId: beneficiary.id },
+      dedupeKey: `withdrawal.submitted:${withdrawal.id}`
+    });
+    await notifyAdminTx(tx, {
+      clientId: id,
+      category: "Withdrawals",
+      eventKey: "withdrawal.created",
+      severity: "INFO",
+      title: "Withdrawal submitted",
+      body: `${client.name} (${client.accountNumber}) requested ${withdrawal.currency} ${withdrawal.amount} to ${beneficiary.label}.`,
+      actionUrl: `withdrawal-review.html?id=${withdrawal.id}`,
+      entity: { type: "Withdrawal", id: withdrawal.id },
+      metadata: { clientId: id, accountNumber: client.accountNumber, reference: withdrawal.reference, amount: String(withdrawal.amount), currency: withdrawal.currency, beneficiaryId: beneficiary.id },
+      dedupeKey: `withdrawal.created:${withdrawal.id}`
+    });
+    return withdrawal;
   });
-  if (!result.cached) await notifyClient({ clientId: id, email: client.email, category: "Wallet", title: "Withdrawal submitted", body: `Withdrawal ${String((result.data as { reference: string }).reference)} is awaiting finance and risk review.`, actionUrl: "withdraw.html" });
   return ok(res, result.data, result.cached ? 200 : 201, { cached: result.cached });
 }));
 
 v1ClientRouter.post("/withdrawals/:id/cancel", requireCsrf, asyncHandler(async (req, res) => {
   const id = clientId(req);
+  const client = await verifiedClient(id);
   const row = await prisma.withdrawal.findFirst({ where: { id: String(req.params.id), clientId: id } });
   if (!row) throw new ApiError(404, "Withdrawal was not found", "WITHDRAWAL_NOT_FOUND");
   if (!["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "HELD"].includes(row.status)) throw new ApiError(409, "This withdrawal can no longer be cancelled", "WITHDRAWAL_NOT_CANCELLABLE");
   const updated = await prisma.$transaction(async (tx) => {
     if (row.holdReference) await releaseWalletHoldTx(tx, row.holdReference);
-    return tx.withdrawal.update({ where: { id: row.id }, data: { status: "CANCELLED", reviewNote: "Cancelled by client" } });
+    const cancelled = await tx.withdrawal.update({ where: { id: row.id }, data: { status: "CANCELLED", reviewNote: "Cancelled by client" } });
+    await notifyAdminTx(tx, {
+      clientId: id,
+      category: "Withdrawals",
+      eventKey: "withdrawal.cancelled",
+      severity: "WARNING",
+      title: "Withdrawal cancelled",
+      body: `${client.name} (${client.accountNumber}) cancelled withdrawal ${cancelled.reference}.`,
+      actionUrl: `withdrawal-review.html?id=${cancelled.id}`,
+      entity: { type: "Withdrawal", id: cancelled.id },
+      metadata: { clientId: id, accountNumber: client.accountNumber, reference: cancelled.reference, amount: String(cancelled.amount), currency: cancelled.currency },
+      dedupeKey: `withdrawal.cancelled:${cancelled.id}`
+    });
+    return cancelled;
   });
   return ok(res, updated);
 }));
