@@ -174,7 +174,8 @@
     pendingApproval: null,
     pendingRecord: null,
     pendingProductId: null,
-    pendingProductAllocationId: null
+    pendingProductAllocationId: null,
+    instrumentMeta: { page: 1, limit: 25, total: 0, pages: 1 }
   };
 
   const liveRefs = {};
@@ -534,6 +535,18 @@
     }
   }
 
+  async function tryApiResponse(path) {
+    try {
+      const response = await fetch(appState.apiBase + path, { credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.error?.message || "API request failed");
+      return { data: safeData(payload.data), meta: safeData(payload.meta || null) };
+    } catch (error) {
+      appState.apiMessage = error?.message || "A role-restricted dataset could not be loaded.";
+      return { data: null, meta: null };
+    }
+  }
+
   function rememberAdminNotifications(rows) {
     rows.forEach((row) => {
       if (row?.id) appState.seenAdminNotificationIds[row.id] = true;
@@ -621,6 +634,14 @@
     const kycPath = isKycReviewPage
       ? "/api/v1/admin/kyc?status=all&limit=100" + (requestedClientId ? "&clientId=" + encodeURIComponent(requestedClientId) : "")
       : "/api/v1/admin/kyc?status=reviewable&limit=100";
+    const instrumentParams = new URLSearchParams();
+    if (currentFile() === "instruments.html") {
+      instrumentParams.set("limit", "25");
+      instrumentParams.set("page", queryParam("page") || "1");
+      if (queryParam("marketId")) instrumentParams.set("marketId", queryParam("marketId"));
+      if (queryParam("q")) instrumentParams.set("q", queryParam("q"));
+    }
+    const instrumentsPath = "/api/v1/admin/instruments" + (instrumentParams.toString() ? "?" + instrumentParams.toString() : "");
     const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, markets, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi(kycPath),
@@ -632,7 +653,7 @@
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
       tryApi("/api/v1/admin/markets"),
-      tryApi("/api/v1/admin/instruments"),
+      currentFile() === "instruments.html" ? tryApiResponse(instrumentsPath) : tryApi(instrumentsPath),
       tryApi("/api/v1/admin/support/tickets?limit=100"),
       tryApi("/api/v1/admin/audit-logs?limit=100"),
       tryApi("/api/v1/admin/approvals?status=PENDING"),
@@ -841,9 +862,11 @@
       data.markets = markets.map((row) => [row.name, row.category, row.description || "-", label(row.status), row.id, row.sortOrder || 100, row.logoUrl || ""]);
     }
 
-    if (Array.isArray(instruments)) {
-      data.instrumentRecords = instruments;
-      data.instruments = instruments.map((row) => [row.symbol, row.name, row.category, row.marketRecord?.name || row.market, label(row.riskLevel), row.status, row.logoUrl || ""]);
+    const instrumentRows = currentFile() === "instruments.html" && instruments && !Array.isArray(instruments) ? instruments.data : instruments;
+    appState.instrumentMeta = currentFile() === "instruments.html" && instruments && !Array.isArray(instruments) && instruments.meta ? instruments.meta : { page: 1, limit: 25, total: Array.isArray(instrumentRows) ? instrumentRows.length : 0, pages: 1 };
+    if (Array.isArray(instrumentRows)) {
+      data.instrumentRecords = instrumentRows;
+      data.instruments = instrumentRows.map((row) => [row.symbol, row.name, row.category, row.marketRecord?.name || row.market, label(row.riskLevel), row.status, row.logoUrl || ""]);
     }
 
     if (Array.isArray(tickets)) {
@@ -1232,19 +1255,38 @@
   function instrumentsPage() {
     const activeMarkets = data.marketRecords.filter((row) => row.status === "ACTIVE");
     const marketFilter = queryParam("marketId") || "all";
-    const shownInstruments = marketFilter === "all" ? data.instrumentRecords : data.instrumentRecords.filter((row) => row.marketId === marketFilter);
-    const pageSize = 25;
-    const totalPages = Math.max(1, Math.ceil(shownInstruments.length / pageSize));
-    const requestedPage = Math.max(1, Number.parseInt(queryParam("page") || "1", 10) || 1);
-    const currentPage = Math.min(requestedPage, totalPages);
-    const pagedInstruments = shownInstruments.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-    const pageHref = (page) => "instruments.html" + (marketFilter === "all" ? "" : "?marketId=" + encodeURIComponent(marketFilter) + "&page=" + page) + (marketFilter === "all" ? "?page=" + page : "");
+    const searchQuery = queryParam("q") || "";
+    const meta = appState.instrumentMeta || { page: 1, limit: 25, total: data.instrumentRecords.length, pages: 1 };
+    const currentPage = Number(meta.page || 1);
+    const totalPages = Number(meta.pages || 1);
+    const pageHref = (page) => {
+      const params = new URLSearchParams();
+      if (marketFilter !== "all") params.set("marketId", marketFilter);
+      if (searchQuery) params.set("q", searchQuery);
+      params.set("page", String(page));
+      return "instruments.html?" + params.toString();
+    };
+    const marketHref = (marketId) => {
+      const params = new URLSearchParams();
+      if (marketId !== "all") params.set("marketId", marketId);
+      if (searchQuery) params.set("q", searchQuery);
+      return "instruments.html" + (params.toString() ? "?" + params.toString() : "");
+    };
+    const clearSearchHref = () => {
+      const params = new URLSearchParams();
+      if (marketFilter !== "all") params.set("marketId", marketFilter);
+      return "instruments.html" + (params.toString() ? "?" + params.toString() : "");
+    };
     const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
-    const pageSummary = shownInstruments.length ? "Showing " + (((currentPage - 1) * pageSize) + 1) + "-" + Math.min(currentPage * pageSize, shownInstruments.length) + " of " + shownInstruments.length + " instruments." : "No instruments in this view.";
-    const marketTabs = ['<a class="btn ' + (marketFilter === "all" ? "primary" : "") + '" href="instruments.html">All markets</a>'].concat(data.marketRecords.map((market) => '<a class="btn ' + (marketFilter === market.id ? "primary" : "") + '" href="instruments.html?marketId=' + encodeURIComponent(market.id) + '">' + escapeHtml(market.name) + '</a>')).join("");
+    const pageStart = meta.total ? ((currentPage - 1) * Number(meta.limit || 25)) + 1 : 0;
+    const pageEnd = Math.min(currentPage * Number(meta.limit || 25), Number(meta.total || 0));
+    const pageSummary = meta.total ? "Showing " + pageStart + "-" + pageEnd + " of " + meta.total + " instruments from backend search." : "No instruments matched the backend search.";
+    const marketTabs = ['<a class="btn ' + (marketFilter === "all" ? "primary" : "") + '" href="' + marketHref("all") + '">All markets</a>'].concat(data.marketRecords.map((market) => '<a class="btn ' + (marketFilter === market.id ? "primary" : "") + '" href="' + marketHref(market.id) + '">' + escapeHtml(market.name) + '</a>')).join("");
     const action = activeMarkets.length ? '<button type="button" class="btn primary" data-action="instrument-new">Add instrument</button>' : linkButton("Create enabled market first", "markets.html", "primary");
+    const searchBar = '<form class="filter-bar" data-instrument-search-form><label class="filter-search">' + svg("grid") + '<input data-instrument-backend-search value="' + escapeHtml(searchQuery) + '" placeholder="Search symbol, instrument, market, category..." /></label><button class="btn primary" type="submit">Search backend</button>' + (searchQuery ? '<a class="btn" href="' + clearSearchHref() + '">Clear</a>' : "") + '</form>';
+    const rows = data.instrumentRecords.map((row) => [row.symbol, '<span class="instrument-logo-cell">' + (row.logoUrl ? '<span class="instrument-logo-frame"><img src="' + escapeHtml(row.logoUrl) + '" alt="" loading="lazy"></span>' : '<span class="instrument-logo-placeholder">' + escapeHtml(row.symbol.slice(0, 1).toUpperCase()) + '</span>') + '<strong>' + escapeHtml(row.name) + '</strong></span>', row.category, row.marketRecord?.name || row.market, badge(label(row.riskLevel)), badge(label(row.status)), '<button class="btn" type="button" data-action="instrument-edit" data-instrument-id="' + escapeHtml(row.id) + '">Edit</button>']);
     return section("Market filter", "View instruments by their assigned market.", '<div class="action-row">' + marketTabs + "</div>") +
-      section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes. " + pageSummary, filterableTable("Search symbol, market, category...", ["Symbol", "Instrument", "Category", "Market", "Risk", "Status", "Action"], pagedInstruments.map((row) => [row.symbol, '<span class="instrument-logo-cell">' + (row.logoUrl ? '<span class="instrument-logo-frame"><img src="' + escapeHtml(row.logoUrl) + '" alt="" loading="lazy"></span>' : '<span class="instrument-logo-placeholder">' + escapeHtml(row.symbol.slice(0, 1).toUpperCase()) + '</span>') + '<strong>' + escapeHtml(row.name) + '</strong></span>', row.category, row.marketRecord?.name || row.market, badge(label(row.riskLevel)), badge(label(row.status)), '<button class="btn" type="button" data-action="instrument-edit" data-instrument-id="' + escapeHtml(row.id) + '">Edit</button>'])) + pagination, action);
+      section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes. " + pageSummary, searchBar + table(["Symbol", "Instrument", "Category", "Market", "Risk", "Status", "Action"], rows) + '<div class="empty-state" style="' + (rows.length ? "" : "display:block") + '">No matching instruments returned from the backend.</div>' + pagination, action);
   }
 
   function riskPage() {
@@ -2797,6 +2839,20 @@
   }
 
   function bindFilters() {
+    document.querySelectorAll("[data-instrument-search-form]").forEach((form) => {
+      if (form.dataset.bound === "true") return;
+      form.dataset.bound = "true";
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const params = new URLSearchParams();
+        const marketId = queryParam("marketId");
+        const query = form.querySelector("[data-instrument-backend-search]")?.value.trim() || "";
+        if (marketId) params.set("marketId", marketId);
+        if (query) params.set("q", query);
+        params.set("page", "1");
+        location.href = "instruments.html?" + params.toString();
+      });
+    });
     document.querySelectorAll(".filter-bar").forEach((bar) => {
       const search = bar.querySelector("[data-table-search]");
       const status = bar.querySelector("[data-table-status]");

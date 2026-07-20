@@ -261,7 +261,32 @@ v1AdminBrokerRouter.patch("/markets/:id", portfolioRoles, asyncHandler(async (re
 v1AdminBrokerRouter.get("/instruments", readRoles, asyncHandler(async (req, res) => {
   const category = typeof req.query.category === "string" ? req.query.category : undefined;
   const marketId = typeof req.query.marketId === "string" ? req.query.marketId : undefined;
-  const rows = await prisma.instrument.findMany({ where: { ...(category ? { category: { equals: category, mode: "insensitive" } } : {}), ...(marketId ? { marketId } : {}) }, include: { marketRecord: true, prices: { orderBy: { asOf: "desc" }, take: 10 }, _count: { select: { orders: true, positions: true, allocations: true } } }, orderBy: [{ marketRecord: { sortOrder: "asc" } }, { symbol: "asc" }] });
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const { page, limit, skip } = pageInput(req.query);
+  const where: Prisma.InstrumentWhereInput = {
+    ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
+    ...(marketId ? { marketId } : {}),
+    ...(q ? {
+      OR: [
+        { symbol: { contains: q, mode: "insensitive" } },
+        { name: { contains: q, mode: "insensitive" } },
+        { category: { contains: q, mode: "insensitive" } },
+        { market: { contains: q, mode: "insensitive" } },
+        { marketRecord: { name: { contains: q, mode: "insensitive" } } }
+      ]
+    } : {})
+  };
+  const include = { marketRecord: true, prices: { orderBy: { asOf: "desc" as const }, take: 10 }, _count: { select: { orders: true, positions: true, allocations: true } } };
+  const orderBy = [{ marketRecord: { sortOrder: "asc" as const } }, { symbol: "asc" as const }];
+  const paginated = "page" in req.query || "limit" in req.query || Boolean(q) || Boolean(marketId);
+  if (paginated) {
+    const [rows, total] = await Promise.all([
+      prisma.instrument.findMany({ where, include, orderBy, skip, take: limit }),
+      prisma.instrument.count({ where })
+    ]);
+    return ok(res, rows, 200, pageMeta(page, limit, total));
+  }
+  const rows = await prisma.instrument.findMany({ where, include, orderBy });
   return ok(res, rows);
 }));
 
