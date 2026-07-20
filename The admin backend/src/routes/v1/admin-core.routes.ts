@@ -771,6 +771,13 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
       if (!batch || batch.status !== "PENDING_APPROVAL") throw new ApiError(409, "Distribution is not awaiting approval", "INVALID_DISTRIBUTION_STATE");
       for (const item of batch.items) {
         if (item.status === "POSTED") continue;
+        if (item.investmentId) {
+          const investment = await tx.clientInvestment.findUnique({ where: { id: item.investmentId }, select: { status: true } });
+          if (!investment || investment.status !== "ACTIVE") {
+            await tx.distributionItem.update({ where: { id: item.id }, data: { status: "FAILED" } });
+            continue;
+          }
+        }
         let ledgerId: string;
         if (item.mode === "WALLET" || !item.investmentId) {
           const ledger = await creditClientCashTx(tx, { clientId: item.clientId, amount: item.netAmount, type: batch.type === "DIVIDEND" ? "DIVIDEND" : "PROFIT", description: `${batch.type} distribution ${batch.reference}`, currency: batch.currency, idempotencyKey: `distribution:${item.id}`, initiatedBy: approval.initiatedByAdminId, approvedBy: req.user!.id });

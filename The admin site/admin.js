@@ -52,6 +52,7 @@
     products: [],
     productRecords: [],
     investments: [],
+    investmentRecords: [],
     payouts: [],
     approvals: [],
     orders: [],
@@ -175,6 +176,7 @@
     pendingRecord: null,
     pendingProductId: null,
     pendingProductAllocationId: null,
+    pendingInvestmentAction: null,
     instrumentMeta: { page: 1, limit: 25, total: 0, pages: 1 }
   };
 
@@ -245,6 +247,44 @@
     if (!Number.isFinite(duration) || duration <= 0) return "Open-ended";
     const windows = cycleCount + 1;
     return duration + " days x " + windows + " payout " + (windows === 1 ? "window" : "windows");
+  }
+
+  function formatPercent(value) {
+    const amount = Number(value || 0);
+    return (Number.isFinite(amount) ? amount : 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
+  }
+
+  function productReturnPercent(product) {
+    const min = product?.projectedReturnMin == null ? null : Number(product.projectedReturnMin);
+    const max = product?.projectedReturnMax == null ? null : Number(product.projectedReturnMax);
+    if (product?.projectedReturnMode === "FIXED" || String(product?.projectedReturnType || "").toUpperCase() === "FIXED") return Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+    if (Number.isFinite(min) && Number.isFinite(max)) return (min + max) / 2;
+    return Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+  }
+
+  function investmentSnapshot(row) {
+    const invested = Number(row?.investedAmount || 0);
+    const current = Number(row?.currentValue || 0);
+    const profitAccrued = row?.profitAccrued == null ? Math.max(current - invested, 0) : Number(row.profitAccrued || 0);
+    const projectedProfit = invested * productReturnPercent(row?.product) / 100;
+    const actualizedPercent = projectedProfit > 0 ? (profitAccrued / projectedProfit) * 100 : 0;
+    return {
+      profitAccrued: Number.isFinite(profitAccrued) ? profitAccrued : 0,
+      projectedProfit: Number.isFinite(projectedProfit) ? projectedProfit : 0,
+      actualizedPercent: Number.isFinite(actualizedPercent) ? actualizedPercent : 0
+    };
+  }
+
+  function investmentActionButtons(row) {
+    const id = row?.id || "";
+    const status = String(row?.status || "").toUpperCase();
+    if (!id) return '<span class="muted">No record</span>';
+    const attrs = ' data-investment-id="' + escapeHtml(id) + '" data-investment-name="' + escapeHtml(row?.product?.name || "Investment") + '"';
+    const buttons = [];
+    if (status === "ACTIVE") buttons.push('<button class="btn" type="button" data-action="investment-lifecycle" data-investment-action="hold"' + attrs + ">Hold</button>");
+    if (status === "HELD") buttons.push('<button class="btn primary" type="button" data-action="investment-lifecycle" data-investment-action="resume"' + attrs + ">Resume</button>");
+    if (!["CANCELLED", "CLOSED"].includes(status)) buttons.push('<button class="btn danger" type="button" data-action="investment-lifecycle" data-investment-action="cancel"' + attrs + ">Cancel/refund</button>");
+    return buttons.length ? '<div class="action-row">' + buttons.join("") + "</div>" : '<span class="muted">Closed</span>';
   }
 
   function selectedAttr(value, expected) {
@@ -754,6 +794,7 @@
     data.products = [];
     data.productRecords = [];
     data.investments = [];
+    data.investmentRecords = [];
     data.payouts = [];
     data.markets = [];
     data.marketRecords = [];
@@ -999,7 +1040,21 @@
     }
 
     if (Array.isArray(investments)) {
-      data.investments = investments.map((row) => [row.client?.name || "-", row.product?.name || "-", formatMoney(row.investedAmount), formatMoney(row.currentValue), row.nextAction || "Monitor", label(row.status)]);
+      data.investmentRecords = investments;
+      data.investments = investments.map((row) => {
+        const progress = investmentSnapshot(row);
+        return [
+          row.client?.name || "-",
+          row.product?.name || "-",
+          formatMoney(row.investedAmount),
+          formatMoney(row.currentValue),
+          formatMoney(progress.profitAccrued),
+          formatPercent(progress.actualizedPercent) + " actualized",
+          row.nextAction || "Monitor",
+          label(row.status),
+          investmentActionButtons(row)
+        ];
+      });
     }
 
     if (Array.isArray(payouts)) {
@@ -1385,7 +1440,7 @@
   }
 
   function investmentsPage() {
-    return section("Client investment mandates", "Monitor subscribed portfolios, value, requested actions, and mandate state.", filterableTable("Search client, portfolio, action...", ["Client", "Portfolio", "Invested", "Current value", "Next action", "Status"], data.investments.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5])])), modalButton("Create allocation note", "allocation-note", "primary"));
+    return section("Client investment mandates", "Monitor subscribed portfolios, hourly running profit, holds, cancellations, and refund state.", filterableTable("Search client, portfolio, action...", ["Client", "Portfolio", "Invested", "Current value", "Running profit", "Actualized", "Next action", "Status", "Admin action"], data.investments.map((row) => [row[0], row[1], row[2], row[3], row[4], row[5], row[6], badge(row[7]), row[8]])), modalButton("Create allocation note", "allocation-note", "primary"));
   }
 
   function ordersPage() {
@@ -2003,7 +2058,7 @@
       "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
       "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision",
       "product-save", "product-allocation-save", "market-save", "market-status-toggle",
-      "instrument-save"
+      "instrument-save", "investment-lifecycle-confirm"
     ].includes(action);
   }
 
@@ -2108,6 +2163,8 @@
           else if (action === "kyc-document-confirm") await submitKycDocumentDecision();
           else if (action === "record-decision") openRecordDecision(node.dataset);
           else if (action === "record-confirm") await submitRecordDecision();
+          else if (action === "investment-lifecycle") openInvestmentLifecycleModal(node.dataset);
+          else if (action === "investment-lifecycle-confirm") await submitInvestmentLifecycleAction();
           else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
           else if (action === "deposit-method-new") openDepositMethodEditor(node.dataset.methodType);
@@ -2237,6 +2294,63 @@
     const method = ["saveProduct", "hideProduct"].includes(apiAction) ? "PATCH" : "POST";
     await api(route[0], { method, body: JSON.stringify(route[1]) });
     await loadBackendData();
+  }
+
+  function openInvestmentLifecycleModal(dataset) {
+    const root = document.querySelector("[data-modal-root]");
+    const action = String(dataset.investmentAction || "").toLowerCase();
+    const id = dataset.investmentId || "";
+    const name = dataset.investmentName || "Investment mandate";
+    if (!root || !id || !["hold", "resume", "cancel"].includes(action)) {
+      toast("No investment action is available for this row.");
+      return;
+    }
+    const copy = {
+      hold: {
+        title: "Place investment on hold",
+        button: "Place on hold",
+        tone: "primary",
+        help: "Held investments stay visible but stop hourly accrual and are excluded from new payout calculations."
+      },
+      resume: {
+        title: "Resume investment",
+        button: "Resume accrual",
+        tone: "primary",
+        help: "Resuming restarts hourly accrual from this decision time."
+      },
+      cancel: {
+        title: "Cancel and refund investment",
+        button: "Cancel and refund",
+        tone: "danger",
+        help: "Cancellation closes the mandate and returns the current recorded value to the client's wallet."
+      }
+    }[action];
+    appState.pendingInvestmentAction = { id, action, name };
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Investment lifecycle</p><h2>' + copy.title + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + escapeHtml(copy.help) + '</p>' + details([["Investment", escapeHtml(name)], ["Action", escapeHtml(label(action))]]) + '<label>Audit note<textarea name="investmentActionNote" minlength="5" maxlength="1000" placeholder="Record why this investment action is being taken."></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn ' + copy.tone + '" type="button" data-action="investment-lifecycle-confirm">' + copy.button + '</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitInvestmentLifecycleAction() {
+    const pending = appState.pendingInvestmentAction;
+    const root = document.querySelector("[data-modal-root]");
+    const note = root?.querySelector('[name="investmentActionNote"]')?.value.trim() || "";
+    if (!pending?.id || !["hold", "resume", "cancel"].includes(pending.action)) {
+      toast("No investment action is selected.");
+      return;
+    }
+    if (note.length < 5) {
+      toast("Enter at least 5 characters for the audit note.");
+      return;
+    }
+    await api("/api/v1/admin/investments/" + encodeURIComponent(pending.id) + "/" + pending.action, {
+      method: "POST",
+      body: JSON.stringify({ note })
+    });
+    appState.pendingInvestmentAction = null;
+    await loadBackendData();
+    closeModal();
+    render();
+    toast(label(pending.action) + " completed for " + pending.name + ".");
   }
 
   async function waiveBeneficiaryCooldown(id) {

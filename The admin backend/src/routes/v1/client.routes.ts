@@ -8,6 +8,7 @@ import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot, money } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { collectDepositProofData, findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
+import { accrueClientInvestmentProfits, cancelInvestmentTx } from "../../services/investment-accrual.service";
 import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
@@ -77,7 +78,11 @@ function suitabilityScore(questionnaire: Record<string, unknown>) {
   return Math.min(100, objectiveScore + experienceScore + toleranceScore + horizonScore);
 }
 
-v1ClientRouter.get("/dashboard", asyncHandler(async (req, res) => ok(res, await clientDashboard(clientId(req)))));
+v1ClientRouter.get("/dashboard", asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  await accrueClientInvestmentProfits(id);
+  return ok(res, await clientDashboard(id));
+}));
 
 v1ClientRouter.get("/profile", asyncHandler(async (req, res) => {
   const client = await prisma.client.findUnique({
@@ -621,7 +626,9 @@ v1ClientRouter.get("/portfolios/:id", asyncHandler(async (req, res) => {
 }));
 
 v1ClientRouter.get("/investments", asyncHandler(async (req, res) => {
-  const rows = await prisma.clientInvestment.findMany({ where: { clientId: clientId(req) }, include: { product: true, holdings: { include: { instrument: true } }, valuations: { orderBy: { asOf: "desc" }, take: 24 }, transactions: { orderBy: { createdAt: "desc" } } }, orderBy: { updatedAt: "desc" } });
+  const id = clientId(req);
+  await accrueClientInvestmentProfits(id);
+  const rows = await prisma.clientInvestment.findMany({ where: { clientId: id }, include: { product: true, holdings: { include: { instrument: true } }, valuations: { orderBy: { asOf: "desc" }, take: 24 }, transactions: { orderBy: { createdAt: "desc" } } }, orderBy: { updatedAt: "desc" } });
   return ok(res, rows);
 }));
 
@@ -648,7 +655,7 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
         clientId: id, productId: product.id, productVersionId: productVersion.id,
         investedAmount: input.amount, currentValue: input.amount, units: input.amount,
         currency: product.currency, status: "ACTIVE", reinvestPreference: input.reinvestPreference,
-        projectedReturnLabel: productReturnLabel(product), nextAction: schedule.nextAction, maturityDate: schedule.maturityDate,
+        projectedReturnLabel: productReturnLabel(product), nextAction: schedule.nextAction, maturityDate: schedule.maturityDate, profitAccruedAt: new Date(),
         transactions: { create: { reference: reference("INV"), type: "SUBSCRIPTION", amount: input.amount, units: input.amount, unitPrice: 1, ledgerTransactionId: ledger.id } },
         valuations: { create: { value: input.amount, unitPrice: 1, source: "Subscription value", asOf: new Date() } }
       },
@@ -658,6 +665,20 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
   });
   if (!result.cached) await notifyClient({ clientId: id, email: client.email, category: "Investment", title: "Portfolio subscription active", body: `${product.name} has been added to your investments.`, actionUrl: "active-investments.html" });
   return ok(res, result.data, result.cached ? 200 : 201, { cached: result.cached });
+}));
+
+v1ClientRouter.post("/investments/:id/cancel", requireCsrf, asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  const input = z.object({ note: z.string().trim().max(1000).optional() }).parse(req.body || {});
+  const investment = await prisma.clientInvestment.findFirst({ where: { id: String(req.params.id), clientId: id } });
+  if (!investment) throw new ApiError(404, "Investment was not found", "INVESTMENT_NOT_FOUND");
+  const row = await prisma.$transaction((tx) => cancelInvestmentTx(tx, {
+    investmentId: investment.id,
+    actorId: id,
+    actorLabel: "Client",
+    note: input.note || "Cancelled by client"
+  }));
+  return ok(res, row);
 }));
 
 v1ClientRouter.post("/investments/:id/exit", requireCsrf, asyncHandler(async (req, res) => {

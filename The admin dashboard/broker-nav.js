@@ -559,6 +559,31 @@
     return min.replace(/%$/, "") + " - " + max;
   }
 
+  function productReturnPercent(product) {
+    const min = product && product.projectedReturnMin != null ? Number(product.projectedReturnMin) : NaN;
+    const max = product && product.projectedReturnMax != null ? Number(product.projectedReturnMax) : NaN;
+    if (product && (product.projectedReturnMode === "FIXED" || product.projectedReturnType === "FIXED")) return Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+    if (Number.isFinite(min) && Number.isFinite(max)) return (min + max) / 2;
+    return Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+  }
+
+  function investmentProgress(row) {
+    const invested = numberValue(row && row.investedAmount);
+    const current = numberValue(row && row.currentValue);
+    const profitAccrued = row && row.profitAccrued != null ? numberValue(row.profitAccrued) : Math.max(current - invested, 0);
+    const projectedProfit = invested * productReturnPercent(row && row.product) / 100;
+    const actualizedPercent = projectedProfit > 0 ? (profitAccrued / projectedProfit) * 100 : 0;
+    return {
+      profitAccrued: Number.isFinite(profitAccrued) ? profitAccrued : 0,
+      projectedProfit: Number.isFinite(projectedProfit) ? projectedProfit : 0,
+      actualizedPercent: Number.isFinite(actualizedPercent) ? actualizedPercent : 0
+    };
+  }
+
+  function investmentCanCancel(status) {
+    return ["CANCELLED", "CLOSED"].indexOf(String(status || "").toUpperCase()) === -1;
+  }
+
   function slugify(value) {
     return String(value || "")
       .toLowerCase()
@@ -1378,15 +1403,22 @@
       };
     }));
     replaceList(DEMO.investments, investments.map(function (row) {
+      const progress = investmentProgress(row);
+      const status = String(row.status || "").toUpperCase();
       return {
         id: row.id,
         name: row.product ? row.product.name : "Portfolio mandate",
         invested: numberValue(row.investedAmount),
         current: numberValue(row.currentValue),
-        projected: "Projected / market-based",
+        runningProfit: progress.profitAccrued,
+        projectedProfit: progress.projectedProfit,
+        actualizedPercent: progress.actualizedPercent,
+        projected: progress.projectedProfit > 0 ? money(progress.projectedProfit) + " projected profit" : "Projected / market-based",
         payout: row.nextAction || DEMO.client.nextPayout,
         status: labelize(row.status),
-        action: row.status === "ACTIVE" ? "Review" : "Continue"
+        rawStatus: status,
+        canCancel: investmentCanCancel(status),
+        action: "Review"
       };
     }));
     const actualHoldings = investments.reduce(function (rows, investment) {
@@ -2180,17 +2212,24 @@
 
   function investmentsBody() {
     const state = getState();
+    const liveMandates = DEMO.investments.filter(function (row) { return ["CANCELLED", "CLOSED"].indexOf(row.rawStatus) === -1; });
+    const runningProfit = liveMandates.reduce(function (sum, row) { return sum + numberValue(row.runningProfit); }, 0);
+    const projectedProfit = liveMandates.reduce(function (sum, row) { return sum + numberValue(row.projectedProfit); }, 0);
+    const actualizedPercent = projectedProfit > 0 ? (runningProfit / projectedProfit) * 100 : 0;
+    const cancelledCount = DEMO.investments.filter(function (row) { return row.rawStatus === "CANCELLED"; }).length;
     return '' +
       '<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">' +
       card("Active Mandates", String(state.activeInvestments), "Live managed portfolio subscriptions.", "bg-primary/10 text-primary") +
-      card("Projected Income", "$1,570", "Upcoming scheduled income across subscribed portfolios.", "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300") +
-      card("Next Payout Date", state.nextPayout, "Earliest next scheduled distribution.", "bg-amber-500/10 text-amber-600 dark:text-amber-300") +
-      card("Avg. Portfolio Risk", DEMO.client.riskProfile, "Combined account suitability profile.", "bg-sky-500/10 text-sky-600 dark:text-sky-300") +
+      card("Running Profit", money(runningProfit), percentLabel(actualizedPercent) + " of projected income actualized.", "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300") +
+      card("Next Payout Date", state.nextPayout, "Earliest next scheduled distribution; held mandates pause payout eligibility.", "bg-amber-500/10 text-amber-600 dark:text-amber-300") +
+      card("Cancelled", String(cancelledCount), "Cancelled mandates remain listed after wallet refund.", "bg-rose-500/10 text-rose-600 dark:text-rose-300") +
       "</div>" +
-      section("Subscribed portfolio positions", "Track invested capital, current value and the next action on each mandate.", table(
-        ["Portfolio", "Invested", "Current value", "Projected", "Next payout", "Status", "Action"],
+      section("Subscribed portfolio positions", "Track invested capital, current value, hourly running profit, actualized income, and refund actions.", table(
+        ["Portfolio", "Invested", "Current value", "Running profit", "Actualized", "Next action", "Status", "Action"],
         DEMO.investments.map(function (row) {
-          return [row.name, money(row.invested), money(row.current), row.projected, row.payout, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="investment-action" data-broker-investment-id="' + (row.id || "") + '" data-broker-investment="' + row.name + '" data-broker-label="' + row.action + '" class="font-semibold text-primary">' + row.action + "</button>"];
+          const review = '<button type="button" data-broker-action="investment-action" data-broker-investment-id="' + escapeHtml(row.id || "") + '" data-broker-investment="' + escapeHtml(row.name) + '" class="font-semibold text-primary">Review</button>';
+          const cancel = row.canCancel ? '<button type="button" data-broker-action="investment-cancel" data-broker-investment-id="' + escapeHtml(row.id || "") + '" data-broker-investment="' + escapeHtml(row.name) + '" class="font-semibold text-rose-500">Cancel</button>' : '<span class="text-xs font-semibold text-muted-foreground">Refunded</span>';
+          return [escapeHtml(row.name), money(row.invested), money(row.current), money(row.runningProfit), percentLabel(row.actualizedPercent) + " of " + money(row.projectedProfit), escapeHtml(row.payout), badge(row.status, statusTone(row.status)), '<div class="flex flex-wrap gap-3">' + review + cancel + "</div>"];
         })
       ));
   }
@@ -3679,6 +3718,16 @@
         return;
       case "investment-action":
         navigateTo("portfolio.html?investment=" + encodeURIComponent(node.getAttribute("data-broker-investment-id") || ""));
+        return;
+      case "investment-cancel":
+        try {
+          const investmentId = node.getAttribute("data-broker-investment-id") || "";
+          const investmentName = node.getAttribute("data-broker-investment") || "this investment";
+          if (!investmentId) throw new Error("This investment is not available for cancellation.");
+          if (!window.confirm("Cancel " + investmentName + "? The current recorded value will be refunded to your wallet.")) return;
+          await apiRequest("/api/v1/client/investments/" + encodeURIComponent(investmentId) + "/cancel", { method: "POST", body: JSON.stringify({ note: "Cancelled from client portal" }) }, false);
+          await refreshLiveView("Investment cancelled and refunded to wallet.", "success");
+        } catch (error) { toast((error && error.message) || "Could not cancel the investment.", "warning"); }
         return;
       case "download-report":
         try {

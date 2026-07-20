@@ -13,6 +13,10 @@ export function displayStatus(value?: string | null) {
   return value.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
+function portfolioMetricInvestment(status: string) {
+  return !["CANCELLED", "CLOSED"].includes(status);
+}
+
 export async function approvedKyc(clientId: string) {
   const now = new Date();
   const [kycCase, legacy] = await Promise.all([
@@ -62,8 +66,9 @@ export async function clientDashboard(clientId: string) {
   }));
   const pendingDepositStates = ["PENDING", "IN_REVIEW", "UNDER_REVIEW", "AWAITING_APPROVAL"];
   const pendingWithdrawalStates = ["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "AWAITING_APPROVAL", "APPROVED", "PROCESSING", "HELD"];
-  const totalPortfolioValue = client.investments.reduce((sum, item) => sum + money(item.currentValue), 0);
-  const totalInvested = client.investments.reduce((sum, item) => sum + money(item.investedAmount), 0);
+  const metricInvestments = client.investments.filter((item) => portfolioMetricInvestment(item.status));
+  const totalPortfolioValue = metricInvestments.reduce((sum, item) => sum + money(item.currentValue), 0);
+  const totalInvested = metricInvestments.reduce((sum, item) => sum + money(item.investedAmount), 0);
   const totalDividends = client.distributionItems.filter((item) => item.batch.type === "DIVIDEND" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
   const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
   const nextPayout = client.payouts.filter((item) => item.payoutDate >= new Date()).sort((a, b) => a.payoutDate.getTime() - b.payoutDate.getTime())[0];
@@ -195,8 +200,9 @@ export async function clientSnapshot(clientId: string) {
 
   const pendingDeposits = client.deposits.filter((item) => ["PENDING", "IN_REVIEW", "UNDER_REVIEW", "AWAITING_APPROVAL"].includes(item.status)).reduce((sum, item) => sum + money(item.amount), 0);
   const pendingWithdrawals = client.withdrawals.filter((item) => ["PENDING", "REQUESTED", "IN_REVIEW", "UNDER_REVIEW", "AWAITING_APPROVAL", "APPROVED", "PROCESSING", "HELD"].includes(item.status)).reduce((sum, item) => sum + money(item.amount), 0);
-  const totalPortfolioValue = client.investments.reduce((sum, item) => sum + money(item.currentValue), 0);
-  const totalInvested = client.investments.reduce((sum, item) => sum + money(item.investedAmount), 0);
+  const metricInvestments = client.investments.filter((item) => portfolioMetricInvestment(item.status));
+  const totalPortfolioValue = metricInvestments.reduce((sum, item) => sum + money(item.currentValue), 0);
+  const totalInvested = metricInvestments.reduce((sum, item) => sum + money(item.investedAmount), 0);
   const totalDividends = client.distributionItems.filter((item) => item.batch.type === "DIVIDEND" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
   const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
   const nextPayout = client.payouts.filter((item) => item.payoutDate >= new Date()).sort((a, b) => a.payoutDate.getTime() - b.payoutDate.getTime())[0];

@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
 import { storePublicImage } from "../../services/file.service";
+import { accrueAllInvestmentProfits, accrueInvestmentProfitTx, cancelInvestmentTx } from "../../services/investment-accrual.service";
 import { captureWalletHoldTx, creditClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
 import { notifyClientTx } from "../../services/notification.service";
 
@@ -426,11 +427,61 @@ v1AdminBrokerRouter.post("/instruments/:id/prices", portfolioRoles, asyncHandler
 }));
 
 v1AdminBrokerRouter.get("/investments", readRoles, asyncHandler(async (req, res) => {
+  await accrueAllInvestmentProfits();
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const where: Prisma.ClientInvestmentWhereInput = status ? { status: status as never } : {};
   const [rows, total] = await Promise.all([prisma.clientInvestment.findMany({ where, include: { client: true, product: true, valuations: { orderBy: { asOf: "desc" }, take: 3 } }, orderBy: { updatedAt: "desc" }, skip, take: limit }), prisma.clientInvestment.count({ where })]);
   return ok(res, rows, 200, pageMeta(page, limit, total));
+}));
+
+v1AdminBrokerRouter.post("/investments/:id/hold", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
+  const row = await prisma.$transaction(async (tx) => {
+    const investment = await tx.clientInvestment.findUnique({ where: { id: String(req.params.id) }, include: { product: true, client: true } });
+    if (!investment) throw new ApiError(404, "Investment was not found", "INVESTMENT_NOT_FOUND");
+    if (["CANCELLED", "CLOSED"].includes(investment.status)) throw new ApiError(409, "Closed investments cannot be placed on hold", "INVESTMENT_CLOSED");
+    const accrued = await accrueInvestmentProfitTx(tx, investment);
+    const updated = await tx.clientInvestment.update({
+      where: { id: accrued.id },
+      data: { status: "HELD", nextAction: `Payouts paused by admin: ${input.note}`, profitAccruedAt: new Date() },
+      include: { client: true, product: true }
+    });
+    await notifyClientTx(tx, { clientId: updated.clientId, category: "Investment", title: "Investment placed on hold", body: `${updated.product.name} payouts are paused while BullPort reviews the mandate.`, actionUrl: "active-investments.html", entity: { type: "ClientInvestment", id: updated.id }, metadata: { note: input.note } });
+    return updated;
+  });
+  await writeAudit("holdInvestment", "ClientInvestment", row.id, undefined, { req, reason: input.note });
+  return ok(res, row);
+}));
+
+v1AdminBrokerRouter.post("/investments/:id/resume", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
+  const row = await prisma.$transaction(async (tx) => {
+    const investment = await tx.clientInvestment.findUnique({ where: { id: String(req.params.id) }, include: { product: true, client: true } });
+    if (!investment) throw new ApiError(404, "Investment was not found", "INVESTMENT_NOT_FOUND");
+    if (investment.status !== "HELD") throw new ApiError(409, "Only held investments can be resumed", "INVESTMENT_NOT_HELD");
+    const updated = await tx.clientInvestment.update({
+      where: { id: investment.id },
+      data: { status: "ACTIVE", nextAction: `Payouts resumed by admin: ${input.note}`, profitAccruedAt: new Date() },
+      include: { client: true, product: true }
+    });
+    await notifyClientTx(tx, { clientId: updated.clientId, category: "Investment", title: "Investment resumed", body: `${updated.product.name} is active again and payout accrual has resumed.`, actionUrl: "active-investments.html", entity: { type: "ClientInvestment", id: updated.id }, metadata: { note: input.note } });
+    return updated;
+  });
+  await writeAudit("resumeInvestment", "ClientInvestment", row.id, undefined, { req, reason: input.note });
+  return ok(res, row);
+}));
+
+v1AdminBrokerRouter.post("/investments/:id/cancel", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
+  const row = await prisma.$transaction((tx) => cancelInvestmentTx(tx, {
+    investmentId: String(req.params.id),
+    actorId: req.user!.id,
+    actorLabel: "Admin",
+    note: input.note
+  }));
+  await writeAudit("cancelInvestment", "ClientInvestment", row.id, undefined, { req, reason: input.note });
+  return ok(res, row);
 }));
 
 v1AdminBrokerRouter.post("/investments/:id/valuation", portfolioRoles, asyncHandler(async (req, res) => {

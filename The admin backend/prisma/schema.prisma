@@ -83,6 +83,7 @@ enum InvestmentStatus {
   FUNDED
   ACTIVE
   REVIEW
+  HELD
   EXIT_REQUESTED
   CLOSED
   CANCELLED
@@ -837,6 +838,8 @@ model ClientInvestment {
   reinvestPreference   DistributionMode        @default(WALLET)
   projectedReturnLabel String?
   nextAction           String?
+  profitAccrued        Decimal                 @default(0) @db.Decimal(18, 2)
+  profitAccruedAt      DateTime?
   startDate            DateTime                @default(now())
   maturityDate         DateTime?
   closedAt             DateTime?

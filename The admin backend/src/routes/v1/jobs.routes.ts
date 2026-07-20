@@ -5,6 +5,7 @@ import { z } from "zod";
 import { env } from "../../config/env";
 import { ApiError, asyncHandler, ok } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
+import { accrueAllInvestmentProfits } from "../../services/investment-accrual.service";
 import { reconcileLedger } from "../../services/ledger.service";
 import { processNotificationOutbox } from "../../services/notification.service";
 
@@ -12,7 +13,8 @@ export const v1JobsRouter = Router();
 
 v1JobsRouter.use((req, _res, next) => {
   const secret = req.get("x-job-secret") || req.headers.authorization?.replace(/^Bearer\s+/i, "");
-  if (!secret || secret !== (env.JOB_SECRET || env.JWT_SECRET)) return next(new ApiError(401, "Job authorization failed", "JOB_UNAUTHORIZED"));
+  const allowedSecrets = [env.JOB_SECRET, env.CRON_SECRET, env.JWT_SECRET].filter(Boolean);
+  if (!secret || !allowedSecrets.includes(secret)) return next(new ApiError(401, "Job authorization failed", "JOB_UNAUTHORIZED"));
   next();
 });
 
@@ -59,7 +61,7 @@ v1JobsRouter.post("/admin-access", asyncHandler(async (req, res) => {
   return ok(res, { admin, mfaReset: input.resetMfa });
 }));
 
-v1JobsRouter.post("/valuation", asyncHandler(async (_req, res) => {
+async function runValuationSweep() {
   const positions = await prisma.position.findMany({ include: { instrument: true } });
   let positionsUpdated = 0;
   for (const position of positions) {
@@ -81,7 +83,16 @@ v1JobsRouter.post("/valuation", asyncHandler(async (_req, res) => {
     ]);
     investmentsUpdated += 1;
   }
-  return ok(res, { positionsUpdated, investmentsUpdated });
+  const profitAccrual = await accrueAllInvestmentProfits();
+  return { positionsUpdated, investmentsUpdated, profitAccrual };
+}
+
+v1JobsRouter.post("/valuation", asyncHandler(async (_req, res) => {
+  return ok(res, await runValuationSweep());
+}));
+
+v1JobsRouter.get("/valuation", asyncHandler(async (_req, res) => {
+  return ok(res, await runValuationSweep());
 }));
 
 v1JobsRouter.post("/risk-scan", asyncHandler(async (_req, res) => {

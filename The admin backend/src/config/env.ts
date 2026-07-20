@@ -38,6 +38,7 @@ const envSchema = z.object({
   RESEND_FROM: trimmedString.default("BullPort <notifications@bullport.com>"),
   SUPPORT_EMAIL: trimmedString.pipe(z.string().email()).default("support@bullport.com"),
   JOB_SECRET: optionalTrimmedString.pipe(z.string().min(16).optional()),
+  CRON_SECRET: optionalTrimmedString.pipe(z.string().min(16).optional()),
   ADMIN_MFA_REQUIRED: booleanValue.default(false)
 });
 
