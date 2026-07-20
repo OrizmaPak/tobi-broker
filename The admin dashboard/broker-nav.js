@@ -529,6 +529,22 @@
       .replaceAll("'", "&#039;");
   }
 
+  function productReturnText(product) {
+    const min = product && product.projectedReturnMin != null ? product.projectedReturnMin : "";
+    const max = product && product.projectedReturnMax != null ? product.projectedReturnMax : "";
+    if (min === "" && max === "") return "Projected market-based performance; returns are not guaranteed.";
+    return (min === "" ? "0" : min) + "% to " + (max === "" ? "-" : max) + "% projected";
+  }
+
+  function planBannerHtml(plan) {
+    const name = plan && plan.name ? plan.name : "Investment portfolio";
+    const image = plan && plan.bannerUrl ? plan.bannerUrl : "";
+    const media = image
+      ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(name) + ' banner" class="h-full w-full object-cover" loading="lazy">'
+      : '<div class="flex h-full min-h-[190px] w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(250,204,21,.28),transparent_32%),radial-gradient(circle_at_80%_18%,rgba(34,197,94,.32),transparent_28%),linear-gradient(135deg,#0f172a,#14532d_58%,#713f12)] text-7xl font-black text-white/20">' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</div>';
+    return '<div class="relative min-h-[190px] overflow-hidden rounded-xl border border-border bg-slate-950 shadow-sm">' + media + '<div class="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/30 to-slate-950/70"></div><div class="absolute inset-x-5 bottom-5 text-white"><p class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/85">Advertised return</p><h3 class="mt-2 text-2xl font-semibold tracking-tight">' + escapeHtml(plan.projected) + '</h3></div></div>';
+  }
+
   function safeData(value) {
     if (typeof value === "string") return escapeHtml(value);
     if (Array.isArray(value)) return value.map(safeData);
@@ -1136,7 +1152,8 @@
       investor: productInvestor(product.name, risk),
       strategy: product.description || (product.name + " broker-managed portfolio product."),
       assets: productAssets(product.name),
-      projected: "Projected market-based performance; returns are not guaranteed.",
+      projected: productReturnText(product),
+      bannerUrl: product.bannerUrl || "",
       minimum: money(numberValue(product.minimum)),
       payout: (product.payoutRule || "Scheduled") + " payout rule",
       button: "Review plan"
@@ -1881,7 +1898,7 @@
 
   function plansBody() {
     return '<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">' + DEMO.plans.map(function (plan) {
-      return '<section class="rounded-xl border border-border bg-card p-5 shadow-sm"><div class="flex items-start justify-between gap-3"><div><h2 class="text-lg font-semibold tracking-tight">' + plan.name + '</h2><p class="mt-2 text-sm text-muted-foreground">' + plan.strategy + '</p></div>' + badge(plan.risk + " risk", riskTone(plan.risk)) + '</div><div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Best for</p><p class="mt-2 text-sm font-semibold">' + plan.investor + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Projected performance</p><p class="mt-2 text-sm font-semibold">' + plan.projected + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported assets</p><p class="mt-2 text-sm font-semibold">' + plan.assets + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Minimum ticket</p><p class="mt-2 text-sm font-semibold">' + plan.minimum + '</p></div></div><div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><p class="text-sm text-muted-foreground">' + plan.payout + '</p><button type="button" data-broker-action="subscribe-plan" data-broker-plan="' + plan.name + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">' + plan.button + "</button></div></section>";
+      return '<section class="overflow-hidden rounded-xl border border-border bg-card shadow-sm">' + planBannerHtml(plan) + '<div class="p-5"><div class="flex items-start justify-between gap-3"><div><h2 class="text-lg font-semibold tracking-tight">' + escapeHtml(plan.name) + '</h2><p class="mt-2 text-sm text-muted-foreground">' + escapeHtml(plan.strategy) + '</p></div>' + badge(plan.risk + " risk", riskTone(plan.risk)) + '</div><div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Best for</p><p class="mt-2 text-sm font-semibold">' + escapeHtml(plan.investor) + '</p></div><div class="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-200">Advertised return</p><p class="mt-2 text-sm font-semibold">' + escapeHtml(plan.projected) + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supported assets</p><p class="mt-2 text-sm font-semibold">' + escapeHtml(plan.assets) + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Minimum ticket</p><p class="mt-2 text-sm font-semibold">' + escapeHtml(plan.minimum) + '</p></div></div><div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><p class="text-sm text-muted-foreground">' + escapeHtml(plan.payout) + '</p><button type="button" data-broker-action="subscribe-plan" data-broker-plan="' + escapeHtml(plan.name) + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">' + escapeHtml(plan.button) + "</button></div></div></section>";
     }).join("") + "</div>";
   }
 
@@ -3349,7 +3366,7 @@
       case "subscribe-plan":
         const plan = DEMO.plans.find(function (item) { return item.name === node.getAttribute("data-broker-plan"); });
         if (!plan || !plan.id) { toast("This portfolio is not currently open for subscription.", "warning"); return; }
-        showModal("Subscribe to " + plan.name, '<p>Subscriptions require approved KYC, suitable risk classification, and cleared wallet funds. Returns remain projected and market-based.</p><div class="broker-form-grid">' + modalField("Investment amount (USD)", "amount", "number", String(Number(String(plan.minimum).replace(/[^0-9.]/g, "")) || 2500), 'min="1" step="0.01"') + '<input type="hidden" name="productId" value="' + plan.id + '"><label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="subscribe-plan-confirm">Confirm subscription</button>');
+        showModal("Subscribe to " + plan.name, planBannerHtml(plan) + '<p class="mt-4">Subscriptions require approved KYC, suitable risk classification, and cleared wallet funds. Returns remain projected and market-based.</p><div class="broker-form-grid">' + modalField("Investment amount (USD)", "amount", "number", String(Number(String(plan.minimum).replace(/[^0-9.]/g, "")) || 2500), 'min="1" step="0.01"') + '<input type="hidden" name="productId" value="' + plan.id + '"><label class="broker-form-field"><span>Distribution preference</span><select name="reinvestPreference"><option value="WALLET">Credit wallet</option><option value="REINVEST">Reinvest distributions</option></select></label></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="subscribe-plan-confirm">Confirm subscription</button>');
         return;
       case "subscribe-plan-confirm":
         try {

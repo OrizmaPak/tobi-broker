@@ -104,6 +104,42 @@ async function storeVercelBlob(pathname: string, body: Buffer, mimeType: string,
   };
 }
 
+export async function storePublicImage(input: {
+  ownerType: string;
+  ownerId: string;
+  category: string;
+  fileName: string;
+  mimeType: string;
+  base64: string;
+}) {
+  const allowedImages = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!allowedImages.has(input.mimeType)) throw new ApiError(422, "Unsupported image type", "INVALID_FILE_TYPE");
+  if (!env.BLOB_READ_WRITE_TOKEN) throw new ApiError(503, "Public image storage is not configured", "STORAGE_UNAVAILABLE");
+  const body = Buffer.from(input.base64.replace(/^data:[^;]+;base64,/, ""), "base64");
+  if (!body.length || body.length > 5 * 1024 * 1024) throw new ApiError(422, "Images must be between 1 byte and 5 MB", "INVALID_FILE_SIZE");
+  const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
+  const pathname = `public/${input.ownerType.toLowerCase()}/${input.ownerId}/${input.category}/${Date.now()}-${safeName}`;
+  const blob = await put(pathname, body, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType: input.mimeType,
+    token: env.BLOB_READ_WRITE_TOKEN
+  });
+  return prisma.storedFile.create({
+    data: {
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      category: input.category,
+      storageKey: blob.pathname,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      size: body.length,
+      checksum: createHash("sha256").update(body).digest("hex"),
+      url: blob.url
+    }
+  });
+}
+
 export async function readPrivateFile(storageKey: string) {
   if (storageKey.startsWith("cloudinary:")) {
     const file = await prisma.storedFile.findUnique({ where: { storageKey } });

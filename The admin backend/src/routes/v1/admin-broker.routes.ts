@@ -5,6 +5,7 @@ import { ApiError, asyncHandler, hashValue, ok, pageInput, pageMeta, reference }
 import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
+import { storePublicImage } from "../../services/file.service";
 import { captureWalletHoldTx, creditClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
 import { notifyClientTx } from "../../services/notification.service";
 
@@ -97,9 +98,21 @@ const productSchema = z.object({
   durationDays: z.coerce.number().int().positive().optional(),
   projectedReturnMin: z.coerce.number().nonnegative().max(100).optional(),
   projectedReturnMax: z.coerce.number().nonnegative().max(100).optional(),
+  bannerUrl: z.string().trim().max(1000).optional().transform((value) => value || undefined),
   disclosure: z.string().trim().min(20).max(4000).default("Returns are projected and market-based. Capital and income are not guaranteed."),
   eligibility: z.record(z.string(), z.unknown()).default({})
 }).refine((value) => value.projectedReturnMin === undefined || value.projectedReturnMax === undefined || value.projectedReturnMin <= value.projectedReturnMax, { message: "Projected return minimum cannot exceed maximum", path: ["projectedReturnMin"] });
+
+v1AdminBrokerRouter.post("/portfolio-products/banner-upload", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({
+    fileName: z.string().trim().min(1).max(160),
+    mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+    base64: z.string().min(4)
+  }).parse(req.body);
+  const file = await storePublicImage({ ownerType: "ADMIN", ownerId: req.user!.id, category: "PRODUCT_BANNER", ...input });
+  await writeAudit("uploadPortfolioProductBanner", "StoredFile", file.id, undefined, { req, after: { fileName: file.fileName, url: file.url } });
+  return ok(res, { id: file.id, url: file.url }, 201);
+}));
 
 v1AdminBrokerRouter.post("/portfolio-products", portfolioRoles, asyncHandler(async (req, res) => {
   const input = productSchema.parse(req.body);

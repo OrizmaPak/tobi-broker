@@ -758,6 +758,7 @@ model PortfolioProduct {
   durationDays       Int?
   projectedReturnMin Decimal?                  @db.Decimal(8, 4)
   projectedReturnMax Decimal?                  @db.Decimal(8, 4)
+  bannerUrl          String?
   disclosure         String?
   eligibility        Json?
   version            Int                       @default(1)

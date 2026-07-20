@@ -222,6 +222,58 @@
       .replaceAll("'", "&#039;");
   }
 
+  function productReturnText(product) {
+    const min = product?.projectedReturnMin ?? "";
+    const max = product?.projectedReturnMax ?? "";
+    if (min === "" && max === "") return "No projected range configured";
+    return (min === "" ? "0" : min) + "% to " + (max === "" ? "-" : max) + "% projected";
+  }
+
+  function productBannerHtml(product, mode) {
+    const name = product?.name || "Portfolio product";
+    const image = product?.bannerUrl || "";
+    const className = mode === "hero" ? "product-banner product-banner-hero" : "product-banner product-banner-thumb";
+    const media = image
+      ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(name) + ' banner" loading="lazy">'
+      : '<div class="product-banner-fallback"><span>' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</span></div>';
+    return '<div class="' + className + '">' + media + '<div class="product-banner-overlay"><strong>' + escapeHtml(name) + '</strong><small>' + escapeHtml(productReturnText(product)) + '</small></div></div>';
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Could not read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function updateProductBannerPreview(root) {
+    const preview = root?.querySelector("[data-product-banner-preview]");
+    if (!preview) return;
+    preview.innerHTML = productBannerHtml({
+      name: root?.querySelector('[name="productName"]')?.value.trim() || "Portfolio product",
+      bannerUrl: root?.querySelector('[name="productBannerUrl"]')?.value.trim() || "",
+      projectedReturnMin: root?.querySelector('[name="productReturnMin"]')?.value.trim() || "",
+      projectedReturnMax: root?.querySelector('[name="productReturnMax"]')?.value.trim() || ""
+    }, "thumb");
+  }
+
+  async function uploadProductBanner(file, root) {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { toast("Upload a JPG, PNG, or WebP banner image."); return; }
+    if (file.size > 5 * 1024 * 1024) { toast("Banner image must be 5 MB or smaller."); return; }
+    const base64 = await readFileAsDataUrl(file);
+    const uploaded = await api("/api/v1/admin/portfolio-products/banner-upload", {
+      method: "POST",
+      body: JSON.stringify({ fileName: file.name, mimeType: file.type, base64 })
+    });
+    const input = root?.querySelector('[name="productBannerUrl"]');
+    if (input && uploaded?.url) input.value = uploaded.url;
+    updateProductBannerPreview(root);
+    toast("Product banner uploaded.");
+  }
+
   function safeData(value) {
     if (typeof value === "string") return escapeHtml(value);
     if (Array.isArray(value)) return value.map(safeData);
@@ -838,6 +890,7 @@
           durationDays: premium.durationDays || "",
           projectedReturnMin: premium.projectedReturnMin ?? "",
           projectedReturnMax: premium.projectedReturnMax ?? "",
+          bannerUrl: premium.bannerUrl || "",
           disclosure: premium.disclosure || "",
           eligibility: premium.eligibility || {},
           allocations,
@@ -1216,7 +1269,18 @@
   }
 
   function productsPage() {
-    const rows = data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(Math.abs(Number(row[6]) - 100) < 0.001 ? "100% ready" : Number(row[6] || 0) + "% configured", Math.abs(Number(row[6]) - 100) < 0.001 ? "success" : "warning"), badge(row[4]), linkButton("Open", "portfolio-product-detail.html?id=" + encodeURIComponent(row[5]))]);
+    const rows = data.productRecords.map((row) => {
+      const allocationTotal = (row.allocations || []).reduce((sum, allocation) => sum + Number(allocation.targetWeight || 0), 0);
+      return [
+        productBannerHtml(row, "thumb"),
+        badge(label(row.riskLevel)),
+        formatMoney(row.minimum),
+        escapeHtml(row.payoutRule || "-"),
+        badge(Math.abs(Number(allocationTotal) - 100) < 0.001 ? "100% ready" : Number(allocationTotal || 0) + "% configured", Math.abs(Number(allocationTotal) - 100) < 0.001 ? "success" : "warning"),
+        badge(label(row.status)),
+        linkButton("Open", "portfolio-product-detail.html?id=" + encodeURIComponent(row.id))
+      ];
+    });
     return section("Portfolio product catalog", "Create the terms, configure the allocation, submit for approval, and track client visibility.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Allocation", "Status", "Action"], rows), '<button type="button" class="btn primary" data-action="product-new">New product</button>') +
       section("Publication path", "A product does not enter Approvals until every required setup step is complete.", details([["1. Terms", "Name, risk, minimum, payout, disclosure"], ["2. Instruments", "At least one active, investable instrument"], ["3. Allocation", "Target weights must total exactly 100%"], ["4. Approval", "An authorized checker publishes the submitted version"]]));
   }
@@ -1453,17 +1517,16 @@
       publicationActions = '<button class="btn" type="button" disabled title="Save a valid 100% allocation first">Request publication</button>';
     }
     const publicationPanel = '<aside class="review-panel"><h2>Publication action</h2><p>' + publicationMessage + '</p><div class="decision-state" data-decision-state>' + badge(p.visibility) + '<span>Terms version ' + p.version + '</span></div><label>Publication note<textarea placeholder="Explain the strategy, allocation review, and reason this product is ready."></textarea></label><div class="action-row">' + publicationActions + '</div></aside>';
-    const returnRange = p.projectedReturnMin !== "" || p.projectedReturnMax !== ""
-      ? [p.projectedReturnMin === "" ? "0" : p.projectedReturnMin, p.projectedReturnMax === "" ? "-" : p.projectedReturnMax].join("% to ") + "% projected"
-      : "No projected range configured";
+    const returnRange = productReturnText(p);
     return workflowSteps(["Terms saved", "Allocation ready", "Approval requested", "Published to clients"], workflowIndex) +
+      productBannerHtml(p, "hero") +
       '<div class="grid two">' +
       section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
       section("Publication readiness", "Every check must be complete before a request can enter Approvals.", checklist([["Terms version", "Version " + p.version + " ready"], ["Active instruments", allocationInstrumentsAvailable ? "Available" : "Required"], ["Allocation total", allocationReady ? "100% ready" : allocationTotal + "% configured"], ["Approval state", p.status === "PENDING_APPROVAL" ? "Pending" : p.status === "PUBLISHED" ? "Approved" : "Not requested"]])) +
       "</div>" +
       section("Portfolio allocation", "Only active, investable instruments can be included. Saving changes returns a published or pending product to draft.", allocationBody, allocationAction) +
       '<div class="grid two">' + publicationPanel +
-      section("Client impact preview", "Only a published product is returned to the client investment catalog.", details([["Client name", escapeHtml(p.name)], ["Strategy", escapeHtml(p.description || "Managed portfolio")], ["Risk label", escapeHtml(p.risk)], ["Minimum subscription", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Disclosure", escapeHtml(p.disclosure || "Required before publication")]])) +
+      section("Client impact preview", "Only a published product is returned to the client investment catalog.", productBannerHtml(p, "thumb") + details([["Client name", escapeHtml(p.name)], ["Strategy", escapeHtml(p.description || "Managed portfolio")], ["Advertised return", escapeHtml(returnRange)], ["Risk label", escapeHtml(p.risk)], ["Minimum subscription", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Disclosure", escapeHtml(p.disclosure || "Required before publication")]])) +
       "</div>";
   }
 
@@ -2162,7 +2225,15 @@
     const product = data.productRecords.find((row) => row.id === id) || null;
     appState.pendingProductId = product?.id || null;
     const editingLiveProduct = product && ["PENDING_APPROVAL", "PUBLISHED"].includes(product.status);
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal product-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio setup</p><h2>' + (product ? "Edit product terms" : "Create portfolio product") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + (editingLiveProduct ? "Saving these changes returns the product to draft and cancels any pending publication request." : "Save the terms first. You will configure the 100% instrument allocation on the next screen.") + '</p><div class="product-editor-grid"><label>Product name<input name="productName" maxlength="120" value="' + escapeHtml(product?.name || "") + '" placeholder="e.g. Global Income Portfolio"></label><label>Risk level<select name="productRisk"><option value="LOW" ' + (product?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!product || product.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (product?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (product?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Minimum subscription<input name="productMinimum" type="number" min="0.01" step="0.01" value="' + escapeHtml(product?.minimum ?? 100) + '"></label><label>Currency<input name="productCurrency" maxlength="3" value="' + escapeHtml(product?.currency || "USD") + '"></label><label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Quarterly"></label><label>Duration in days <span class="field-optional">Optional</span><input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="Leave blank for open-ended"></label><label>Projected return minimum (%) <span class="field-optional">Optional</span><input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label><label>Projected return maximum (%) <span class="field-optional">Optional</span><input name="productReturnMax" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMax ?? "") + '"></label></div><label>Strategy description<textarea name="productDescription" maxlength="4000" placeholder="Describe the strategy, objective, and intended investor profile.">' + escapeHtml(product?.description || "") + '</textarea></label><label>Risk disclosure<textarea name="productDisclosure" maxlength="4000">' + escapeHtml(product?.disclosure || "Returns are projected and market-based. Capital and income are not guaranteed.") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-save">' + (product ? "Save terms and return to draft" : "Create and configure allocation") + '</button></div></section></div>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal product-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio setup</p><h2>' + (product ? "Edit product terms" : "Create portfolio product") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + (editingLiveProduct ? "Saving these changes returns the product to draft and cancels any pending publication request." : "Save the terms first. You will configure the 100% instrument allocation on the next screen.") + '</p><div class="product-editor-grid"><label>Product name<input name="productName" maxlength="120" value="' + escapeHtml(product?.name || "") + '" placeholder="e.g. Global Income Portfolio"></label><label>Risk level<select name="productRisk"><option value="LOW" ' + (product?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!product || product.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (product?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (product?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Minimum subscription<input name="productMinimum" type="number" min="0.01" step="0.01" value="' + escapeHtml(product?.minimum ?? 100) + '"></label><label>Currency<input name="productCurrency" maxlength="3" value="' + escapeHtml(product?.currency || "USD") + '"></label><label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Quarterly"></label><label>Duration in days <span class="field-optional">Optional</span><input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="Leave blank for open-ended"></label><label>Projected return minimum (%) <span class="field-optional">Optional</span><input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label><label>Projected return maximum (%) <span class="field-optional">Optional</span><input name="productReturnMax" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMax ?? "") + '"></label></div><div class="product-banner-controls"><label class="product-banner-field">Upload product banner <span class="field-optional">JPG, PNG, WebP</span><input name="productBannerFile" type="file" accept="image/jpeg,image/png,image/webp"></label><label class="product-banner-field">Product banner URL <span class="field-optional">Optional</span><input name="productBannerUrl" maxlength="1000" value="' + escapeHtml(product?.bannerUrl || "") + '" placeholder="https://.../portfolio-banner.jpg"></label></div><div class="product-banner-editor-preview" data-product-banner-preview>' + productBannerHtml(product || { name: "Portfolio product" }, "thumb") + '</div><label>Strategy description<textarea name="productDescription" maxlength="4000" placeholder="Describe the strategy, objective, and intended investor profile.">' + escapeHtml(product?.description || "") + '</textarea></label><label>Risk disclosure<textarea name="productDisclosure" maxlength="4000">' + escapeHtml(product?.disclosure || "Returns are projected and market-based. Capital and income are not guaranteed.") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-save">' + (product ? "Save terms and return to draft" : "Create and configure allocation") + '</button></div></section></div>';
+    root.querySelector('[name="productBannerFile"]')?.addEventListener("change", async (event) => {
+      const file = event.target?.files?.[0];
+      try { await uploadProductBanner(file, root); } catch (error) { toast(error?.message || "The product banner could not be uploaded."); }
+    });
+    root.querySelector('[name="productBannerUrl"]')?.addEventListener("input", () => updateProductBannerPreview(root));
+    root.querySelector('[name="productName"]')?.addEventListener("input", () => updateProductBannerPreview(root));
+    root.querySelector('[name="productReturnMin"]')?.addEventListener("input", () => updateProductBannerPreview(root));
+    root.querySelector('[name="productReturnMax"]')?.addEventListener("input", () => updateProductBannerPreview(root));
     bindActions();
   }
 
@@ -2182,6 +2253,7 @@
       durationDays: optionalNumber("productDuration"),
       projectedReturnMin: optionalNumber("productReturnMin"),
       projectedReturnMax: optionalNumber("productReturnMax"),
+      bannerUrl: root?.querySelector('[name="productBannerUrl"]')?.value.trim() || undefined,
       disclosure: root?.querySelector('[name="productDisclosure"]')?.value.trim() || "",
       eligibility: data.productRecords.find((row) => row.id === appState.pendingProductId)?.eligibility || {}
     };
