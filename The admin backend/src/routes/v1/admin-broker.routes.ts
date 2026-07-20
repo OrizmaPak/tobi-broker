@@ -25,6 +25,7 @@ function slug(value: string) {
 
 const defaultMarkets = [
   { name: "US Stocks", category: "Equities", description: "United States listed stocks and equity securities.", logoUrl: "https://api.iconify.design/lucide:chart-candlestick.svg", sortOrder: 10 },
+  { name: "STOCKS", category: "Equities", description: "Major listed stocks from leading global exchanges.", logoUrl: "https://api.iconify.design/lucide:landmark.svg", sortOrder: 20 },
   { name: "Global ETFs", category: "Funds", description: "Exchange-traded funds used for diversified portfolio exposure.", logoUrl: "https://api.iconify.design/lucide:globe-2.svg", sortOrder: 30 },
   { name: "Crypto", category: "Digital Assets", description: "Major crypto assets and tokenized digital asset exposure.", logoUrl: "https://api.iconify.design/lucide:bitcoin.svg", sortOrder: 40 },
   { name: "Forex", category: "Currencies", description: "Foreign exchange pairs and currency exposure.", logoUrl: "https://api.iconify.design/lucide:circle-dollar-sign.svg", sortOrder: 50 },
