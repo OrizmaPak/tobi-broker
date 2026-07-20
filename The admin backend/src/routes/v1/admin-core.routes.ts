@@ -683,7 +683,15 @@ v1AdminCoreRouter.post("/money/withdrawals/:id/settle", financeRoles, asyncHandl
 v1AdminCoreRouter.get("/approvals", operationalRoles, asyncHandler(async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : "PENDING";
   const rows = await prisma.approvalRequest.findMany({ where: { status: status as never }, include: { initiatedBy: { select: { id: true, name: true, role: true } }, approvedBy: { select: { id: true, name: true, role: true } } }, orderBy: { createdAt: "asc" } });
-  return ok(res, rows);
+  const productIds = rows.filter((row) => row.entityType === "PortfolioProduct").map((row) => row.entityId);
+  const products = productIds.length
+    ? await prisma.portfolioProduct.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true } })
+    : [];
+  const productNames = new Map(products.map((product) => [product.id, product.name]));
+  return ok(res, rows.map((row) => ({
+    ...row,
+    entityLabel: row.entityType === "PortfolioProduct" ? productNames.get(row.entityId) || "Portfolio product" : null
+  })));
 }));
 
 v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN", "FINANCE", "PORTFOLIO_MANAGER"), asyncHandler(async (req, res) => {
@@ -725,8 +733,30 @@ v1AdminCoreRouter.post("/approvals/:id/approve", requireAdminRoles("SUPER_ADMIN"
         dedupeKey: `withdrawal.approved:${withdrawal.id}:${approval.id}`
       });
     } else if (approval.actionType === "PUBLISH_PRODUCT") {
-      entity = await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "PUBLISHED", publishedAt: new Date(), version: { increment: 1 } } });
-      await tx.portfolioProductVersion.updateMany({ where: { productId: approval.entityId, status: { in: ["REVIEW", "PENDING_APPROVAL"] } }, data: { status: "PUBLISHED", approvedBy: req.user!.id, publishedAt: new Date() } });
+      const payload = jsonObjectValue(approval.payload);
+      const requestedVersion = Number(payload.version);
+      const product = await tx.portfolioProduct.findUnique({
+        where: { id: approval.entityId },
+        include: { allocations: { where: { effectiveTo: null }, include: { instrument: true } } }
+      });
+      if (!product || product.status !== "PENDING_APPROVAL") throw new ApiError(409, "Product is not awaiting publication approval", "INVALID_PRODUCT_STATE");
+      if (!Number.isInteger(requestedVersion) || requestedVersion !== product.version) {
+        throw new ApiError(409, "Product terms changed after this approval was requested", "PRODUCT_APPROVAL_STALE");
+      }
+      if (!product.allocations.length) throw new ApiError(422, "Portfolio allocation is required before publication", "ALLOCATION_REQUIRED");
+      const allocationTotal = product.allocations.reduce((sum, allocation) => sum + Number(allocation.targetWeight), 0);
+      if (Math.abs(allocationTotal - 100) > 0.001) throw new ApiError(422, "Portfolio allocations must total 100%", "ALLOCATION_TOTAL_INVALID");
+      if (product.allocations.some((allocation) => allocation.instrument.status !== "ACTIVE" || !allocation.instrument.investable)) {
+        throw new ApiError(422, "Every allocation instrument must be active and investable", "ALLOCATION_INSTRUMENT_UNAVAILABLE");
+      }
+      const version = await tx.portfolioProductVersion.findUnique({ where: { productId_version: { productId: product.id, version: requestedVersion } } });
+      if (!version || version.status !== "PENDING_APPROVAL") throw new ApiError(409, "The requested product version is not awaiting approval", "PRODUCT_APPROVAL_STALE");
+      const publishedAt = new Date();
+      entity = await tx.portfolioProduct.update({ where: { id: product.id }, data: { status: "PUBLISHED", publishedAt } });
+      await tx.portfolioProductVersion.update({
+        where: { productId_version: { productId: product.id, version: requestedVersion } },
+        data: { status: "PUBLISHED", approvedBy: req.user!.id, publishedAt }
+      });
     } else if (approval.actionType === "POST_DISTRIBUTION") {
       const batch = await tx.distributionBatch.findUnique({ where: { id: approval.entityId }, include: { items: true, product: true } });
       if (!batch || batch.status !== "PENDING_APPROVAL") throw new ApiError(409, "Distribution is not awaiting approval", "INVALID_DISTRIBUTION_STATE");
@@ -761,6 +791,9 @@ v1AdminCoreRouter.post("/approvals/:id/reject", requireAdminRoles("SUPER_ADMIN",
   const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
   const approval = await prisma.approvalRequest.findUnique({ where: { id: String(req.params.id) } });
   if (!approval || approval.status !== "PENDING") throw new ApiError(404, "Pending approval was not found", "APPROVAL_NOT_FOUND");
+  if (!(approvalRoles[approval.actionType] || ["SUPER_ADMIN"]).includes(req.user!.role)) {
+    throw new ApiError(403, "Your role cannot reject this action", "APPROVAL_ROLE_FORBIDDEN");
+  }
   await prisma.$transaction(async (tx) => {
     await tx.approvalRequest.update({ where: { id: approval.id }, data: { status: "REJECTED", approvedByAdminId: req.user!.id, decisionNote: input.note, decidedAt: new Date() } });
     if (approval.actionType === "CREDIT_DEPOSIT") await tx.deposit.update({ where: { id: approval.entityId }, data: { status: "IN_REVIEW", reviewNote: input.note } });
@@ -779,7 +812,14 @@ v1AdminCoreRouter.post("/approvals/:id/reject", requireAdminRoles("SUPER_ADMIN",
         dedupeKey: `withdrawal.approval_rejected:${withdrawal.id}:${approval.id}`
       });
     }
-    if (approval.actionType === "PUBLISH_PRODUCT") await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "REVIEW" } });
+    if (approval.actionType === "PUBLISH_PRODUCT") {
+      const payload = jsonObjectValue(approval.payload);
+      const requestedVersion = Number(payload.version);
+      await tx.portfolioProduct.update({ where: { id: approval.entityId }, data: { status: "REVIEW" } });
+      if (Number.isInteger(requestedVersion)) {
+        await tx.portfolioProductVersion.updateMany({ where: { productId: approval.entityId, version: requestedVersion, status: "PENDING_APPROVAL" }, data: { status: "REVIEW" } });
+      }
+    }
     if (approval.actionType === "POST_DISTRIBUTION") await tx.distributionBatch.update({ where: { id: approval.entityId }, data: { status: "CALCULATED" } });
   });
   await writeAudit("rejectApproval", approval.entityType, approval.entityId, { approvalId: approval.id }, { req, reason: input.note });

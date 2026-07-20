@@ -49,6 +49,7 @@
     withdrawals: [],
     beneficiaries: [],
     products: [],
+    productRecords: [],
     investments: [],
     payouts: [],
     approvals: [],
@@ -63,6 +64,7 @@
     withdrawalMethods: { methods: [] },
     tasks: [],
     instruments: [],
+    instrumentRecords: [],
     reports: [],
     tickets: [],
     audit: [],
@@ -129,11 +131,16 @@
       checks: [["Status", "No backend beneficiary loaded"]]
     },
     productDetail: {
+      id: "",
       name: emptyDetailMessage,
       risk: "-",
       minimum: "$0",
       payout: "-",
       visibility: "No record",
+      status: "",
+      version: 0,
+      allocations: [],
+      feeRules: [],
       audience: "Select a live portfolio product from the backend catalog.",
       rules: [["Status", "No backend product loaded"]]
     },
@@ -162,7 +169,9 @@
     adminNotificationInitialised: false,
     seenAdminNotificationIds: {},
     pendingApproval: null,
-    pendingRecord: null
+    pendingRecord: null,
+    pendingProductId: null,
+    pendingProductAllocationId: null
   };
 
   const liveRefs = {};
@@ -588,9 +597,11 @@
     data.withdrawals = [];
     data.beneficiaries = [];
     data.products = [];
+    data.productRecords = [];
     data.investments = [];
     data.payouts = [];
     data.instruments = [];
+    data.instrumentRecords = [];
     data.tickets = [];
     data.approvals = [];
     data.orders = [];
@@ -775,19 +786,38 @@
     }
 
     if (Array.isArray(products)) {
-      data.products = products.map((row) => [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status), row.id]);
+      data.productRecords = products;
+      data.products = products.map((row) => {
+        const allocationTotal = (row.allocations || []).reduce((sum, allocation) => sum + Number(allocation.targetWeight || 0), 0);
+        return [row.name, label(row.riskLevel), formatMoney(row.minimum), row.payoutRule, label(row.status), row.id, allocationTotal];
+      });
       const premium = products.find((row) => row.id === requestedRecordId) || products[0];
       if (premium) {
         liveRefs.productId = premium.id;
+        const allocations = (premium.allocations || []).filter((allocation) => !allocation.effectiveTo);
         data.productDetail = {
           id: premium.id,
           name: premium.name,
           risk: label(premium.riskLevel),
+          riskLevel: premium.riskLevel,
           minimum: formatMoney(premium.minimum),
+          minimumValue: Number(premium.minimum || 0),
+          currency: premium.currency || "USD",
           payout: premium.payoutRule,
           visibility: label(premium.status),
+          status: premium.status,
+          version: Number(premium.version || 1),
+          description: premium.description || "",
+          durationDays: premium.durationDays || "",
+          projectedReturnMin: premium.projectedReturnMin ?? "",
+          projectedReturnMax: premium.projectedReturnMax ?? "",
+          disclosure: premium.disclosure || "",
+          eligibility: premium.eligibility || {},
+          allocations,
+          feeRules: premium.feeRules || [],
+          publishedAt: premium.publishedAt || null,
           audience: premium.description || "Eligible clients with completed suitability checks",
-          rules: [["Projected return label", "Required"], ["Manager review", "Required before subscription"], ["Options exposure", "Disabled by default"], ["Client dashboard visibility", label(premium.status)]]
+          rules: [["Projected return label", "Required"], ["Allocation", allocations.length ? "Configured" : "Required"], ["Approval", premium.status === "PENDING_APPROVAL" ? "Pending" : premium.status === "PUBLISHED" ? "Approved" : "Not requested"], ["Client dashboard visibility", label(premium.status)]]
         };
       }
     }
@@ -801,6 +831,7 @@
     }
 
     if (Array.isArray(instruments)) {
+      data.instrumentRecords = instruments;
       data.instruments = instruments.map((row) => [row.symbol, row.name, row.category, row.market, label(row.riskLevel), row.status]);
     }
 
@@ -831,6 +862,10 @@
         action: label(row.actionType),
         entity: row.entityType,
         entityId: row.entityId,
+        entityLabel: row.entityLabel || (row.entityType === "PortfolioProduct" ? products?.find((product) => product.id === row.entityId)?.name : "") || row.entityType,
+        entityHref: row.entityType === "PortfolioProduct" ? "portfolio-product-detail.html?id=" + encodeURIComponent(row.entityId) : "",
+        note: row.payload?.note || "No request note",
+        version: row.payload?.version || null,
         maker: row.initiatedBy?.name || "Unknown admin",
         makerRole: label(row.initiatedBy?.role),
         createdAt: row.createdAt ? new Date(row.createdAt).toLocaleString() : "-",
@@ -1132,13 +1167,20 @@
     const approvalSetting = data.settingsRows.find((row) => row.key === "operations.approvals") || { value: {} };
     const approvalValue = approvalSetting.value && typeof approvalSetting.value === "object" && !Array.isArray(approvalSetting.value) ? approvalSetting.value : {};
     const autoApproveDeposits = approvalValue.autoApproveDeposits === true || approvalValue.depositCredits === false || approvalValue.makerChecker === false;
-    const rows = data.approvals.map((row) => [row.action, row.entity, row.entityId, row.maker + " (" + row.makerRole + ")", row.createdAt, row.expiresAt, badge(row.status), '<div class="action-row"><button class="btn primary" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="approve">Approve</button><button class="btn" type="button" data-action="approval-decision" data-approval-id="' + row.id + '" data-approval-decision="reject">Reject</button></div>']);
-    return section("Deposit approval mode", "Choose whether reviewed deposits create an approval request or credit immediately.", details([["Auto-approve deposits", autoApproveDeposits ? "Enabled" : "Disabled"], ["Deposit credit action", autoApproveDeposits ? "Credits immediately" : "Creates approval request"]]) + '<div class="action-row" style="margin-top:14px"><button class="btn ' + (autoApproveDeposits ? "danger" : "primary") + '" type="button" data-action="approval-setting-toggle" data-auto-approve-deposits="' + (!autoApproveDeposits) + '">' + (autoApproveDeposits ? "Disable auto-approve deposits" : "Enable auto-approve deposits") + '</button></div>') + section("Pending approval requests", "The initiating admin can decide requests while role permissions are still enforced by the API.", filterableTable("Search action, maker, entity...", ["Action", "Entity", "Record ID", "Initiated by", "Created", "Expires", "Status", "Decision"], rows)) + section("Decision controls", "Approval records the operational signature. Deposit credits, withdrawal release, publication, and distribution posting occur atomically only after this step.", details([["Initiator approval", "Allowed"], ["Financial mutation", "Atomic and idempotent"], ["Failed decision", "No ledger change"], ["Audit", "Admin, role, note, request ID, and timestamp"]]));
+    const rows = data.approvals.map((row) => {
+      const entity = row.entityHref
+        ? '<strong>' + escapeHtml(row.entityLabel) + '</strong><br>' + linkButton("Open product", row.entityHref)
+        : '<strong>' + escapeHtml(row.entityLabel) + '</strong><br><span class="muted">' + escapeHtml(row.entityId) + '</span>';
+      const request = escapeHtml(row.note) + (row.version ? '<br><span class="muted">Terms version ' + escapeHtml(row.version) + '</span>' : "");
+      return [row.action, entity, request, escapeHtml(row.maker + " (" + row.makerRole + ")"), row.createdAt, row.expiresAt, badge(row.status), '<div class="action-row"><button class="btn primary" type="button" data-action="approval-decision" data-approval-id="' + escapeHtml(row.id) + '" data-approval-decision="approve">Approve</button><button class="btn" type="button" data-action="approval-decision" data-approval-id="' + escapeHtml(row.id) + '" data-approval-decision="reject">Reject</button></div>'];
+    });
+    return section("Deposit approval mode", "Choose whether reviewed deposits create an approval request or credit immediately.", details([["Auto-approve deposits", autoApproveDeposits ? "Enabled" : "Disabled"], ["Deposit credit action", autoApproveDeposits ? "Credits immediately" : "Creates approval request"]]) + '<div class="action-row" style="margin-top:14px"><button class="btn ' + (autoApproveDeposits ? "danger" : "primary") + '" type="button" data-action="approval-setting-toggle" data-auto-approve-deposits="' + (!autoApproveDeposits) + '">' + (autoApproveDeposits ? "Disable auto-approve deposits" : "Enable auto-approve deposits") + '</button></div>') + section("Pending approval requests", "Publication requests appear here only after product terms and a 100% allocation have been saved.", filterableTable("Search action, product, maker...", ["Action", "Record", "Request details", "Initiated by", "Created", "Expires", "Status", "Decision"], rows)) + section("Decision controls", "Approval records the operational signature. Deposit credits, withdrawal release, publication, and distribution posting occur atomically only after this step.", details([["Role permission", "Enforced for approve and reject"], ["Product version", "Locked to the submitted terms"], ["Failed decision", "No financial or publication change"], ["Audit", "Admin, role, note, request ID, and timestamp"]]));
   }
 
   function productsPage() {
-    return section("Portfolio product catalog", "Manage portfolio visibility, risk, minimums, payout schedule, and published wording.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Status", "Action"], data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(row[4]), linkButton("Edit", "portfolio-product-detail.html?id=" + encodeURIComponent(row[5]))])), modalButton("New product", "product", "primary")) +
-      section("Product publishing rules", "Published products can appear in the client dashboard and selected public-site areas.", details([["Projected returns", "Must be labelled projected or market-based"], ["Options", "Never default access"], ["Risk labels", "Required"], ["Visibility", "Draft, review, published, hidden"]]));
+    const rows = data.products.map((row) => [row[0], badge(row[1]), row[2], row[3], badge(Math.abs(Number(row[6]) - 100) < 0.001 ? "100% ready" : Number(row[6] || 0) + "% configured", Math.abs(Number(row[6]) - 100) < 0.001 ? "success" : "warning"), badge(row[4]), linkButton("Open", "portfolio-product-detail.html?id=" + encodeURIComponent(row[5]))]);
+    return section("Portfolio product catalog", "Create the terms, configure the allocation, submit for approval, and track client visibility.", filterableTable("Search product, risk, payout...", ["Product", "Risk", "Minimum", "Payout", "Allocation", "Status", "Action"], rows), '<button type="button" class="btn primary" data-action="product-new">New product</button>') +
+      section("Publication path", "A product does not enter Approvals until every required setup step is complete.", details([["1. Terms", "Name, risk, minimum, payout, disclosure"], ["2. Instruments", "At least one active, investable instrument"], ["3. Allocation", "Target weights must total exactly 100%"], ["4. Approval", "An authorized checker publishes the submitted version"]]));
   }
 
   function investmentsPage() {
@@ -1290,16 +1332,56 @@
 
   function productDetailPage() {
     const p = data.productDetail;
-    return '<div class="grid two">' +
-      section("Product controls", "Control how this managed portfolio appears to eligible clients.", details([["Product", p.name], ["Risk", badge(p.risk)], ["Minimum", p.minimum], ["Payout", p.payout], ["Visibility", badge(p.visibility)], ["Audience", p.audience]]) + "<h3>Publishing rules</h3>" + checklist(p.rules)) +
-      reviewPanel("Publishing action", "Product visibility changes and publication requests are recorded in the backend audit trail.", decisionButton("Move to draft", "primary", "Product moved to draft", "saveProduct") + decisionButton("Request publication", "", "Publication approval requested", "reviewProduct") + decisionButton("Hide product", "danger", "Product hidden", "hideProduct")) +
+    if (!p.id) return section("Product not found", "Choose a product from the catalog before opening this workspace.", linkButton("Back to products", "portfolio-products.html", "primary"));
+    const allocationTotal = (p.allocations || []).reduce((sum, allocation) => sum + Number(allocation.targetWeight || 0), 0);
+    const allocationInstrumentsAvailable = Boolean(p.allocations?.length) && p.allocations.every((allocation) => allocation.instrument?.status === "ACTIVE" && allocation.instrument?.investable !== false);
+    const allocationReady = Math.abs(allocationTotal - 100) < 0.001 && allocationInstrumentsAvailable;
+    const workflowIndex = p.status === "PUBLISHED" ? 3 : p.status === "PENDING_APPROVAL" ? 2 : allocationReady ? 1 : 0;
+    const allocationRows = (p.allocations || []).map((allocation) => [
+      '<strong>' + escapeHtml(allocation.instrument?.symbol || "-") + '</strong><br><span class="muted">' + escapeHtml(allocation.instrument?.name || "Unknown instrument") + '</span>',
+      escapeHtml(allocation.instrument?.category || "-"),
+      Number(allocation.targetWeight || 0).toLocaleString("en-US", { maximumFractionDigits: 4 }) + "%",
+      allocation.minimumWeight !== null && allocation.minimumWeight !== undefined ? Number(allocation.minimumWeight) + "%" : "-",
+      allocation.maximumWeight !== null && allocation.maximumWeight !== undefined ? Number(allocation.maximumWeight) + "%" : "-",
+      badge(allocation.instrument?.status === "ACTIVE" && allocation.instrument?.investable !== false ? "Available" : "Unavailable", allocation.instrument?.status === "ACTIVE" && allocation.instrument?.investable !== false ? "success" : "danger")
+    ]);
+    const activeInstruments = data.instrumentRecords.filter((instrument) => instrument.status === "ACTIVE" && instrument.investable !== false);
+    const allocationAction = activeInstruments.length
+      ? '<button class="btn primary" type="button" data-action="product-allocation-edit">' + (p.allocations.length ? "Edit allocation" : "Set allocation") + '</button>'
+      : linkButton("Add instruments first", "instruments.html", "primary");
+    const allocationBody = allocationRows.length
+      ? table(["Instrument", "Category", "Target", "Minimum", "Maximum", "Availability"], allocationRows) + '<div class="allocation-summary ' + (allocationReady ? "is-ready" : "is-blocked") + '"><span>Current target total</span><strong>' + allocationTotal.toLocaleString("en-US", { maximumFractionDigits: 4 }) + '%</strong><p>' + (allocationReady ? "Ready for publication review." : "Publication is blocked until active, investable instruments total exactly 100%.") + '</p></div>'
+      : '<div class="empty-state product-empty-state">No allocation has been saved. Add at least one active instrument and make the target weights total exactly 100%.</div>';
+    let publicationActions = "";
+    let publicationMessage = "Complete the allocation before requesting publication.";
+    if (p.status === "PENDING_APPROVAL") {
+      publicationMessage = "This exact terms version is waiting in Approvals. Editing terms or allocation will cancel that request.";
+      publicationActions = linkButton("Open approvals", "approvals.html", "primary") + decisionButton("Return to draft", "", "Product moved to draft", "saveProduct");
+    } else if (p.status === "PUBLISHED") {
+      publicationMessage = "This product is live in the client portal. Editing its terms or allocation returns it to draft.";
+      publicationActions = decisionButton("Hide product", "danger", "Product hidden", "hideProduct");
+    } else if (p.status === "ARCHIVED") {
+      publicationMessage = "Archived products cannot be submitted for publication.";
+      publicationActions = '<button class="btn" type="button" disabled>Request publication</button>';
+    } else if (allocationReady) {
+      publicationMessage = "Submitting locks version " + p.version + " for an authorized publication decision.";
+      publicationActions = decisionButton("Request publication", "primary", "Publication approval requested", "reviewProduct") + (p.status === "HIDDEN" ? decisionButton("Move to draft", "", "Product moved to draft", "saveProduct") : "");
+    } else {
+      publicationActions = '<button class="btn" type="button" disabled title="Save a valid 100% allocation first">Request publication</button>';
+    }
+    const publicationPanel = '<aside class="review-panel"><h2>Publication action</h2><p>' + publicationMessage + '</p><div class="decision-state" data-decision-state>' + badge(p.visibility) + '<span>Terms version ' + p.version + '</span></div><label>Publication note<textarea placeholder="Explain the strategy, allocation review, and reason this product is ready."></textarea></label><div class="action-row">' + publicationActions + '</div></aside>';
+    const returnRange = p.projectedReturnMin !== "" || p.projectedReturnMax !== ""
+      ? [p.projectedReturnMin === "" ? "0" : p.projectedReturnMin, p.projectedReturnMax === "" ? "-" : p.projectedReturnMax].join("% to ") + "% projected"
+      : "No projected range configured";
+    return workflowSteps(["Terms saved", "Allocation ready", "Approval requested", "Published to clients"], workflowIndex) +
+      '<div class="grid two">' +
+      section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
+      section("Publication readiness", "Every check must be complete before a request can enter Approvals.", checklist([["Terms version", "Version " + p.version + " ready"], ["Active instruments", allocationInstrumentsAvailable ? "Available" : "Required"], ["Allocation total", allocationReady ? "100% ready" : allocationTotal + "% configured"], ["Approval state", p.status === "PENDING_APPROVAL" ? "Pending" : p.status === "PUBLISHED" ? "Approved" : "Not requested"]])) +
       "</div>" +
-      section("Client impact preview", "Shows how the current published product terms are framed for eligible clients.", table(["Field", "Client-facing value", "Admin note"], [
-        ["Strategy", "Premium managed allocation across eligible instruments", "Must stay neutral and non-guaranteed"],
-        ["Return wording", "Projected and market-based only", "Never guaranteed"],
-        ["Eligibility", "Completed KYC and portfolio desk approval", "Required"],
-        ["Risk disclosure", "Custom mandate with market and liquidity risk", "Required"]
-      ]));
+      section("Portfolio allocation", "Only active, investable instruments can be included. Saving changes returns a published or pending product to draft.", allocationBody, allocationAction) +
+      '<div class="grid two">' + publicationPanel +
+      section("Client impact preview", "Only a published product is returned to the client investment catalog.", details([["Client name", escapeHtml(p.name)], ["Strategy", escapeHtml(p.description || "Managed portfolio")], ["Risk label", escapeHtml(p.risk)], ["Minimum subscription", p.minimum + " " + escapeHtml(p.currency)], ["Payout", escapeHtml(p.payout)], ["Disclosure", escapeHtml(p.disclosure || "Required before publication")]])) +
+      "</div>";
   }
 
   function supportTicketDetailPage() {
@@ -1656,7 +1738,8 @@
       "kyc-requirement-toggle", "kyc-document-confirm", "record-confirm",
       "task-status", "report-download", "deposit-method-save",
       "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
-      "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision"
+      "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision",
+      "product-save", "product-allocation-save"
     ].includes(action);
   }
 
@@ -1734,6 +1817,13 @@
           }
           else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
           else if (action === "approval-confirm") await submitApprovalDecision();
+          else if (action === "product-new") openProductEditor();
+          else if (action === "product-edit") openProductEditor(liveRefs.productId);
+          else if (action === "product-save") await submitProductEditor();
+          else if (action === "product-allocation-edit") openProductAllocationEditor(liveRefs.productId);
+          else if (action === "product-allocation-row-add") addProductAllocationRow();
+          else if (action === "product-allocation-row-remove") removeProductAllocationRow(node);
+          else if (action === "product-allocation-save") await submitProductAllocation();
           else if (action === "kyc-requirement-new") openKycRequirementEditor();
           else if (action === "kyc-requirement-edit") openKycRequirementEditor(node.dataset.requirementId);
           else if (action === "kyc-requirement-save") await submitKycRequirement();
@@ -1770,9 +1860,13 @@
             const stateNode = node.closest(".review-panel")?.querySelector("[data-decision-state]");
             try {
               await executeBackendAction(apiAction);
-              node.classList.add("is-confirmed");
-              if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
               addAudit("Now", appState.admin?.name || "Admin", (actionLabels[apiAction] || result) + " completed", pageContext());
+              if (["saveProduct", "reviewProduct", "hideProduct"].includes(apiAction)) {
+                render();
+              } else {
+                node.classList.add("is-confirmed");
+                if (stateNode) stateNode.innerHTML = badge(result) + '<span> Action: ' + apiAction + " saved to backend</span>";
+              }
               toast(result + ". Backend action completed.");
             } catch (error) {
               node.classList.remove("is-confirmed");
@@ -1803,6 +1897,11 @@
           stopLoading();
         }
       });
+    });
+    document.querySelectorAll("[data-product-allocation-weight]").forEach((node) => {
+      if (node.dataset.bound === "true") return;
+      node.dataset.bound = "true";
+      node.addEventListener("input", updateProductAllocationTotal);
     });
   }
 
@@ -1888,11 +1987,151 @@
     return copy[type] || copy.task;
   }
 
+  function openProductEditor(id) {
+    const root = document.querySelector("[data-modal-root]");
+    if (!root) return;
+    const product = data.productRecords.find((row) => row.id === id) || null;
+    appState.pendingProductId = product?.id || null;
+    const editingLiveProduct = product && ["PENDING_APPROVAL", "PUBLISHED"].includes(product.status);
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal product-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio setup</p><h2>' + (product ? "Edit product terms" : "Create portfolio product") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">' + (editingLiveProduct ? "Saving these changes returns the product to draft and cancels any pending publication request." : "Save the terms first. You will configure the 100% instrument allocation on the next screen.") + '</p><div class="product-editor-grid"><label>Product name<input name="productName" maxlength="120" value="' + escapeHtml(product?.name || "") + '" placeholder="e.g. Global Income Portfolio"></label><label>Risk level<select name="productRisk"><option value="LOW" ' + (product?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!product || product.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (product?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (product?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Minimum subscription<input name="productMinimum" type="number" min="0.01" step="0.01" value="' + escapeHtml(product?.minimum ?? 100) + '"></label><label>Currency<input name="productCurrency" maxlength="3" value="' + escapeHtml(product?.currency || "USD") + '"></label><label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Quarterly"></label><label>Duration in days <span class="field-optional">Optional</span><input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="Leave blank for open-ended"></label><label>Projected return minimum (%) <span class="field-optional">Optional</span><input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label><label>Projected return maximum (%) <span class="field-optional">Optional</span><input name="productReturnMax" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMax ?? "") + '"></label></div><label>Strategy description<textarea name="productDescription" maxlength="4000" placeholder="Describe the strategy, objective, and intended investor profile.">' + escapeHtml(product?.description || "") + '</textarea></label><label>Risk disclosure<textarea name="productDisclosure" maxlength="4000">' + escapeHtml(product?.disclosure || "Returns are projected and market-based. Capital and income are not guaranteed.") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-save">' + (product ? "Save terms and return to draft" : "Create and configure allocation") + '</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitProductEditor() {
+    const root = document.querySelector("[data-modal-root]");
+    const optionalNumber = (name) => {
+      const value = root?.querySelector('[name="' + name + '"]')?.value.trim() || "";
+      return value === "" ? undefined : Number(value);
+    };
+    const payload = {
+      name: root?.querySelector('[name="productName"]')?.value.trim() || "",
+      description: root?.querySelector('[name="productDescription"]')?.value.trim() || "",
+      riskLevel: root?.querySelector('[name="productRisk"]')?.value || "MODERATE",
+      minimum: Number(root?.querySelector('[name="productMinimum"]')?.value || 0),
+      currency: (root?.querySelector('[name="productCurrency"]')?.value.trim() || "USD").toUpperCase(),
+      payoutRule: root?.querySelector('[name="productPayout"]')?.value.trim() || "",
+      durationDays: optionalNumber("productDuration"),
+      projectedReturnMin: optionalNumber("productReturnMin"),
+      projectedReturnMax: optionalNumber("productReturnMax"),
+      disclosure: root?.querySelector('[name="productDisclosure"]')?.value.trim() || "",
+      eligibility: data.productRecords.find((row) => row.id === appState.pendingProductId)?.eligibility || {}
+    };
+    if (payload.name.length < 3) { toast("Enter a product name of at least three characters."); return; }
+    if (payload.description.length < 10) { toast("Add a strategy description of at least ten characters."); return; }
+    if (!Number.isFinite(payload.minimum) || payload.minimum <= 0) { toast("Enter a valid minimum subscription amount."); return; }
+    if (payload.currency.length !== 3) { toast("Currency must use a three-letter code such as USD."); return; }
+    if (payload.payoutRule.length < 3) { toast("Enter a clear payout rule."); return; }
+    if (payload.disclosure.length < 20) { toast("Add a risk disclosure of at least twenty characters."); return; }
+    if (payload.durationDays !== undefined && (!Number.isInteger(payload.durationDays) || payload.durationDays <= 0)) { toast("Duration must be a positive whole number of days."); return; }
+    if (payload.projectedReturnMin !== undefined && (payload.projectedReturnMin < 0 || payload.projectedReturnMin > 100)) { toast("Projected return minimum must be between 0% and 100%."); return; }
+    if (payload.projectedReturnMax !== undefined && (payload.projectedReturnMax < 0 || payload.projectedReturnMax > 100)) { toast("Projected return maximum must be between 0% and 100%."); return; }
+    if (payload.projectedReturnMin !== undefined && payload.projectedReturnMax !== undefined && payload.projectedReturnMin > payload.projectedReturnMax) { toast("Projected return minimum cannot exceed the maximum."); return; }
+    try {
+      const id = appState.pendingProductId;
+      const saved = await api(id ? "/api/v1/admin/portfolio-products/" + encodeURIComponent(id) : "/api/v1/admin/portfolio-products", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      appState.pendingProductId = null;
+      closeModal();
+      location.href = "portfolio-product-detail.html?id=" + encodeURIComponent(saved.id);
+    } catch (error) {
+      toast(error?.message || "The product terms could not be saved.");
+    }
+  }
+
+  function productInstrumentOptions(selectedId) {
+    return data.instrumentRecords.map((instrument) => {
+      const available = instrument.status === "ACTIVE" && instrument.investable !== false;
+      return '<option value="' + escapeHtml(instrument.id) + '" ' + (instrument.id === selectedId ? "selected" : "") + ' ' + (!available ? "disabled" : "") + '>' + escapeHtml(instrument.symbol + " - " + instrument.name + (available ? "" : " (unavailable)")) + '</option>';
+    }).join("");
+  }
+
+  function productAllocationRow(allocation) {
+    return '<div class="product-allocation-row" data-product-allocation-row><label>Instrument<select data-product-allocation-instrument>' + productInstrumentOptions(allocation?.instrumentId || "") + '</select></label><label>Target %<input data-product-allocation-weight type="number" min="0.0001" max="100" step="0.0001" value="' + escapeHtml(allocation?.targetWeight ?? "") + '"></label><label>Minimum % <span class="field-optional">Optional</span><input data-product-allocation-minimum type="number" min="0" max="100" step="0.0001" value="' + escapeHtml(allocation?.minimumWeight ?? "") + '"></label><label>Maximum % <span class="field-optional">Optional</span><input data-product-allocation-maximum type="number" min="0.0001" max="100" step="0.0001" value="' + escapeHtml(allocation?.maximumWeight ?? "") + '"></label><button class="btn danger allocation-remove" type="button" data-action="product-allocation-row-remove">Remove</button></div>';
+  }
+
+  function openProductAllocationEditor(id) {
+    const root = document.querySelector("[data-modal-root]");
+    const product = data.productRecords.find((row) => row.id === id) || null;
+    const activeInstruments = data.instrumentRecords.filter((instrument) => instrument.status === "ACTIVE" && instrument.investable !== false);
+    if (!root || !product) { toast("No portfolio product is selected."); return; }
+    if (!activeInstruments.length) { toast("Add an active, investable instrument before setting an allocation."); return; }
+    appState.pendingProductAllocationId = product.id;
+    const current = (product.allocations || []).filter((allocation) => !allocation.effectiveTo);
+    const rows = current.length ? current : [{ instrumentId: activeInstruments[0].id, targetWeight: 100 }];
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal allocation-editor-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Portfolio construction</p><h2>Set ' + escapeHtml(product.name) + ' allocation</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p class="modal-guidance">Target weights must total exactly 100%. Only active, investable instruments can be saved. Changing a pending or published allocation returns the product to draft.</p><div class="product-allocation-head"><span>Instrument</span><span>Target</span><span>Minimum</span><span>Maximum</span><span></span></div><div class="product-allocation-rows" data-product-allocation-rows>' + rows.map(productAllocationRow).join("") + '</div><button class="btn" type="button" data-action="product-allocation-row-add">Add instrument</button><div class="allocation-editor-total" data-product-allocation-total><span>Target total</span><strong>0%</strong><p>Must equal 100% before saving.</p></div></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="product-allocation-save">Save 100% allocation</button></div></section></div>';
+    bindActions();
+    updateProductAllocationTotal();
+  }
+
+  function addProductAllocationRow() {
+    const container = document.querySelector("[data-product-allocation-rows]");
+    if (!container) return;
+    const selected = new Set(Array.from(container.querySelectorAll("[data-product-allocation-instrument]")).map((node) => node.value));
+    const available = data.instrumentRecords.find((instrument) => instrument.status === "ACTIVE" && instrument.investable !== false && !selected.has(instrument.id));
+    if (!available) { toast("Every available instrument is already in this allocation."); return; }
+    container.insertAdjacentHTML("beforeend", productAllocationRow({ instrumentId: available.id, targetWeight: "" }));
+    bindActions();
+    updateProductAllocationTotal();
+  }
+
+  function removeProductAllocationRow(buttonNode) {
+    const rows = document.querySelectorAll("[data-product-allocation-row]");
+    if (rows.length <= 1) { toast("A portfolio needs at least one allocation instrument."); return; }
+    buttonNode.closest("[data-product-allocation-row]")?.remove();
+    updateProductAllocationTotal();
+  }
+
+  function updateProductAllocationTotal() {
+    const totalNode = document.querySelector("[data-product-allocation-total]");
+    if (!totalNode) return;
+    const total = Array.from(document.querySelectorAll("[data-product-allocation-weight]")).reduce((sum, input) => sum + Number(input.value || 0), 0);
+    const ready = Math.abs(total - 100) < 0.001;
+    totalNode.classList.toggle("is-ready", ready);
+    totalNode.classList.toggle("is-blocked", !ready);
+    const strong = totalNode.querySelector("strong");
+    const copy = totalNode.querySelector("p");
+    if (strong) strong.textContent = total.toLocaleString("en-US", { maximumFractionDigits: 4 }) + "%";
+    if (copy) copy.textContent = ready ? "Allocation is ready to save." : "Must equal 100% before saving.";
+  }
+
+  async function submitProductAllocation() {
+    const id = appState.pendingProductAllocationId;
+    const rowNodes = Array.from(document.querySelectorAll("[data-product-allocation-row]"));
+    const allocations = rowNodes.map((row) => {
+      const minimumValue = row.querySelector("[data-product-allocation-minimum]")?.value.trim() || "";
+      const maximumValue = row.querySelector("[data-product-allocation-maximum]")?.value.trim() || "";
+      return {
+        instrumentId: row.querySelector("[data-product-allocation-instrument]")?.value || "",
+        targetWeight: Number(row.querySelector("[data-product-allocation-weight]")?.value || 0),
+        minimumWeight: minimumValue === "" ? undefined : Number(minimumValue),
+        maximumWeight: maximumValue === "" ? undefined : Number(maximumValue)
+      };
+    });
+    if (!id || !allocations.length) { toast("Add at least one allocation instrument."); return; }
+    if (allocations.some((allocation) => !allocation.instrumentId || !Number.isFinite(allocation.targetWeight) || allocation.targetWeight <= 0)) { toast("Every instrument needs a positive target weight."); return; }
+    if (new Set(allocations.map((allocation) => allocation.instrumentId)).size !== allocations.length) { toast("Each instrument can appear only once."); return; }
+    if (allocations.some((allocation) => allocation.minimumWeight !== undefined && allocation.minimumWeight > allocation.targetWeight)) { toast("Minimum weight cannot exceed target weight."); return; }
+    if (allocations.some((allocation) => allocation.maximumWeight !== undefined && allocation.maximumWeight < allocation.targetWeight)) { toast("Maximum weight cannot be below target weight."); return; }
+    const total = allocations.reduce((sum, allocation) => sum + allocation.targetWeight, 0);
+    if (Math.abs(total - 100) >= 0.001) { toast("Target allocations must total exactly 100%."); return; }
+    try {
+      await api("/api/v1/admin/portfolio-products/" + encodeURIComponent(id) + "/allocations", { method: "PUT", body: JSON.stringify({ allocations }) });
+      appState.pendingProductAllocationId = null;
+      closeModal();
+      await loadBackendData();
+      render();
+      toast("Portfolio allocation saved. The product is ready for publication review.");
+    } catch (error) {
+      toast(error?.message || "The portfolio allocation could not be saved.");
+    }
+  }
+
   function openApprovalDecision(id, decision) {
     const root = document.querySelector("[data-modal-root]");
     if (!root) return;
+    const approval = data.approvals.find((row) => row.id === id) || null;
     appState.pendingApproval = { id, decision };
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Maker-checker decision</p><h2>' + (decision === "approve" ? "Approve request" : "Reject request") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p>This decision is final for the current approval request and will be recorded in the audit trail.</p><label>Decision note<textarea name="approvalNote" placeholder="Explain the evidence and reason for this decision."></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn ' + (decision === "approve" ? "primary" : "danger") + '" type="button" data-action="approval-confirm">' + (decision === "approve" ? "Approve" : "Reject") + '</button></div></section></div>';
+    const context = approval ? details([["Action", escapeHtml(approval.action)], ["Record", escapeHtml(approval.entityLabel)], ["Requested by", escapeHtml(approval.maker + " (" + approval.makerRole + ")")], ["Request note", escapeHtml(approval.note)], ["Terms version", approval.version ? escapeHtml(approval.version) : "Not applicable"]]) : "";
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Maker-checker decision</p><h2>' + (decision === "approve" ? "Approve request" : "Reject request") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><p>This decision is final for the current approval request and will be recorded in the audit trail.</p>' + context + '<label>Decision note<textarea name="approvalNote" placeholder="Explain the evidence and reason for this decision."></textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn ' + (decision === "approve" ? "primary" : "danger") + '" type="button" data-action="approval-confirm">' + (decision === "approve" ? "Approve" : "Reject") + '</button></div></section></div>';
     bindActions();
   }
 

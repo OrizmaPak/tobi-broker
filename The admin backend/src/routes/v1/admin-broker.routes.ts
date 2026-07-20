@@ -23,11 +23,22 @@ function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-async function pendingApproval(actionType: string, entityType: string, entityId: string, adminId: string, payload: Prisma.InputJsonObject) {
-  const existing = await prisma.approvalRequest.findFirst({ where: { actionType, entityType, entityId, status: "PENDING" } });
+async function pendingApproval(tx: Prisma.TransactionClient, actionType: string, entityType: string, entityId: string, adminId: string, payload: Prisma.InputJsonObject) {
+  const existing = await tx.approvalRequest.findFirst({ where: { actionType, entityType, entityId, status: "PENDING" } });
   if (existing) return existing;
-  return prisma.approvalRequest.create({
+  return tx.approvalRequest.create({
     data: { actionType, entityType, entityId, initiatedByAdminId: adminId, payload, payloadHash: hashValue(JSON.stringify(payload)), expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000) }
+  });
+}
+
+async function cancelPendingProductPublication(tx: Prisma.TransactionClient, productId: string, reason: string) {
+  await tx.approvalRequest.updateMany({
+    where: { actionType: "PUBLISH_PRODUCT", entityType: "PortfolioProduct", entityId: productId, status: "PENDING" },
+    data: { status: "REJECTED", decisionNote: reason, decidedAt: new Date() }
+  });
+  await tx.portfolioProductVersion.updateMany({
+    where: { productId, status: "PENDING_APPROVAL" },
+    data: { status: "DRAFT" }
   });
 }
 
@@ -80,6 +91,7 @@ v1AdminBrokerRouter.put("/portfolio-products/:id", portfolioRoles, asyncHandler(
   if (!before) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
   const nextVersion = before.version + 1;
   const row = await prisma.$transaction(async (tx) => {
+    await cancelPendingProductPublication(tx, before.id, "Superseded by a product terms update");
     const updated = await tx.portfolioProduct.update({ where: { id: before.id }, data: { ...data, slug: slug(input.name), status: "DRAFT", version: nextVersion, publishedAt: null } });
     await tx.portfolioProductVersion.create({ data: { productId: before.id, version: nextVersion, terms: data as Prisma.InputJsonObject, status: "DRAFT", createdBy: req.user!.id } });
     return updated;
@@ -88,17 +100,47 @@ v1AdminBrokerRouter.put("/portfolio-products/:id", portfolioRoles, asyncHandler(
   return ok(res, row);
 }));
 
+const allocationItemSchema = z.object({
+  instrumentId: z.string().min(1),
+  targetWeight: z.coerce.number().positive().max(100),
+  minimumWeight: z.coerce.number().nonnegative().max(100).optional(),
+  maximumWeight: z.coerce.number().positive().max(100).optional()
+}).superRefine((value, ctx) => {
+  if (value.minimumWeight !== undefined && value.minimumWeight > value.targetWeight) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["minimumWeight"], message: "Minimum weight cannot exceed target weight" });
+  }
+  if (value.maximumWeight !== undefined && value.maximumWeight < value.targetWeight) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maximumWeight"], message: "Maximum weight cannot be below target weight" });
+  }
+});
+
+const allocationSchema = z.object({ allocations: z.array(allocationItemSchema).min(1) }).superRefine((value, ctx) => {
+  const instrumentIds = value.allocations.map((item) => item.instrumentId);
+  if (new Set(instrumentIds).size !== instrumentIds.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["allocations"], message: "Each instrument can appear only once" });
+  }
+});
+
 v1AdminBrokerRouter.put("/portfolio-products/:id/allocations", portfolioRoles, asyncHandler(async (req, res) => {
-  const input = z.object({ allocations: z.array(z.object({ instrumentId: z.string().min(1), targetWeight: z.coerce.number().positive().max(100), minimumWeight: z.coerce.number().nonnegative().max(100).optional(), maximumWeight: z.coerce.number().positive().max(100).optional() })).min(1) }).parse(req.body);
+  const input = allocationSchema.parse(req.body);
   const total = input.allocations.reduce((sum, item) => sum + item.targetWeight, 0);
   if (Math.abs(total - 100) > 0.001) throw new ApiError(422, "Target allocations must total 100%", "ALLOCATION_TOTAL_INVALID");
   const productId = String(req.params.id);
   const rows = await prisma.$transaction(async (tx) => {
+    const product = await tx.portfolioProduct.findUnique({ where: { id: productId } });
+    if (!product) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
+    const instruments = await tx.instrument.findMany({ where: { id: { in: input.allocations.map((item) => item.instrumentId) } } });
+    if (instruments.length !== input.allocations.length) throw new ApiError(422, "One or more allocation instruments were not found", "ALLOCATION_INSTRUMENT_NOT_FOUND");
+    if (instruments.some((instrument) => instrument.status !== "ACTIVE" || !instrument.investable)) {
+      throw new ApiError(422, "Every allocation instrument must be active and investable", "ALLOCATION_INSTRUMENT_UNAVAILABLE");
+    }
+    await cancelPendingProductPublication(tx, productId, "Superseded by a portfolio allocation update");
     await tx.portfolioAllocation.updateMany({ where: { productId, effectiveTo: null }, data: { effectiveTo: new Date() } });
-    await tx.portfolioProduct.update({ where: { id: productId }, data: { status: "DRAFT" } });
+    await tx.portfolioProduct.update({ where: { id: productId }, data: { status: "DRAFT", publishedAt: null } });
     await tx.portfolioAllocation.createMany({ data: input.allocations.map((item) => ({ productId, instrumentId: item.instrumentId, targetWeight: item.targetWeight, minimumWeight: item.minimumWeight, maximumWeight: item.maximumWeight })) });
     return tx.portfolioAllocation.findMany({ where: { productId, effectiveTo: null }, include: { instrument: true } });
   });
+  await writeAudit("updatePortfolioAllocation", "PortfolioProduct", productId, { totalWeight: total, instruments: rows.length }, { req });
   return ok(res, rows);
 }));
 
@@ -115,16 +157,29 @@ v1AdminBrokerRouter.put("/portfolio-products/:id/fees", portfolioRoles, asyncHan
 
 v1AdminBrokerRouter.post("/portfolio-products/:id/request-publication", portfolioRoles, asyncHandler(async (req, res) => {
   const input = z.object({ note: z.string().trim().min(5).max(1000) }).parse(req.body);
-  const product = await prisma.portfolioProduct.findUnique({ where: { id: String(req.params.id) }, include: { allocations: { where: { effectiveTo: null } } } });
-  if (!product) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
-  if (!product.allocations.length) throw new ApiError(422, "Portfolio allocation is required before publication", "ALLOCATION_REQUIRED");
-  const total = product.allocations.reduce((sum, item) => sum + Number(item.targetWeight), 0);
-  if (Math.abs(total - 100) > 0.001) throw new ApiError(422, "Portfolio allocations must total 100%", "ALLOCATION_TOTAL_INVALID");
-  const approval = await pendingApproval("PUBLISH_PRODUCT", "PortfolioProduct", product.id, req.user!.id, { note: input.note, version: product.version });
-  await prisma.$transaction([
-    prisma.portfolioProduct.update({ where: { id: product.id }, data: { status: "PENDING_APPROVAL" } }),
-    prisma.portfolioProductVersion.updateMany({ where: { productId: product.id, version: product.version }, data: { status: "PENDING_APPROVAL" } })
-  ]);
+  const productId = String(req.params.id);
+  const approval = await prisma.$transaction(async (tx) => {
+    const product = await tx.portfolioProduct.findUnique({
+      where: { id: productId },
+      include: { allocations: { where: { effectiveTo: null }, include: { instrument: true } } }
+    });
+    if (!product) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
+    if (product.status === "PUBLISHED") throw new ApiError(409, "This product is already published", "PRODUCT_ALREADY_PUBLISHED");
+    if (product.status === "ARCHIVED") throw new ApiError(409, "An archived product cannot be published", "INVALID_PRODUCT_STATE");
+    if (!product.allocations.length) throw new ApiError(422, "Portfolio allocation is required before publication", "ALLOCATION_REQUIRED");
+    const total = product.allocations.reduce((sum, item) => sum + Number(item.targetWeight), 0);
+    if (Math.abs(total - 100) > 0.001) throw new ApiError(422, "Portfolio allocations must total 100%", "ALLOCATION_TOTAL_INVALID");
+    if (product.allocations.some((allocation) => allocation.instrument.status !== "ACTIVE" || !allocation.instrument.investable)) {
+      throw new ApiError(422, "Every allocation instrument must be active and investable", "ALLOCATION_INSTRUMENT_UNAVAILABLE");
+    }
+    const version = await tx.portfolioProductVersion.findUnique({ where: { productId_version: { productId: product.id, version: product.version } } });
+    if (!version) throw new ApiError(409, "The current product terms version is missing", "PRODUCT_VERSION_REQUIRED");
+    const request = await pendingApproval(tx, "PUBLISH_PRODUCT", "PortfolioProduct", product.id, req.user!.id, { note: input.note, version: product.version, productName: product.name });
+    await tx.portfolioProduct.update({ where: { id: product.id }, data: { status: "PENDING_APPROVAL" } });
+    await tx.portfolioProductVersion.update({ where: { productId_version: { productId: product.id, version: product.version } }, data: { status: "PENDING_APPROVAL" } });
+    return request;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  await writeAudit("requestProductPublication", "PortfolioProduct", productId, { approvalId: approval.id }, { req, reason: input.note });
   return ok(res, approval, 201);
 }));
 
@@ -132,7 +187,10 @@ v1AdminBrokerRouter.patch("/portfolio-products/:id/status", portfolioRoles, asyn
   const input = z.object({ status: z.enum(["DRAFT", "REVIEW", "HIDDEN", "ARCHIVED"]), note: z.string().trim().min(5).max(1000) }).parse(req.body);
   const before = await prisma.portfolioProduct.findUnique({ where: { id: String(req.params.id) } });
   if (!before) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
-  const row = await prisma.portfolioProduct.update({ where: { id: before.id }, data: { status: input.status, ...(input.status === "DRAFT" ? { publishedAt: null } : {}) } });
+  const row = await prisma.$transaction(async (tx) => {
+    if (before.status === "PENDING_APPROVAL") await cancelPendingProductPublication(tx, before.id, `Publication cancelled when product moved to ${input.status}`);
+    return tx.portfolioProduct.update({ where: { id: before.id }, data: { status: input.status, ...(input.status === "DRAFT" ? { publishedAt: null } : {}) } });
+  });
   await writeAudit("changePortfolioProductStatus", "PortfolioProduct", row.id, { from: before.status, to: input.status }, { req, reason: input.note });
   return ok(res, row);
 }));
@@ -343,8 +401,11 @@ v1AdminBrokerRouter.post("/distributions/:id/request-approval", portfolioRoles, 
   const batch = await prisma.distributionBatch.findUnique({ where: { id: String(req.params.id) }, include: { items: true } });
   if (!batch || batch.status !== "CALCULATED") throw new ApiError(409, "Distribution must be calculated before approval", "INVALID_DISTRIBUTION_STATE");
   if (!batch.items.length || batch.items.some((item) => !new Prisma.Decimal(item.netAmount).isPositive())) throw new ApiError(422, "Distribution contains invalid entitlements", "INVALID_DISTRIBUTION_ITEMS");
-  const approval = await pendingApproval("POST_DISTRIBUTION", "DistributionBatch", batch.id, req.user!.id, { note: input.note, grossAmount: Number(batch.grossAmount), netAmount: Number(batch.netAmount), itemCount: batch.items.length });
-  await prisma.distributionBatch.update({ where: { id: batch.id }, data: { status: "PENDING_APPROVAL" } });
+  const approval = await prisma.$transaction(async (tx) => {
+    const request = await pendingApproval(tx, "POST_DISTRIBUTION", "DistributionBatch", batch.id, req.user!.id, { note: input.note, grossAmount: Number(batch.grossAmount), netAmount: Number(batch.netAmount), itemCount: batch.items.length });
+    await tx.distributionBatch.update({ where: { id: batch.id }, data: { status: "PENDING_APPROVAL" } });
+    return request;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   return ok(res, approval, 201);
 }));
 

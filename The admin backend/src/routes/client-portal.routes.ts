@@ -203,7 +203,7 @@ clientPortalRouter.get("/wallet", asyncHandler(async (req, res) => {
 
 clientPortalRouter.get("/portfolio-products", asyncHandler(async (_req, res) => {
   const products = await prisma.portfolioProduct.findMany({
-    where: { status: { not: "HIDDEN" } },
+    where: { status: "PUBLISHED" },
     orderBy: { name: "asc" }
   });
   return ok(res, products);
