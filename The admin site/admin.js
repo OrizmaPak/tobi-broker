@@ -229,6 +229,13 @@
     return (min === "" ? "0" : min) + "% to " + (max === "" ? "-" : max) + "% projected";
   }
 
+  function productInstrumentSummary(product) {
+    const allocations = product?.allocations || [];
+    const names = allocations.map((allocation) => allocation.instrument?.symbol || allocation.instrument?.name || "").filter(Boolean);
+    if (!names.length) return "Diversified managed allocation";
+    return names.slice(0, 4).join(" / ") + (names.length > 4 ? " +" + (names.length - 4) + " more" : "");
+  }
+
   function productBannerHtml(product, mode) {
     const name = product?.name || "Portfolio product";
     const image = product?.bannerUrl || "";
@@ -236,24 +243,26 @@
     const media = image
       ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(name) + ' banner" loading="lazy">'
       : '<div class="product-banner-fallback"><span>' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</span></div>';
-    return '<div class="' + className + '">' + media + '<div class="product-banner-overlay"><strong>' + escapeHtml(name) + '</strong><small>' + escapeHtml(productReturnText(product)) + '</small></div></div>';
+    return '<div class="' + className + '">' + media + '<div class="product-banner-overlay"><strong>' + escapeHtml(name) + '</strong><small>' + escapeHtml(productReturnText(product)) + '</small><span class="product-banner-assets">' + escapeHtml(productInstrumentSummary(product)) + '</span></div></div>';
   }
 
   function productBannerPrompt(product) {
     const allocations = (product?.allocations || []).slice(0, 6).map((allocation) => {
       const instrument = allocation.instrument || {};
-      return (instrument.symbol || instrument.name || "Instrument") + " " + Number(allocation.targetWeight || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
+      return (instrument.name || instrument.symbol || "Instrument") + " (" + (instrument.symbol || instrument.category || "asset") + ") " + Number(allocation.targetWeight || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
     }).join(", ");
     return [
-      "Create a premium investment product banner image at exactly 1600 x 900 pixels, 16:9 aspect ratio.",
-      "Product name: " + (product?.name || "Portfolio product") + ".",
-      "Advertised return: " + productReturnText(product) + ".",
+      "Create a captivating premium investment product banner background at exactly 1600 x 900 pixels, 16:9 aspect ratio.",
+      "This is for a BullPort product banner where the platform will overlay real text on top of the image.",
+      "Overlay text that BullPort will add: product name \"" + (product?.name || "Portfolio product") + "\", advertised return \"" + productReturnText(product) + "\", and instruments \"" + productInstrumentSummary(product) + "\".",
+      "Do not render those words as text inside the image. Instead, make the background visually explain them.",
+      "Product strategy: " + (product?.description || "Broker-managed diversified investment portfolio.") + ".",
       "Risk profile: " + (product?.risk || product?.riskLevel || "Moderate") + ".",
-      "Strategy: " + (product?.description || "Broker-managed diversified investment portfolio.") + ".",
-      allocations ? "Portfolio allocation cues to represent subtly: " + allocations + "." : "Use abstract diversified portfolio cues, market charts, global finance, and disciplined allocation.",
-      "Visual direction: modern institutional wealth management, cinematic lighting, clean financial confidence, premium but not flashy, deep navy, emerald green, warm gold accents.",
-      "Composition: leave dark clean negative space on the lower-left and center-left for text overlay; keep important objects away from the bottom-left 45% of the image.",
-      "Do not include readable text, logos, watermarks, people, hands, currency notes, or cluttered chart labels. Make it suitable for a client investment portal banner."
+      allocations ? "Draw subtle background motifs inspired by these instruments and weights: " + allocations + "." : "Draw subtle background motifs for diversified markets, instruments, commodities, charts, and global allocation.",
+      "Make the image attractive enough that a client wants to open the product details: modern institutional wealth management, cinematic lighting, confident, premium, intelligent, not generic.",
+      "Suggested palette: deep navy base, emerald growth accents, warm gold highlights, with enough contrast for white and gold overlay text.",
+      "Composition: keep the lower-left and center-left clean/darker for the product name, return percentage, and instrument summary overlay. Place instrument visuals in the background and right side.",
+      "Avoid readable text, fake logos, watermarks, people, hands, currency notes, messy chart labels, or clutter. The result should be a clean background image designed for a financial product banner."
     ].join("\n");
   }
 

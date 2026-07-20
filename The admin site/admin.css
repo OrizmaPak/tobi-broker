@@ -1712,6 +1712,14 @@ tr:last-child td {
   letter-spacing: 0.05em;
 }
 
+.product-banner-assets {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .product-banner-thumb {
   width: min(260px, 100%);
   min-height: 96px;

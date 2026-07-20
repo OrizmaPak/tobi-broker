@@ -539,10 +539,11 @@
   function planBannerHtml(plan) {
     const name = plan && plan.name ? plan.name : "Investment portfolio";
     const image = plan && plan.bannerUrl ? plan.bannerUrl : "";
+    const assets = plan && plan.assets ? plan.assets : "Diversified managed allocation";
     const media = image
       ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(name) + ' banner" class="h-full w-full object-cover" loading="lazy">'
       : '<div class="flex h-full min-h-[190px] w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(250,204,21,.28),transparent_32%),radial-gradient(circle_at_80%_18%,rgba(34,197,94,.32),transparent_28%),linear-gradient(135deg,#0f172a,#14532d_58%,#713f12)] text-7xl font-black text-white/20">' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</div>';
-    return '<div class="relative min-h-[190px] overflow-hidden rounded-xl border border-border bg-slate-950 shadow-sm">' + media + '<div class="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/30 to-slate-950/70"></div><div class="absolute inset-x-5 bottom-5 text-white"><p class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/85">Advertised return</p><h3 class="mt-2 text-2xl font-semibold tracking-tight">' + escapeHtml(plan.projected) + '</h3></div></div>';
+    return '<div class="relative min-h-[190px] overflow-hidden rounded-xl border border-border bg-slate-950 shadow-sm">' + media + '<div class="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/35 to-slate-950/70"></div><div class="absolute inset-x-5 bottom-5 max-w-[78%] text-white"><p class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/85">Investment banner</p><h3 class="mt-2 text-2xl font-semibold tracking-tight">' + escapeHtml(name) + '</h3><p class="mt-2 text-sm font-semibold text-amber-100">' + escapeHtml(plan.projected) + '</p><p class="mt-1 text-xs font-medium uppercase tracking-wide text-white/75">' + escapeHtml(assets) + '</p></div></div>';
   }
 
   function safeData(value) {
