@@ -1686,22 +1686,51 @@ tr:last-child td {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(2, 6, 23, 0.78), rgba(2, 6, 23, 0.2) 52%, rgba(2, 6, 23, 0.64));
+  background:
+    linear-gradient(90deg, rgba(2, 6, 23, 0.92), rgba(2, 6, 23, 0.42) 48%, rgba(2, 6, 23, 0.72)),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.1), rgba(2, 6, 23, 0.7));
   z-index: 1;
+}
+
+.product-banner-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 72%, rgba(250, 204, 21, 0.22), transparent 22%),
+    radial-gradient(circle at 88% 22%, rgba(34, 197, 94, 0.24), transparent 30%);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .product-banner-overlay {
   position: absolute;
   inset: auto 16px 14px 16px;
-  z-index: 2;
+  z-index: 3;
   display: grid;
-  gap: 4px;
+  max-width: min(78%, 620px);
+  gap: 6px;
   color: #fff;
+}
+
+.product-banner-overlay em {
+  width: max-content;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.44);
+  color: rgba(209, 250, 229, 0.92);
+  padding: 5px 9px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
 }
 
 .product-banner-overlay strong {
   font-size: 15px;
   letter-spacing: -0.01em;
+  line-height: 1.03;
 }
 
 .product-banner-overlay small {
@@ -1723,6 +1752,58 @@ tr:last-child td {
 .product-banner-thumb {
   width: min(260px, 100%);
   min-height: 96px;
+}
+
+.product-banner-thumb .product-banner-overlay {
+  max-width: calc(100% - 24px);
+  inset: auto 12px 10px 12px;
+}
+
+.product-banner-thumb .product-banner-overlay em,
+.product-banner-thumb .product-banner-assets {
+  display: none;
+}
+
+.product-banner-thumb .product-banner-overlay strong {
+  font-size: 14px;
+}
+
+.product-banner-client {
+  min-height: 320px;
+  aspect-ratio: 16 / 9;
+}
+
+.product-banner-mobile {
+  min-height: 320px;
+  aspect-ratio: 9 / 16;
+}
+
+.product-banner-client .product-banner-overlay {
+  inset: auto 28px 28px 28px;
+}
+
+.product-banner-mobile .product-banner-overlay {
+  inset: auto 18px 22px 18px;
+  max-width: calc(100% - 36px);
+}
+
+.product-banner-client .product-banner-overlay strong {
+  font-size: clamp(30px, 5vw, 54px);
+}
+
+.product-banner-mobile .product-banner-overlay strong {
+  font-size: 25px;
+}
+
+.product-banner-client .product-banner-overlay small,
+.product-banner-mobile .product-banner-overlay small {
+  color: #fde68a;
+  font-size: 14px;
+}
+
+.product-banner-client .product-banner-assets,
+.product-banner-mobile .product-banner-assets {
+  font-size: 12px;
 }
 
 .product-banner-hero {
@@ -1760,6 +1841,64 @@ tr:last-child td {
 
 .product-banner-editor-preview {
   margin: 12px 0 0;
+}
+
+.product-banner-live-preview {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.05), rgba(22, 163, 74, 0.05)),
+    var(--panel);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.product-banner-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.product-banner-preview-head strong,
+.product-banner-preview-head span,
+.product-banner-preview-grid p {
+  display: block;
+}
+
+.product-banner-preview-head strong {
+  font-size: 15px;
+}
+
+.product-banner-preview-head span,
+.product-banner-preview-grid p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.product-banner-preview-head > span {
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--green);
+  padding: 6px 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.product-banner-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.38fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.product-banner-preview-grid p {
+  margin: 0 0 8px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .product-banner-prompt-panel {
@@ -2207,6 +2346,10 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .product-banner-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workflow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2258,8 +2401,13 @@ tr:last-child td {
   }
 
   .product-editor-grid,
+  .product-banner-controls,
   .product-allocation-row {
     grid-template-columns: 1fr;
+  }
+
+  .product-banner-preview-head {
+    flex-direction: column;
   }
 
   .product-allocation-head {
