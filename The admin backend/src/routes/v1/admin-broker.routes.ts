@@ -24,22 +24,22 @@ function slug(value: string) {
 }
 
 const defaultMarkets = [
-  { name: "US Stocks", category: "Equities", description: "United States listed stocks and equity securities.", sortOrder: 10 },
-  { name: "Global ETFs", category: "Funds", description: "Exchange-traded funds used for diversified portfolio exposure.", sortOrder: 30 },
-  { name: "Crypto", category: "Digital Assets", description: "Major crypto assets and tokenized digital asset exposure.", sortOrder: 40 },
-  { name: "Forex", category: "Currencies", description: "Foreign exchange pairs and currency exposure.", sortOrder: 50 },
-  { name: "Commodities", category: "Commodities", description: "Gold, energy, agriculture, and other commodity-linked assets.", sortOrder: 60 },
-  { name: "Bonds", category: "Fixed Income", description: "Government, treasury, and corporate fixed-income instruments.", sortOrder: 70 },
-  { name: "Mutual Funds", category: "Funds", description: "Managed fund instruments for portfolio construction.", sortOrder: 80 },
-  { name: "Money Market", category: "Cash Management", description: "Treasury bills, cash equivalents, and short-duration income assets.", sortOrder: 90 },
-  { name: "Private Credit", category: "Alternatives", description: "Private debt and structured income opportunities.", sortOrder: 100 }
+  { name: "US Stocks", category: "Equities", description: "United States listed stocks and equity securities.", logoUrl: "https://api.iconify.design/lucide:chart-candlestick.svg", sortOrder: 10 },
+  { name: "Global ETFs", category: "Funds", description: "Exchange-traded funds used for diversified portfolio exposure.", logoUrl: "https://api.iconify.design/lucide:globe-2.svg", sortOrder: 30 },
+  { name: "Crypto", category: "Digital Assets", description: "Major crypto assets and tokenized digital asset exposure.", logoUrl: "https://api.iconify.design/lucide:bitcoin.svg", sortOrder: 40 },
+  { name: "Forex", category: "Currencies", description: "Foreign exchange pairs and currency exposure.", logoUrl: "https://api.iconify.design/lucide:circle-dollar-sign.svg", sortOrder: 50 },
+  { name: "Commodities", category: "Commodities", description: "Gold, energy, agriculture, and other commodity-linked assets.", logoUrl: "https://api.iconify.design/lucide:gem.svg", sortOrder: 60 },
+  { name: "Bonds", category: "Fixed Income", description: "Government, treasury, and corporate fixed-income instruments.", logoUrl: "https://api.iconify.design/lucide:landmark.svg", sortOrder: 70 },
+  { name: "Mutual Funds", category: "Funds", description: "Managed fund instruments for portfolio construction.", logoUrl: "https://api.iconify.design/lucide:hand-coins.svg", sortOrder: 80 },
+  { name: "Money Market", category: "Cash Management", description: "Treasury bills, cash equivalents, and short-duration income assets.", logoUrl: "https://api.iconify.design/lucide:banknote.svg", sortOrder: 90 },
+  { name: "Private Credit", category: "Alternatives", description: "Private debt and structured income opportunities.", logoUrl: "https://api.iconify.design/lucide:badge-dollar-sign.svg", sortOrder: 100 }
 ];
 
 async function ensureDefaultMarkets() {
   for (const market of defaultMarkets) {
     await prisma.market.upsert({
       where: { slug: slug(market.name) },
-      update: {},
+      update: { logoUrl: market.logoUrl },
       create: { ...market, slug: slug(market.name), status: "ACTIVE" }
     });
   }
@@ -226,6 +226,7 @@ const marketSchema = z.object({
   name: z.string().trim().min(2).max(80),
   category: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
+  logoUrl: z.string().trim().url().max(500).optional(),
   status: z.enum(["ACTIVE", "DISABLED"]).default("ACTIVE"),
   sortOrder: z.coerce.number().int().min(0).max(10_000).default(100)
 });

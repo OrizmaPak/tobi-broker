@@ -923,6 +923,7 @@ model Market {
   slug        String   @unique
   category    String
   description String?
+  logoUrl     String?
   status      String   @default("ACTIVE")
   sortOrder   Int      @default(100)
   createdAt   DateTime @default(now())

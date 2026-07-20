@@ -33,7 +33,7 @@
   const navGroups = [
     ["Operations", [["Overview", "index.html", "grid"], ["Queues", "queues.html", "list"], ["Clients", "clients.html", "users"], ["KYC Queue", "kyc.html", "shield"]]],
     ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Bank Verifications", "beneficiaries.html", "usercheck"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
-    ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Markets", "markets.html", "trend"], ["Instruments", "instruments.html", "chart"], ["Risk & Compliance", "risk.html", "alert"]]],
+    ["Investments", [["Markets", "markets.html", "trend"], ["Instruments", "instruments.html", "chart"], ["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Risk & Compliance", "risk.html", "alert"]]],
     ["Comms & Records", [["Reports", "reports.html", "file"], ["Notifications", "notifications.html", "bell"], ["Support Tickets", "support.html", "help"]]],
     ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
   ];
@@ -838,7 +838,7 @@
 
     if (Array.isArray(markets)) {
       data.marketRecords = markets;
-      data.markets = markets.map((row) => [row.name, row.category, row.description || "-", label(row.status), row.id, row.sortOrder || 100]);
+      data.markets = markets.map((row) => [row.name, row.category, row.description || "-", label(row.status), row.id, row.sortOrder || 100, row.logoUrl || ""]);
     }
 
     if (Array.isArray(instruments)) {
@@ -1215,7 +1215,7 @@
 
   function marketsPage() {
     const rows = data.marketRecords.map((row) => [
-      row.name,
+      '<span class="market-logo-cell">' + (row.logoUrl ? '<img src="' + escapeHtml(row.logoUrl) + '" alt="" loading="lazy">' : '<span class="market-logo-placeholder">' + escapeHtml(row.name.slice(0, 1).toUpperCase()) + '</span>') + '<strong>' + escapeHtml(row.name) + '</strong></span>',
       row.category,
       row.description || "-",
       badge(label(row.status), row.status === "ACTIVE" ? "success" : "warning"),
@@ -2030,7 +2030,7 @@
     const root = document.querySelector("[data-modal-root]");
     const market = data.marketRecords.find((row) => row.id === id) || null;
     if (!root) return;
-    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Market management</p><h2>' + (market ? "Edit market" : "Create market") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><div class="product-editor-grid"><label>Market name<input name="marketName" maxlength="80" value="' + escapeHtml(market?.name || "") + '" placeholder="e.g. US Stocks"></label><label>Category<input name="marketCategory" maxlength="80" value="' + escapeHtml(market?.category || "") + '" placeholder="e.g. Equities"></label><label>Status<select name="marketStatus"><option value="ACTIVE" ' + (!market || market.status === "ACTIVE" ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (market?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Display order<input name="marketSortOrder" type="number" min="0" max="10000" step="1" value="' + escapeHtml(market?.sortOrder ?? 100) + '"></label></div><label>Description<textarea name="marketDescription" maxlength="500" placeholder="Describe the assets this market contains.">' + escapeHtml(market?.description || "") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="market-save" data-market-id="' + escapeHtml(market?.id || "") + '">Save market</button></div></section></div>';
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Market management</p><h2>' + (market ? "Edit market" : "Create market") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><div class="product-editor-grid"><label>Market name<input name="marketName" maxlength="80" value="' + escapeHtml(market?.name || "") + '" placeholder="e.g. US Stocks"></label><label>Category<input name="marketCategory" maxlength="80" value="' + escapeHtml(market?.category || "") + '" placeholder="e.g. Equities"></label><label>Logo URL<input name="marketLogoUrl" maxlength="500" value="' + escapeHtml(market?.logoUrl || "") + '" placeholder="https://api.iconify.design/lucide:chart-candlestick.svg"></label><label>Status<select name="marketStatus"><option value="ACTIVE" ' + (!market || market.status === "ACTIVE" ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (market?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Display order<input name="marketSortOrder" type="number" min="0" max="10000" step="1" value="' + escapeHtml(market?.sortOrder ?? 100) + '"></label></div><label>Description<textarea name="marketDescription" maxlength="500" placeholder="Describe the assets this market contains.">' + escapeHtml(market?.description || "") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="market-save" data-market-id="' + escapeHtml(market?.id || "") + '">Save market</button></div></section></div>';
     bindActions();
   }
 
@@ -2040,6 +2040,7 @@
       name: root?.querySelector('[name="marketName"]')?.value.trim() || "",
       category: root?.querySelector('[name="marketCategory"]')?.value.trim() || "",
       description: root?.querySelector('[name="marketDescription"]')?.value.trim() || undefined,
+      logoUrl: root?.querySelector('[name="marketLogoUrl"]')?.value.trim() || undefined,
       status: root?.querySelector('[name="marketStatus"]')?.value || "ACTIVE",
       sortOrder: Number(root?.querySelector('[name="marketSortOrder"]')?.value || 100)
     };

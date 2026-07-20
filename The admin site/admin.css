@@ -1699,6 +1699,32 @@ tr:last-child td {
   font-size: 12px;
 }
 
+.market-logo-cell {
+  align-items: center;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.market-logo-cell img,
+.market-logo-placeholder {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  padding: 6px;
+  width: 34px;
+}
+
+.market-logo-cell img {
+  object-fit: contain;
+}
+
 .allocation-summary.is-ready,
 .allocation-editor-total.is-ready {
   border-color: rgba(22, 163, 74, 0.34);
