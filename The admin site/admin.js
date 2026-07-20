@@ -178,6 +178,10 @@
     holdWithdrawal: "Place withdrawal on hold",
     requestWithdrawalInfo: "Request withdrawal information",
     verifyBeneficiary: "Verify beneficiary",
+    denyBeneficiary: "Deny beneficiary",
+    requestBeneficiaryResubmission: "Request beneficiary resubmission",
+    requestBeneficiaryCorrection: "Request beneficiary correction",
+    suspendBeneficiary: "Suspend beneficiary",
     saveProduct: "Save product changes",
     reviewProduct: "Send product to review",
     hideProduct: "Hide product",
@@ -1252,7 +1256,7 @@
     return workflowSteps(["Submitted", "Destination checked", "Verified", "Available for withdrawal"], r.status === "Verified" ? 3 : 1) +
       '<div class="grid two">' +
       section("Withdrawal destination", "Verify the submitted beneficiary before allowing it to be used for payouts.", details([["Label", r.label], ["Client", r.client], ["Type", r.type], ["Currency", r.currency], ["Destination", r.destination], ["Verification method", r.method], ["Cooldown until", r.cooldown], ["Status", badge(r.status)]]) + "<h3>Submitted verification data</h3>" + (verificationRows.length ? details(verificationRows) : '<p class="muted">No additional verification fields were submitted.</p>') + "<h3>Review checks</h3>" + checklist(r.checks)) +
-      reviewPanel("Beneficiary decision", "Record the verification reason before approving this payout destination.", decisionButton("Verify beneficiary", "primary", "Beneficiary verified", "verifyBeneficiary")) +
+      reviewPanel("Beneficiary decision", "Record a clear note before approving, denying, or asking the client to correct this payout destination.", decisionButton("Verify beneficiary", "primary", "Beneficiary verified", "verifyBeneficiary") + decisionButton("Deny beneficiary", "danger", "Beneficiary denied", "denyBeneficiary") + decisionButton("Request resubmission", "", "Beneficiary resubmission requested", "requestBeneficiaryResubmission") + decisionButton("Request correction", "", "Beneficiary correction requested", "requestBeneficiaryCorrection") + decisionButton("Suspend beneficiary", "danger", "Beneficiary suspended", "suspendBeneficiary")) +
       "</div>";
   }
 
@@ -1786,7 +1790,11 @@
       approveWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-approval", { note }],
       holdWithdrawal: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/hold", { note }],
       requestWithdrawalInfo: ["/api/v1/admin/money/withdrawals/" + liveRefs.withdrawalId + "/request-information", { note }],
-      verifyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/verify", { note }],
+      verifyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "VERIFIED", note }],
+      denyBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "REJECTED", note }],
+      requestBeneficiaryResubmission: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "PENDING", note }],
+      requestBeneficiaryCorrection: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "PENDING", note }],
+      suspendBeneficiary: ["/api/v1/admin/beneficiaries/" + liveRefs.beneficiaryId + "/decision", { status: "SUSPENDED", note }],
       saveProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "DRAFT", note }],
       reviewProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/request-publication", { note }],
       hideProduct: ["/api/v1/admin/portfolio-products/" + liveRefs.productId + "/status", { status: "HIDDEN", note }],

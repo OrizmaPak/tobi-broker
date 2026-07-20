@@ -414,6 +414,58 @@ v1AdminCoreRouter.post("/beneficiaries/:id/verify", complianceRoles, asyncHandle
   return ok(res, row);
 }));
 
+v1AdminCoreRouter.post("/beneficiaries/:id/decision", complianceRoles, asyncHandler(async (req, res) => {
+  const input = z.object({
+    status: z.enum(["VERIFIED", "REJECTED", "PENDING", "SUSPENDED"]),
+    note: z.string().trim().min(5).max(1000)
+  }).parse(req.body);
+  const before = await prisma.beneficiary.findUnique({ where: { id: String(req.params.id) }, include: { client: true } });
+  if (!before) throw new ApiError(404, "Beneficiary not found", "BENEFICIARY_NOT_FOUND");
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.beneficiary.update({
+      where: { id: before.id },
+      data: {
+        status: input.status,
+        verifiedAt: input.status === "VERIFIED" ? new Date() : null
+      }
+    });
+    const copy = {
+      VERIFIED: {
+        title: "Payout destination verified",
+        body: `${before.label} is approved and can be used after any cooling-off period.`
+      },
+      REJECTED: {
+        title: "Payout destination denied",
+        body: input.note
+      },
+      PENDING: {
+        title: "Payout destination correction required",
+        body: input.note
+      },
+      SUSPENDED: {
+        title: "Payout destination suspended",
+        body: input.note
+      }
+    }[input.status];
+    await notifyClientTx(tx, {
+      clientId: before.clientId,
+      email: before.client.email,
+      category: "Wallet",
+      eventKey: "beneficiary.decision",
+      severity: input.status === "VERIFIED" ? "SUCCESS" : input.status === "REJECTED" || input.status === "SUSPENDED" ? "WARNING" : "INFO",
+      title: copy.title,
+      body: copy.body,
+      actionUrl: "withdraw.html",
+      entity: { type: "Beneficiary", id: before.id },
+      metadata: { status: input.status, beneficiaryId: before.id },
+      dedupeKey: `beneficiary.decision:${input.status}:${before.id}:${hashValue(input.note)}`
+    });
+    return updated;
+  });
+  await writeAudit(input.status === "VERIFIED" ? "verifyBeneficiary" : input.status === "REJECTED" ? "rejectBeneficiary" : input.status === "SUSPENDED" ? "suspendBeneficiary" : "requestBeneficiaryCorrection", "Beneficiary", row.id, { status: input.status }, { req, reason: input.note, before, after: row });
+  return ok(res, row);
+}));
+
 v1AdminCoreRouter.get("/money/deposits", financeRoles, asyncHandler(async (req, res) => {
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
