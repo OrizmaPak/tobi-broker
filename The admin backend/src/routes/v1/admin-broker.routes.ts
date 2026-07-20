@@ -23,6 +23,34 @@ function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+const defaultMarkets = [
+  { name: "US Stocks", category: "Equities", description: "United States listed stocks and equity securities.", sortOrder: 10 },
+  { name: "Nigerian Stocks", category: "Equities", description: "Nigerian Exchange listed stocks and local equity securities.", sortOrder: 20 },
+  { name: "Global ETFs", category: "Funds", description: "Exchange-traded funds used for diversified portfolio exposure.", sortOrder: 30 },
+  { name: "Crypto", category: "Digital Assets", description: "Major crypto assets and tokenized digital asset exposure.", sortOrder: 40 },
+  { name: "Forex", category: "Currencies", description: "Foreign exchange pairs and currency exposure.", sortOrder: 50 },
+  { name: "Commodities", category: "Commodities", description: "Gold, energy, agriculture, and other commodity-linked assets.", sortOrder: 60 },
+  { name: "Bonds", category: "Fixed Income", description: "Government, treasury, and corporate fixed-income instruments.", sortOrder: 70 },
+  { name: "Mutual Funds", category: "Funds", description: "Managed fund instruments for portfolio construction.", sortOrder: 80 },
+  { name: "Money Market", category: "Cash Management", description: "Treasury bills, cash equivalents, and short-duration income assets.", sortOrder: 90 },
+  { name: "Private Credit", category: "Alternatives", description: "Private debt and structured income opportunities.", sortOrder: 100 }
+];
+
+async function ensureDefaultMarkets() {
+  for (const market of defaultMarkets) {
+    await prisma.market.upsert({
+      where: { slug: slug(market.name) },
+      update: {},
+      create: { ...market, slug: slug(market.name), status: "ACTIVE" }
+    });
+  }
+}
+
+async function activeMarketByName(name: string) {
+  await ensureDefaultMarkets();
+  return prisma.market.findFirst({ where: { name: { equals: name, mode: "insensitive" }, status: "ACTIVE" } });
+}
+
 async function pendingApproval(tx: Prisma.TransactionClient, actionType: string, entityType: string, entityId: string, adminId: string, payload: Prisma.InputJsonObject) {
   const existing = await tx.approvalRequest.findFirst({ where: { actionType, entityType, entityId, status: "PENDING" } });
   if (existing) return existing;
@@ -195,6 +223,35 @@ v1AdminBrokerRouter.patch("/portfolio-products/:id/status", portfolioRoles, asyn
   return ok(res, row);
 }));
 
+const marketSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  category: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(500).optional(),
+  status: z.enum(["ACTIVE", "DISABLED"]).default("ACTIVE"),
+  sortOrder: z.coerce.number().int().min(0).max(10_000).default(100)
+});
+
+v1AdminBrokerRouter.get("/markets", readRoles, asyncHandler(async (_req, res) => {
+  await ensureDefaultMarkets();
+  const rows = await prisma.market.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  return ok(res, rows);
+}));
+
+v1AdminBrokerRouter.post("/markets", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = marketSchema.parse(req.body);
+  const row = await prisma.market.create({ data: { ...input, slug: slug(input.name) } });
+  await writeAudit("createMarket", "Market", row.id, { name: row.name, status: row.status }, { req });
+  return ok(res, row, 201);
+}));
+
+v1AdminBrokerRouter.patch("/markets/:id", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = marketSchema.partial().parse(req.body);
+  const data = input.name ? { ...input, slug: slug(input.name) } : input;
+  const row = await prisma.market.update({ where: { id: String(req.params.id) }, data });
+  await writeAudit("updateMarket", "Market", row.id, { name: row.name, status: row.status }, { req });
+  return ok(res, row);
+}));
+
 v1AdminBrokerRouter.get("/instruments", readRoles, asyncHandler(async (req, res) => {
   const category = typeof req.query.category === "string" ? req.query.category : undefined;
   const rows = await prisma.instrument.findMany({ where: category ? { category: { equals: category, mode: "insensitive" } } : {}, include: { prices: { orderBy: { asOf: "desc" }, take: 10 }, _count: { select: { orders: true, positions: true, allocations: true } } }, orderBy: { symbol: "asc" } });
@@ -232,6 +289,8 @@ const instrumentSchema = z.object({ symbol: z.string().trim().min(1).max(30).tra
 
 v1AdminBrokerRouter.post("/instruments", portfolioRoles, asyncHandler(async (req, res) => {
   const input = instrumentSchema.parse(req.body);
+  const market = await activeMarketByName(input.market);
+  if (!market) throw new ApiError(422, "Select an enabled market before creating an instrument", "MARKET_UNAVAILABLE");
   const row = await prisma.instrument.create({ data: input });
   await writeAudit("createInstrument", "Instrument", row.id, undefined, { req });
   return ok(res, row, 201);
@@ -239,6 +298,8 @@ v1AdminBrokerRouter.post("/instruments", portfolioRoles, asyncHandler(async (req
 
 v1AdminBrokerRouter.put("/instruments/:id", portfolioRoles, asyncHandler(async (req, res) => {
   const input = instrumentSchema.parse(req.body);
+  const market = await activeMarketByName(input.market);
+  if (!market) throw new ApiError(422, "Select an enabled market before updating an instrument", "MARKET_UNAVAILABLE");
   const row = await prisma.instrument.update({ where: { id: String(req.params.id) }, data: input });
   await writeAudit("updateInstrument", "Instrument", row.id, undefined, { req });
   return ok(res, row);

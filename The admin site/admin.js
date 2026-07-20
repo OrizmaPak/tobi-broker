@@ -12,7 +12,8 @@
     "orders.html": ["Trading Orders", "Internal order-desk requests, approvals, fills, settlement, and client positions."],
     "options.html": ["Options Access", "Suitability applications, approval levels, restrictions, and options access decisions."],
     "payouts.html": ["Payouts", "Dividend and profit posting, reinvestment handling, schedules, and settlement state."],
-    "instruments.html": ["Markets & Instruments", "Supported instruments and trading availability across asset classes."],
+    "markets.html": ["Markets", "Create, enable, and disable the asset markets available for instruments."],
+    "instruments.html": ["Instruments", "Supported instruments and trading availability across managed markets."],
     "risk.html": ["Risk & Compliance", "Suitability, concentration, options access, restrictions, and compliance alerts."],
     "reports.html": ["Reports", "Statements, exports, audit records, and operational reporting."],
     "notifications.html": ["Notifications", "Account messages, funding alerts, KYC updates, payout notices, and support communication."],
@@ -32,7 +33,7 @@
   const navGroups = [
     ["Operations", [["Overview", "index.html", "grid"], ["Queues", "queues.html", "list"], ["Clients", "clients.html", "users"], ["KYC Queue", "kyc.html", "shield"]]],
     ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Bank Verifications", "beneficiaries.html", "usercheck"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
-    ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Markets & Instruments", "instruments.html", "trend"], ["Risk & Compliance", "risk.html", "alert"]]],
+    ["Investments", [["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Markets", "markets.html", "trend"], ["Instruments", "instruments.html", "chart"], ["Risk & Compliance", "risk.html", "alert"]]],
     ["Comms & Records", [["Reports", "reports.html", "file"], ["Notifications", "notifications.html", "bell"], ["Support Tickets", "support.html", "help"]]],
     ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
   ];
@@ -65,6 +66,8 @@
     tasks: [],
     instruments: [],
     instrumentRecords: [],
+    markets: [],
+    marketRecords: [],
     reports: [],
     tickets: [],
     audit: [],
@@ -600,6 +603,8 @@
     data.productRecords = [];
     data.investments = [];
     data.payouts = [];
+    data.markets = [];
+    data.marketRecords = [];
     data.instruments = [];
     data.instrumentRecords = [];
     data.tickets = [];
@@ -616,7 +621,7 @@
     const kycPath = isKycReviewPage
       ? "/api/v1/admin/kyc?status=all&limit=100" + (requestedClientId ? "&clientId=" + encodeURIComponent(requestedClientId) : "")
       : "/api/v1/admin/kyc?status=reviewable&limit=100";
-    const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
+    const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, markets, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi(kycPath),
       tryApi("/api/v1/admin/kyc/requirements"),
@@ -626,6 +631,7 @@
       tryApi("/api/v1/admin/portfolio-products"),
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
+      tryApi("/api/v1/admin/markets"),
       tryApi("/api/v1/admin/instruments"),
       tryApi("/api/v1/admin/support/tickets?limit=100"),
       tryApi("/api/v1/admin/audit-logs?limit=100"),
@@ -828,6 +834,11 @@
 
     if (Array.isArray(payouts)) {
       data.payouts = payouts.map((row) => [row.reference, row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
+    }
+
+    if (Array.isArray(markets)) {
+      data.marketRecords = markets;
+      data.markets = markets.map((row) => [row.name, row.category, row.description || "-", label(row.status), row.id, row.sortOrder || 100]);
     }
 
     if (Array.isArray(instruments)) {
@@ -1202,8 +1213,22 @@
     return section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
   }
 
+  function marketsPage() {
+    const rows = data.marketRecords.map((row) => [
+      row.name,
+      row.category,
+      row.description || "-",
+      badge(label(row.status), row.status === "ACTIVE" ? "success" : "warning"),
+      String(row.sortOrder || 100),
+      '<button class="btn" type="button" data-action="market-edit" data-market-id="' + escapeHtml(row.id) + '">Edit</button><button class="btn ' + (row.status === "ACTIVE" ? "danger" : "primary") + '" type="button" data-action="market-status-toggle" data-market-id="' + escapeHtml(row.id) + '" data-market-status="' + (row.status === "ACTIVE" ? "DISABLED" : "ACTIVE") + '">' + (row.status === "ACTIVE" ? "Disable" : "Enable") + "</button>"
+    ]);
+    return section("Market management", "Create the markets instruments can belong to. Disabled markets remain in history but cannot be selected for new instruments.", filterableTable("Search market, category, status...", ["Market", "Category", "Description", "Status", "Order", "Action"], rows), '<button type="button" class="btn primary" data-action="market-new">New market</button>');
+  }
+
   function instrumentsPage() {
-    return section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", filterableTable("Search symbol, market, category...", ["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], data.instruments.map((row) => [row[0], row[1], row[2], row[3], badge(row[4]), badge(row[5]), modalButton("Edit", "instrument")])), modalButton("Add instrument", "instrument", "primary"));
+    const activeMarkets = data.marketRecords.filter((row) => row.status === "ACTIVE");
+    const action = activeMarkets.length ? '<button type="button" class="btn primary" data-action="instrument-new">Add instrument</button>' : linkButton("Create enabled market first", "markets.html", "primary");
+    return section("Instrument universe", "Control visibility, tradability, investability, and restrictions across supported asset classes.", filterableTable("Search symbol, market, category...", ["Symbol", "Name", "Category", "Market", "Risk", "Status", "Action"], data.instrumentRecords.map((row) => [row.symbol, row.name, row.category, row.market, badge(label(row.riskLevel)), badge(label(row.status)), '<button class="btn" type="button" data-action="instrument-edit" data-instrument-id="' + escapeHtml(row.id) + '">Edit</button>'])), action);
   }
 
   function riskPage() {
@@ -1463,6 +1488,7 @@
       case "orders.html": return ordersPage();
       case "options.html": return optionsPage();
       case "payouts.html": return payoutsPage();
+      case "markets.html": return marketsPage();
       case "instruments.html": return instrumentsPage();
       case "risk.html": return riskPage();
       case "reports.html": return reportsPage();
@@ -1739,7 +1765,8 @@
       "task-status", "report-download", "deposit-method-save",
       "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
       "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision",
-      "product-save", "product-allocation-save"
+      "product-save", "product-allocation-save", "market-save", "market-status-toggle",
+      "instrument-save"
     ].includes(action);
   }
 
@@ -1817,6 +1844,13 @@
           }
           else if (action === "approval-decision") openApprovalDecision(node.dataset.approvalId, node.dataset.approvalDecision);
           else if (action === "approval-confirm") await submitApprovalDecision();
+          else if (action === "market-new") openMarketEditor();
+          else if (action === "market-edit") openMarketEditor(node.dataset.marketId);
+          else if (action === "market-save") await submitMarket(node.dataset.marketId);
+          else if (action === "market-status-toggle") await toggleMarketStatus(node.dataset.marketId, node.dataset.marketStatus);
+          else if (action === "instrument-new") openInstrumentEditor();
+          else if (action === "instrument-edit") openInstrumentEditor(node.dataset.instrumentId);
+          else if (action === "instrument-save") await submitInstrument(node.dataset.instrumentId);
           else if (action === "product-new") openProductEditor();
           else if (action === "product-edit") openProductEditor(liveRefs.productId);
           else if (action === "product-save") await submitProductEditor();
@@ -1985,6 +2019,81 @@
       "quick-action": ["Quick action", "createAdminTask", [["Action", "Create follow-up task"], ["Owner", "Operations"], ["Priority", "Normal"]]]
     };
     return copy[type] || copy.task;
+  }
+
+  function marketOptions(selectedName) {
+    const activeMarkets = data.marketRecords.filter((row) => row.status === "ACTIVE");
+    return activeMarkets.map((market) => '<option value="' + escapeHtml(market.name) + '" ' + (market.name === selectedName ? "selected" : "") + '>' + escapeHtml(market.name) + '</option>').join("");
+  }
+
+  function openMarketEditor(id) {
+    const root = document.querySelector("[data-modal-root]");
+    const market = data.marketRecords.find((row) => row.id === id) || null;
+    if (!root) return;
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Market management</p><h2>' + (market ? "Edit market" : "Create market") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><div class="product-editor-grid"><label>Market name<input name="marketName" maxlength="80" value="' + escapeHtml(market?.name || "") + '" placeholder="e.g. US Stocks"></label><label>Category<input name="marketCategory" maxlength="80" value="' + escapeHtml(market?.category || "") + '" placeholder="e.g. Equities"></label><label>Status<select name="marketStatus"><option value="ACTIVE" ' + (!market || market.status === "ACTIVE" ? "selected" : "") + '>Active</option><option value="DISABLED" ' + (market?.status === "DISABLED" ? "selected" : "") + '>Disabled</option></select></label><label>Display order<input name="marketSortOrder" type="number" min="0" max="10000" step="1" value="' + escapeHtml(market?.sortOrder ?? 100) + '"></label></div><label>Description<textarea name="marketDescription" maxlength="500" placeholder="Describe the assets this market contains.">' + escapeHtml(market?.description || "") + '</textarea></label></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="market-save" data-market-id="' + escapeHtml(market?.id || "") + '">Save market</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitMarket(id) {
+    const root = document.querySelector("[data-modal-root]");
+    const payload = {
+      name: root?.querySelector('[name="marketName"]')?.value.trim() || "",
+      category: root?.querySelector('[name="marketCategory"]')?.value.trim() || "",
+      description: root?.querySelector('[name="marketDescription"]')?.value.trim() || undefined,
+      status: root?.querySelector('[name="marketStatus"]')?.value || "ACTIVE",
+      sortOrder: Number(root?.querySelector('[name="marketSortOrder"]')?.value || 100)
+    };
+    if (payload.name.length < 2) { toast("Enter a market name."); return; }
+    if (payload.category.length < 2) { toast("Enter a market category."); return; }
+    if (!Number.isInteger(payload.sortOrder) || payload.sortOrder < 0) { toast("Enter a valid display order."); return; }
+    const saved = await api(id ? "/api/v1/admin/markets/" + encodeURIComponent(id) : "/api/v1/admin/markets", { method: id ? "PATCH" : "POST", body: JSON.stringify(payload) });
+    await loadBackendData();
+    closeModal();
+    render();
+    toast(saved.name + " market saved.");
+  }
+
+  async function toggleMarketStatus(id, status) {
+    if (!id || !status) { toast("Market record is missing."); return; }
+    await api("/api/v1/admin/markets/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify({ status }) });
+    await loadBackendData();
+    render();
+    toast("Market " + (status === "ACTIVE" ? "enabled." : "disabled."));
+  }
+
+  function openInstrumentEditor(id) {
+    const root = document.querySelector("[data-modal-root]");
+    const instrument = data.instrumentRecords.find((row) => row.id === id) || null;
+    const options = marketOptions(instrument?.market || "");
+    if (!root) return;
+    if (!options) { toast("Create and enable a market before adding instruments."); return; }
+    root.innerHTML = '<div class="modal-backdrop"><section class="modal modal-proof-wide" role="dialog" aria-modal="true"><div class="modal-head"><div><p class="eyebrow">Instrument setup</p><h2>' + (instrument ? "Edit instrument" : "Add instrument") + '</h2></div><button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button></div><div class="modal-body"><div class="product-editor-grid"><label>Symbol<input name="instrumentSymbol" maxlength="30" value="' + escapeHtml(instrument?.symbol || "") + '" placeholder="AAPL"></label><label>Name<input name="instrumentName" maxlength="160" value="' + escapeHtml(instrument?.name || "") + '" placeholder="Apple Inc."></label><label>Market<select name="instrumentMarket">' + options + '</select></label><label>Category<input name="instrumentCategory" maxlength="60" value="' + escapeHtml(instrument?.category || "") + '" placeholder="Stock"></label><label>Currency<input name="instrumentCurrency" maxlength="3" value="' + escapeHtml(instrument?.currency || "USD") + '"></label><label>Risk level<select name="instrumentRisk"><option value="LOW" ' + (instrument?.riskLevel === "LOW" ? "selected" : "") + '>Low</option><option value="MODERATE" ' + (!instrument || instrument.riskLevel === "MODERATE" ? "selected" : "") + '>Moderate</option><option value="HIGH" ' + (instrument?.riskLevel === "HIGH" ? "selected" : "") + '>High</option><option value="CUSTOM" ' + (instrument?.riskLevel === "CUSTOM" ? "selected" : "") + '>Custom</option></select></label><label>Status<select name="instrumentStatus"><option value="ACTIVE" ' + (!instrument || instrument.status === "ACTIVE" ? "selected" : "") + '>Active</option><option value="INACTIVE" ' + (instrument?.status === "INACTIVE" ? "selected" : "") + '>Inactive</option><option value="SUSPENDED" ' + (instrument?.status === "SUSPENDED" ? "selected" : "") + '>Suspended</option><option value="RESTRICTED" ' + (instrument?.status === "RESTRICTED" ? "selected" : "") + '>Restricted</option></select></label><label>Tradable<select name="instrumentTradable"><option value="true" ' + (instrument?.tradable ? "selected" : "") + '>Yes</option><option value="false" ' + (!instrument?.tradable ? "selected" : "") + '>No</option></select></label><label>Investable<select name="instrumentInvestable"><option value="true" ' + (instrument?.investable !== false ? "selected" : "") + '>Yes</option><option value="false" ' + (instrument?.investable === false ? "selected" : "") + '>No</option></select></label></div></div><div class="modal-actions"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn primary" type="button" data-action="instrument-save" data-instrument-id="' + escapeHtml(instrument?.id || "") + '">Save instrument</button></div></section></div>';
+    bindActions();
+  }
+
+  async function submitInstrument(id) {
+    const root = document.querySelector("[data-modal-root]");
+    const payload = {
+      symbol: root?.querySelector('[name="instrumentSymbol"]')?.value.trim() || "",
+      name: root?.querySelector('[name="instrumentName"]')?.value.trim() || "",
+      market: root?.querySelector('[name="instrumentMarket"]')?.value || "",
+      category: root?.querySelector('[name="instrumentCategory"]')?.value.trim() || "",
+      currency: (root?.querySelector('[name="instrumentCurrency"]')?.value.trim() || "USD").toUpperCase(),
+      riskLevel: root?.querySelector('[name="instrumentRisk"]')?.value || "MODERATE",
+      status: root?.querySelector('[name="instrumentStatus"]')?.value || "ACTIVE",
+      tradable: root?.querySelector('[name="instrumentTradable"]')?.value === "true",
+      investable: root?.querySelector('[name="instrumentInvestable"]')?.value !== "false"
+    };
+    if (!payload.symbol) { toast("Enter an instrument symbol."); return; }
+    if (payload.name.length < 2) { toast("Enter an instrument name."); return; }
+    if (!payload.market) { toast("Select a market."); return; }
+    if (payload.category.length < 2) { toast("Enter an instrument category."); return; }
+    if (payload.currency.length !== 3) { toast("Currency must be a three-letter code such as USD."); return; }
+    const saved = await api(id ? "/api/v1/admin/instruments/" + encodeURIComponent(id) : "/api/v1/admin/instruments", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+    await loadBackendData();
+    closeModal();
+    render();
+    toast(saved.symbol + " instrument saved.");
   }
 
   function openProductEditor(id) {
