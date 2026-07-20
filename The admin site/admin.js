@@ -311,8 +311,9 @@
       method: "POST",
       body: JSON.stringify({ fileName: file.name, mimeType: file.type, base64 })
     });
+    if (!uploaded?.url) throw new Error("Upload completed without a public banner URL.");
     const input = root?.querySelector("[data-product-banner-url]") || root?.querySelector('[name="productBannerUrl"]');
-    if (input && uploaded?.url) input.value = uploaded.url;
+    if (input) input.value = uploaded.url;
     updateProductBannerPreview(root);
     if (root === document && liveRefs.productId && uploaded?.url) {
       await persistProductBannerUrl(uploaded.url, true);
@@ -2351,6 +2352,7 @@
   async function persistProductBannerUrl(bannerUrl, silent) {
     const id = liveRefs.productId;
     if (!id) { toast("Open a product before saving a banner."); return; }
+    if (!bannerUrl) throw new Error("Upload or paste a banner image URL before saving.");
     const saved = await api("/api/v1/admin/portfolio-products/" + encodeURIComponent(id) + "/banner", {
       method: "PATCH",
       body: JSON.stringify({ bannerUrl })

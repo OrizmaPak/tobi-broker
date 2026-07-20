@@ -116,11 +116,13 @@ v1AdminBrokerRouter.post("/portfolio-products/banner-upload", portfolioRoles, as
 
 v1AdminBrokerRouter.patch("/portfolio-products/:id/banner", portfolioRoles, asyncHandler(async (req, res) => {
   const input = z.object({
-    bannerUrl: z.string().trim().max(1000).optional().transform((value) => value || null)
+    bannerUrl: z.string().trim().max(1000).optional(),
+    clear: z.boolean().optional()
   }).parse(req.body);
   const before = await prisma.portfolioProduct.findUnique({ where: { id: String(req.params.id) } });
   if (!before) throw new ApiError(404, "Portfolio product was not found", "PORTFOLIO_NOT_FOUND");
-  const row = await prisma.portfolioProduct.update({ where: { id: before.id }, data: { bannerUrl: input.bannerUrl } });
+  if (!input.clear && !input.bannerUrl) throw new ApiError(422, "Upload or paste a banner image URL before saving", "BANNER_URL_REQUIRED");
+  const row = await prisma.portfolioProduct.update({ where: { id: before.id }, data: { bannerUrl: input.clear ? null : input.bannerUrl } });
   await writeAudit("updatePortfolioProductBanner", "PortfolioProduct", row.id, undefined, { req, before: { bannerUrl: before.bannerUrl }, after: { bannerUrl: row.bannerUrl } });
   return ok(res, row);
 }));
