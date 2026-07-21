@@ -634,7 +634,13 @@ v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req,
   await accrueAllInvestmentProfits();
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  const where: Prisma.InvestmentProfitScheduleWhereInput = status ? { status: status.toUpperCase() } : {};
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
+  const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
+  const filterWhere: Prisma.InvestmentProfitScheduleWhereInput = {
+    ...(clientId ? { clientId } : {}),
+    ...(productId ? { productId } : {})
+  };
+  const where: Prisma.InvestmentProfitScheduleWhereInput = { ...filterWhere, ...(status ? { status: status.toUpperCase() } : {}) };
   const include = { client: true, product: true, instrument: true, investment: true, receipt: true } as const;
   if (status) {
     const [rows, total] = await Promise.all([
@@ -644,8 +650,8 @@ v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req,
     return ok(res, rows, 200, pageMeta(page, limit, total));
   }
 
-  const pendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { status: "PENDING" };
-  const nonPendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { status: { not: "PENDING" } };
+  const pendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { ...filterWhere, status: "PENDING" };
+  const nonPendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { ...filterWhere, status: { not: "PENDING" } };
   const [pendingTotal, nonPendingTotal] = await Promise.all([
     prisma.investmentProfitSchedule.count({ where: pendingWhere }),
     prisma.investmentProfitSchedule.count({ where: nonPendingWhere })

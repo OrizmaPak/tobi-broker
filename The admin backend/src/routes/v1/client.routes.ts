@@ -834,7 +834,7 @@ v1ClientRouter.get("/distributions", asyncHandler(async (req, res) => {
   const id = clientId(req);
   await accrueClientInvestmentProfits(id);
   const [distributions, botEvents] = await Promise.all([
-    prisma.distributionItem.findMany({ where: { clientId: id }, include: { batch: true, investment: { include: { product: true } } }, orderBy: { createdAt: "desc" } }),
+    prisma.distributionItem.findMany({ where: { clientId: id }, include: { batch: { include: { instrument: true, product: true } }, investment: { include: { product: true } } }, orderBy: { createdAt: "desc" } }),
     prisma.investmentProfitSchedule.findMany({
       where: { clientId: id, status: "POSTED" },
       include: { investment: { include: { product: true } }, instrument: true, receipt: true },
