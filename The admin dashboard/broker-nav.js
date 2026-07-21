@@ -591,8 +591,18 @@
     return '<span class="bp-market-logo bp-market-logo-fallback">' + fallback + "</span>";
   }
 
+  function displayInstrumentSymbol(row) {
+    const symbol = String((row && row.symbol) || "").toUpperCase();
+    const name = String((row && row.name) || "");
+    if (symbol === "AAPL4452044") return "AAPL";
+    if (/^[A-Z]{2,8}\d{4,}$/.test(symbol) && /notes?\s+due/i.test(name)) {
+      return symbol.replace(/\d+$/, "");
+    }
+    return symbol;
+  }
+
   function tradingViewSymbol(row) {
-    const symbol = String((row && row.symbol) || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const symbol = displayInstrumentSymbol(row).replace(/[^A-Z0-9]/g, "");
     const market = String((row && row.market) || "").toUpperCase();
     const category = String((row && row.category) || "").toUpperCase();
     if (!symbol) return "NASDAQ:AAPL";
@@ -1480,7 +1490,8 @@
     const hasFallbackPrice = row.currentPrice == null && row.fallbackPrice != null;
     return {
       id: row.id,
-      symbol: row.symbol,
+      rawSymbol: row.symbol,
+      symbol: displayInstrumentSymbol(row),
       name: row.name,
       category: category,
       market: row.market || "Global",
