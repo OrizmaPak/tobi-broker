@@ -282,6 +282,7 @@
     notificationUnreadCount: 0,
     seenNotificationIds: {},
     marketDemoTimer: null,
+    tradingQuoteTimer: null,
     loginMfaRequired: false,
     mfaSetup: null
   };
@@ -1273,6 +1274,36 @@
     };
   }
 
+  function tradingQuote(row) {
+    const move = demoMarketMove(row || {});
+    const base = move.price || numberValue(row && (row.basePrice || row.fallbackPrice || row.currentPrice || row.price));
+    const minSpread = base < 1 ? 0.0001 : 0.01;
+    const spread = base > 0 ? Math.max(base * 0.0016, minSpread) : 0;
+    return {
+      base: base,
+      bid: Math.max(base - spread / 2, 0),
+      ask: base + spread / 2,
+      spread: spread,
+      move: move,
+      lotSize: base > 0 ? Math.max(0.01, Math.min(1000, 10000 / base)).toFixed(base < 10 ? 4 : 2) : "0.00",
+      session: row && row.priceAsOf ? "Snapshot " + formatDate(row.priceAsOf) : "Broker snapshot",
+      source: row && row.priceSource ? row.priceSource : "BullPort market desk"
+    };
+  }
+
+  function terminalPriceNode(row, side, value) {
+    const base = tradingQuote(row).base;
+    return '<span data-bp-terminal-price="' + escapeHtml(side) + '" data-base="' + escapeHtml(base) + '" data-symbol="' + escapeHtml((row && row.symbol) || "BP") + '">' + escapeHtml(base > 0 ? marketMoney(value) : "Unavailable") + '</span>';
+  }
+
+  function terminalMetric(label, value, tone) {
+    return '<div class="bp-terminal-metric ' + (tone ? "is-" + tone : "") + '"><span>' + escapeHtml(label) + '</span><strong>' + value + '</strong></div>';
+  }
+
+  function tradingEligibilityMessage() {
+    return "You are not yet eligible for trading. Contact support for more information.";
+  }
+
   function signedMoney(value) {
     const amount = numberValue(value);
     return (amount > 0 ? "+" : "") + money(amount);
@@ -1896,6 +1927,47 @@
     }, 24 * 60 * 60 * 1000);
   }
 
+  function refreshTradingQuotes() {
+    const tick = Math.floor(Date.now() / 4500);
+    document.querySelectorAll("[data-bp-terminal-price]").forEach(function (node) {
+      const base = numberValue(node.getAttribute("data-base"));
+      if (base <= 0) {
+        node.textContent = "Unavailable";
+        return;
+      }
+      const side = node.getAttribute("data-bp-terminal-price") || "last";
+      const symbol = node.getAttribute("data-symbol") || "BP";
+      const unit = stableDemoUnit(symbol + ":" + side + ":" + tick);
+      const drift = (unit - 0.5) * 0.0022;
+      const spread = side === "ask" ? 0.0008 : side === "bid" ? -0.0008 : 0;
+      const quote = Math.max(base * (1 + drift + spread), 0);
+      node.textContent = marketMoney(quote);
+    });
+    document.querySelectorAll("[data-bp-terminal-last-updated]").forEach(function (node) {
+      node.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    });
+  }
+
+  function startTradingQuoteRefresh() {
+    if (currentFile() !== "trading.html") {
+      if (appState.tradingQuoteTimer) {
+        window.clearInterval(appState.tradingQuoteTimer);
+        appState.tradingQuoteTimer = null;
+      }
+      return;
+    }
+    refreshTradingQuotes();
+    if (appState.tradingQuoteTimer) return;
+    appState.tradingQuoteTimer = window.setInterval(function () {
+      if (currentFile() !== "trading.html") {
+        window.clearInterval(appState.tradingQuoteTimer);
+        appState.tradingQuoteTimer = null;
+        return;
+      }
+      refreshTradingQuotes();
+    }, 4500);
+  }
+
   function focusDepositTarget() {
     if (currentFile() !== "deposit.html") return;
     const targetId = new URLSearchParams(location.search).get("deposit");
@@ -2471,20 +2543,66 @@
     const targetId = queryValue("instrument");
     const selected = DEMO.instruments.find(function (row) { return row.id === targetId || row.symbol === targetId; }) || DEMO.instruments[0];
     if (!selected) return section("Trading workspace", "The internal order desk accepts requests only for published instruments.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No instrument is currently available.</div>');
-    return '' +
-      '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-8">' + section(selected.name + " (" + selected.symbol + ")", "TradingView chart preview plus BullPort internal order request controls.", '<div class="bp-trading-panel">' + tradingViewChart(selected) + '</div><div class="mt-4 flex flex-wrap gap-3"><button type="button" data-broker-action="order-create" data-broker-instrument-id="' + escapeHtml(selected.id) + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Create order request</button><button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + escapeHtml(selected.id) + '" class="inline-flex items-center rounded-md border border-primary/30 px-4 py-2 text-sm font-semibold text-primary">Add to watchlist</button></div>') + "</div>" +
-      '<div class="xl:col-span-4">' + section("Instrument controls", "Eligibility and instrument controls from the broker API.", keyValueRows([
+    const quote = tradingQuote(selected);
+    const quoteTone = quote.move.tone === "up" ? "profit" : "loss";
+    const disabledNote = tradingEligibilityMessage();
+    const terminalHeader = '<section class="bp-terminal-hero">'
+      + '<div class="bp-terminal-instrument"><div class="bp-terminal-logo">' + instrumentLogo(selected) + '</div><div><span>BullPort trading terminal</span><h2>' + escapeHtml(selected.name) + '</h2><p>' + escapeHtml(selected.symbol) + ' / ' + escapeHtml(selected.currency) + ' - ' + escapeHtml(selected.market) + '</p></div></div>'
+      + '<div class="bp-terminal-status"><span class="is-live"></span><strong>Market watch</strong><em data-bp-terminal-last-updated="true">Quotes refreshing from broker snapshot</em></div>'
+      + '<div class="bp-terminal-quote-strip">'
+      + terminalMetric("Last", terminalPriceNode(selected, "last", quote.base), quoteTone)
+      + terminalMetric("Bid", terminalPriceNode(selected, "bid", quote.bid), "bid")
+      + terminalMetric("Ask", terminalPriceNode(selected, "ask", quote.ask), "ask")
+      + terminalMetric("Move", '<span class="bp-market-change is-' + quote.move.tone + '">' + escapeHtml(quote.move.label) + '</span>', quoteTone)
+      + '</div>'
+      + '</section>';
+    const marketTape = '<div class="bp-terminal-tape">'
+      + '<span>Symbol <strong>' + escapeHtml(selected.symbol) + '</strong></span>'
+      + '<span>Category <strong>' + escapeHtml(selected.category) + '</strong></span>'
+      + '<span>Risk <strong>' + escapeHtml(selected.risk) + '</strong></span>'
+      + '<span>Spread <strong>' + escapeHtml(marketMoney(quote.spread)) + '</strong></span>'
+      + '<span>Lot guide <strong>' + escapeHtml(quote.lotSize) + '</strong></span>'
+      + '<span>Pricing <strong>' + escapeHtml(quote.source) + '</strong></span>'
+      + '</div>';
+    const orderTicket = '<section class="bp-terminal-card bp-order-ticket">'
+      + '<div class="bp-terminal-card-head"><div><span>Order ticket</span><h3>Execution locked</h3></div>' + badge("Eligibility required", "warning") + '</div>'
+      + '<div class="bp-order-ticket-grid">'
+      + '<label><span>Order type</span><select disabled><option>Market snapshot</option></select></label>'
+      + '<label><span>Quantity</span><input type="number" value="1" min="0.00000001" step="0.00000001" disabled></label>'
+      + '<label><span>Time in force</span><select disabled><option>Day</option></select></label>'
+      + '<label><span>Estimated value</span><input value="' + escapeHtml(selected.price) + '" disabled></label>'
+      + '</div>'
+      + '<div class="bp-terminal-lock"><strong>Trading access is not active</strong><span>' + escapeHtml(disabledNote) + '</span></div>'
+      + '<div class="bp-trade-buttons">'
+      + '<button type="button" class="bp-trade-button is-sell" data-broker-action="trade-locked" data-broker-trade-side="Sell" data-broker-instrument-id="' + escapeHtml(selected.id) + '"><span>Sell</span><strong>' + terminalPriceNode(selected, "bid", quote.bid) + '</strong></button>'
+      + '<button type="button" class="bp-trade-button is-buy" data-broker-action="trade-locked" data-broker-trade-side="Buy" data-broker-instrument-id="' + escapeHtml(selected.id) + '"><span>Buy</span><strong>' + terminalPriceNode(selected, "ask", quote.ask) + '</strong></button>'
+      + '</div>'
+      + '</section>';
+    const instrumentPanel = '<section class="bp-terminal-card">'
+      + '<div class="bp-terminal-card-head"><div><span>Instrument controls</span><h3>Broker context</h3></div>' + badge(selected.tradable === "Yes" ? "Tradable asset" : "Watch only", selected.tradable === "Yes" ? "success" : "warning") + '</div>'
+      + keyValueRows([
         { label: "Published price", value: selected.price },
         { label: "Snapshot time", value: selected.priceAsOf ? formatDate(selected.priceAsOf) : "Unavailable" },
         { label: "Category", value: selected.category },
         { label: "Market", value: selected.market },
         { label: "Risk", value: selected.risk },
-        { label: "Tradable", value: selected.tradable },
         { label: "Investable", value: selected.investable },
-        { label: "Execution mode", value: "Internal order desk" }
-      ])) + "</div>" +
-      "</div>" +
+        { label: "Session", value: quote.session },
+        { label: "Execution mode", value: "Locked pending eligibility" }
+      ])
+      + '<div class="bp-terminal-secondary-actions"><button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + escapeHtml(selected.id) + '">Add to watchlist</button><a href="market.html">Back to market</a></div>'
+      + '</section>';
+    const chartPanel = '<section class="bp-terminal-chart-card">'
+      + '<div class="bp-terminal-chart-head"><div><span>Advanced chart</span><h3>' + escapeHtml(selected.symbol) + ' market structure</h3></div><p>TradingView chart is displayed as an external widget. BullPort quotes use the broker-managed instrument snapshot.</p></div>'
+      + '<div class="bp-trading-panel">' + tradingViewChart(selected) + '</div>'
+      + '</section>';
+    return '' +
+      '<div class="bp-terminal-shell">' +
+      terminalHeader +
+      marketTape +
+      '<div class="bp-terminal-grid">' + instrumentPanel + orderTicket + '</div>' +
+      chartPanel +
+      '</div>' +
       section("Recent order activity", "Trade status, execution outcome and approvals.", table(
         ["Instrument", "Side", "Order type", "Quantity", "Price", "Status"],
         DEMO.orderActivity.map(function (row) {
@@ -3079,6 +3197,7 @@
     }
 
     main.innerHTML = shell(meta.title, meta.subtitle, body);
+    startTradingQuoteRefresh();
     focusDepositTarget();
     clearBootScreen();
   }
@@ -4023,8 +4142,9 @@
       case "market-clear":
         navigateTo("market.html");
         return;
+      case "trade-locked":
       case "order-create":
-        showModal("Create order request", '<p>The instruction is submitted to BullPort\'s internal order desk for risk review and approval.</p><div class="broker-form-grid"><input type="hidden" name="instrumentId" value="' + (node.getAttribute("data-broker-instrument-id") || "") + '"><label class="broker-form-field"><span>Side</span><select name="side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label><label class="broker-form-field"><span>Order type</span><select name="type"><option value="MARKET">Market snapshot</option><option value="LIMIT">Limit</option></select></label>' + modalField("Quantity", "quantity", "number", "1", 'min="0.00000001" step="0.00000001"') + modalField("Limit price (required for limit)", "limitPrice", "number", "", 'min="0.01" step="0.01"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="order-confirm">Submit order request</button>');
+        showModal("Trading eligibility required", '<div class="bp-trade-lock-modal"><span>' + escapeHtml(node.getAttribute("data-broker-trade-side") || "Trade") + ' request blocked</span><strong>' + escapeHtml(tradingEligibilityMessage()) + '</strong><p>Trading controls are visible for market review only. BullPort will enable execution after account eligibility, risk and support review are complete.</p></div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Close</button><a class="broker-modal-button is-primary" href="support.html">Contact support</a>', "trading");
         return;
       case "order-confirm":
         try {
@@ -4332,6 +4452,7 @@
       + " .broker-deposit-proof-modal{display:grid;gap:16px}.broker-deposit-proof-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid rgba(22,163,74,.18);border-radius:18px;background:linear-gradient(135deg,rgba(240,253,244,.92),rgba(255,255,255,.92));padding:14px 16px}.broker-deposit-proof-intro span{display:inline-flex;flex:none;border-radius:999px;background:#16a34a;color:#fff;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.broker-deposit-proof-intro p{margin:0;color:#475569;font-size:13px;line-height:1.55}.broker-deposit-proof-layout{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1fr);gap:16px;align-items:start}.broker-deposit-proof-card,.broker-deposit-proof-form{min-width:0;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#fff;padding:16px;box-shadow:0 14px 32px rgba(15,23,42,.06)}.broker-deposit-proof-card{position:sticky;top:0;background:linear-gradient(180deg,#ffffff,#f8fbf9)}.broker-deposit-proof-card>small{display:block;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-card>strong{display:block;margin-top:6px;color:#101713;font-size:18px;font-weight:900;line-height:1.25}.broker-deposit-proof-card .grid{margin-top:14px}.broker-deposit-proof-note{margin-top:12px;border-radius:14px;background:#f8fafc;padding:12px}.broker-deposit-proof-note span{display:block;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-note p{margin:5px 0 0;color:#101713;font-size:13px;font-weight:750;line-height:1.45}.broker-deposit-proof-instructions{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-deposit-proof-form .broker-form-grid{margin-top:0;grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-proof-form .broker-form-field:has(textarea),.broker-deposit-proof-form .broker-form-field:has(input[type=file]),.broker-deposit-proof-form .text-xs{grid-column:1/-1}.broker-deposit-proof-form .text-xs{margin:-4px 0 0;color:#64748b;font-size:12px;line-height:1.45}"
       + " .broker-deposit-status{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}.broker-deposit-status i{height:7px;width:7px;border-radius:999px;background:currentColor;box-shadow:0 0 0 4px currentColor;opacity:.72}.broker-deposit-status.is-success{border-color:rgba(22,163,74,.22);background:rgba(22,163,74,.1);color:#15803d}.broker-deposit-status.is-warning{border-color:rgba(217,119,6,.22);background:rgba(245,158,11,.12);color:#b45309}.broker-deposit-status.is-danger{border-color:rgba(225,29,72,.22);background:rgba(244,63,94,.1);color:#be123c}.broker-deposit-status.is-info{border-color:rgba(2,132,199,.22);background:rgba(14,165,233,.1);color:#0369a1}.broker-deposit-status i{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}.broker-deposit-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;border-radius:12px;padding:7px 10px;font-size:13px;font-weight:950;letter-spacing:0}.broker-deposit-amount.is-success{background:linear-gradient(135deg,rgba(22,163,74,.14),rgba(240,253,244,.92));color:#15803d}.broker-deposit-amount.is-warning{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(255,251,235,.94));color:#b45309}.broker-deposit-amount.is-danger{background:linear-gradient(135deg,rgba(244,63,94,.13),rgba(255,241,242,.94));color:#be123c}.broker-deposit-amount.is-info{background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(240,249,255,.94));color:#0369a1}.dark .broker-deposit-status.is-success,.dark .broker-deposit-amount.is-success{color:#86efac}.dark .broker-deposit-status.is-warning,.dark .broker-deposit-amount.is-warning{color:#fcd34d}.dark .broker-deposit-status.is-danger,.dark .broker-deposit-amount.is-danger{color:#fda4af}.dark .broker-deposit-status.is-info,.dark .broker-deposit-amount.is-info{color:#7dd3fc}"
       + " .bp-pnl-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;font-variant-numeric:tabular-nums;font-size:13px;font-weight:950}.bp-pnl-amount.is-profit{color:#15803d}.bp-pnl-amount.is-loss{color:#be123c}.bp-pnl-amount.is-flat{color:hsl(var(--muted-foreground))}.bp-instrument-cell{display:inline-flex;align-items:center;gap:10px;min-width:150px}.bp-instrument-logo{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:linear-gradient(135deg,#f8fafc,#e2e8f0);color:#0f172a;font-size:11px;font-weight:950;overflow:hidden}.bp-instrument-logo img{width:22px;height:22px;object-fit:contain}.bp-instrument-cell strong{display:block;font-size:13px;font-weight:900;line-height:1.1}.bp-instrument-cell em{display:block;margin-top:3px;color:hsl(var(--muted-foreground));font-size:11px;font-style:normal;line-height:1.2}.bp-payout-tone{display:inline-flex;align-items:center;white-space:nowrap;font-size:12px;font-weight:900}.bp-payout-tone.is-profit{color:#15803d}.bp-payout-tone.is-loss{color:#be123c}.bp-payout-tone.is-flat{color:hsl(var(--muted-foreground))}.dark .bp-pnl-amount.is-profit,.dark .bp-payout-tone.is-profit{color:#86efac}.dark .bp-pnl-amount.is-loss,.dark .bp-payout-tone.is-loss{color:#fda4af}.dark .bp-instrument-logo{border-color:rgba(148,163,184,.22);background:linear-gradient(135deg,rgba(15,23,18,.92),rgba(30,41,59,.7));color:#e2e8f0}"
+      + " .bp-terminal-shell{display:grid;gap:18px}.bp-terminal-hero{position:relative;overflow:hidden;border:1px solid rgba(34,197,94,.22);border-radius:26px;background:radial-gradient(circle at 8% 0,rgba(34,197,94,.26),transparent 34%),linear-gradient(135deg,#07110c,#0b1711 46%,#101a21);box-shadow:0 24px 70px rgba(2,6,23,.26);padding:20px;color:#e7fff0}.bp-terminal-hero:before{content:\"\";position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(0deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(180deg,rgba(0,0,0,.75),transparent);pointer-events:none}.bp-terminal-instrument,.bp-terminal-status,.bp-terminal-quote-strip{position:relative;z-index:1}.bp-terminal-instrument{display:flex;align-items:center;gap:14px}.bp-terminal-logo{display:flex;align-items:center;justify-content:center;width:62px;height:62px;border-radius:20px;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}.bp-terminal-logo .bp-market-logo{width:46px;height:46px;border-radius:16px;background:rgba(255,255,255,.12);box-shadow:none}.bp-terminal-instrument span,.bp-terminal-card-head span,.bp-terminal-chart-head span{display:block;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.11em}.bp-terminal-instrument h2{margin:3px 0 0;color:#fff;font-family:'Chakra Petch',sans-serif;font-size:clamp(24px,4vw,42px);font-weight:950;line-height:1}.bp-terminal-instrument p{margin:7px 0 0;color:#a7f3d0;font-size:13px;font-weight:800}.bp-terminal-status{position:absolute;right:20px;top:20px;display:grid;gap:3px;text-align:right}.bp-terminal-status span{justify-self:end;width:10px;height:10px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 6px rgba(34,197,94,.16),0 0 24px rgba(34,197,94,.75)}.bp-terminal-status strong{color:#fff;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.bp-terminal-status em{color:#94a3b8;font-size:12px;font-style:normal;font-weight:700}.bp-terminal-quote-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:20px}.bp-terminal-metric{border:1px solid rgba(148,163,184,.18);border-radius:18px;background:rgba(15,23,42,.68);padding:14px;backdrop-filter:blur(14px)}.bp-terminal-metric span:first-child{display:block;color:#94a3b8;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.09em}.bp-terminal-metric strong{display:block;margin-top:8px;color:#f8fafc;font-family:'Chakra Petch',sans-serif;font-size:22px;font-weight:950;letter-spacing:-.02em}.bp-terminal-metric.is-profit strong,.bp-terminal-metric.is-bid strong{color:#86efac}.bp-terminal-metric.is-loss strong,.bp-terminal-metric.is-ask strong{color:#fda4af}.bp-terminal-tape{display:flex;flex-wrap:wrap;gap:8px;border:1px solid rgba(148,163,184,.18);border-radius:18px;background:#09110d;color:#94a3b8;padding:10px}.bp-terminal-tape span{border:1px solid rgba(148,163,184,.16);border-radius:999px;background:rgba(255,255,255,.04);padding:7px 10px;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.04em}.bp-terminal-tape strong{color:#e2e8f0}.bp-terminal-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.48fr);gap:18px;align-items:stretch}.bp-terminal-card,.bp-terminal-chart-card{border:1px solid rgba(148,163,184,.2);border-radius:24px;background:linear-gradient(180deg,#fff,#f8fafc);box-shadow:0 18px 45px rgba(15,23,42,.08);padding:18px}.bp-terminal-card-head,.bp-terminal-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.bp-terminal-card-head h3,.bp-terminal-chart-head h3{margin:3px 0 0;color:#0f172a;font-size:19px;font-weight:950;letter-spacing:-.02em}.bp-order-ticket{background:linear-gradient(180deg,#101713,#07110c);color:#f8fafc}.bp-order-ticket .bp-terminal-card-head h3{color:#fff}.bp-order-ticket-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.bp-order-ticket-grid label{display:grid;gap:6px;color:#94a3b8;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.bp-order-ticket-grid input,.bp-order-ticket-grid select{min-height:42px;border:1px solid rgba(148,163,184,.18);border-radius:13px;background:rgba(255,255,255,.06);color:#e2e8f0;padding:9px 11px;font-size:13px;font-weight:850}.bp-terminal-lock{display:grid;gap:4px;margin:14px 0;border:1px solid rgba(245,158,11,.3);border-radius:16px;background:rgba(245,158,11,.1);padding:12px 13px}.bp-terminal-lock strong{color:#fef3c7;font-size:13px;font-weight:950}.bp-terminal-lock span{color:#fde68a;font-size:12px;line-height:1.45}.bp-trade-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:auto}.bp-trade-button{position:relative;overflow:hidden;border:0;border-radius:18px;padding:15px;cursor:pointer;color:#fff;text-align:left;box-shadow:0 18px 30px rgba(2,6,23,.25);transition:transform .18s ease,box-shadow .18s ease}.bp-trade-button:hover{transform:translateY(-2px);box-shadow:0 22px 42px rgba(2,6,23,.32)}.bp-trade-button span{display:block;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;opacity:.86}.bp-trade-button strong{display:block;margin-top:8px;font-family:'Chakra Petch',sans-serif;font-size:24px;font-weight:950;letter-spacing:-.03em}.bp-trade-button.is-sell{background:linear-gradient(135deg,#be123c,#f43f5e)}.bp-trade-button.is-buy{background:linear-gradient(135deg,#15803d,#22c55e)}.bp-terminal-secondary-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}.bp-terminal-secondary-actions button,.bp-terminal-secondary-actions a{border:1px solid rgba(22,163,74,.24);border-radius:13px;background:#ecfdf5;color:#15803d;padding:10px 12px;font-size:12px;font-weight:950}.bp-terminal-chart-card{padding:0;overflow:hidden;background:#020617}.bp-terminal-chart-head{margin:0;padding:18px 20px;border-bottom:1px solid rgba(148,163,184,.18);background:linear-gradient(135deg,#0f172a,#111827);color:#e2e8f0}.bp-terminal-chart-head h3{color:#fff}.bp-terminal-chart-head p{max-width:520px;margin:0;color:#94a3b8;font-size:12px;line-height:1.5}.bp-terminal-chart-card .bp-trading-panel{border:0;border-radius:0}.bp-terminal-chart-card .bp-tradingview-frame{min-height:720px}.bp-trade-lock-modal{display:grid;gap:10px}.bp-trade-lock-modal span{display:inline-flex;width:max-content;border-radius:999px;background:rgba(245,158,11,.14);color:#b45309;padding:6px 10px;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.bp-trade-lock-modal strong{color:#0f172a;font-size:20px;font-weight:950;line-height:1.25}.bp-trade-lock-modal p{margin:0;color:#64748b;font-size:13px;line-height:1.55}.dark .bp-terminal-card{background:linear-gradient(180deg,#101713,#0b1210);border-color:rgba(148,163,184,.18)}.dark .bp-terminal-card-head h3{color:#f8fafc}.dark .bp-terminal-secondary-actions button,.dark .bp-terminal-secondary-actions a{background:rgba(34,197,94,.1);color:#86efac;border-color:rgba(34,197,94,.22)}@media (max-width:1120px){.bp-terminal-grid,.bp-terminal-quote-strip{grid-template-columns:1fr 1fr}.bp-terminal-status{position:relative;right:auto;top:auto;margin-top:14px;text-align:left}.bp-terminal-status span{justify-self:start}.bp-terminal-chart-card .bp-tradingview-frame{min-height:620px}}@media (max-width:700px){.bp-terminal-hero,.bp-terminal-card{border-radius:20px;padding:15px}.bp-terminal-grid,.bp-terminal-quote-strip,.bp-order-ticket-grid,.bp-trade-buttons{grid-template-columns:1fr}.bp-terminal-chart-head{display:grid}.bp-terminal-chart-card .bp-tradingview-frame{min-height:480px}.bp-terminal-instrument h2{font-size:24px}}"
       + " .bp-market-search{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;gap:12px;align-items:end;margin-bottom:18px}.bp-market-search label{display:grid;gap:7px;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.bp-market-search input,.bp-market-search select{min-height:44px;border:1px solid #d7e2dc;border-radius:14px;background:#fff;color:#0f172a;padding:10px 12px;font-size:13px;font-weight:750;outline:none}.bp-market-search input:focus,.bp-market-search select:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.bp-market-search-actions{display:flex;gap:8px}.bp-market-search-actions button,.bp-market-actions button{border:1px solid rgba(22,163,74,.28);border-radius:12px;background:#fff;color:#15803d;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-market-search-actions button:first-child,.bp-market-actions button:first-child{background:#16a34a;color:#fff;border-color:#16a34a}.bp-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.bp-market-card{display:grid;gap:14px;border:1px solid rgba(148,163,184,.22);border-radius:20px;background:linear-gradient(180deg,#fff,#f8fbf9);padding:16px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.bp-market-card-head,.bp-market-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.bp-market-title{display:flex;align-items:flex-start;gap:12px;min-width:0}.bp-market-title strong{display:block;color:#0f172a;font-size:16px;font-weight:950}.bp-market-title span{display:block;margin-top:2px;color:#64748b;font-size:12px;font-weight:650;line-height:1.35}.bp-market-logo{display:flex;flex:none;width:42px;height:42px;align-items:center;justify-content:center;border-radius:14px;background:#eef8f0;object-fit:contain;box-shadow:inset 0 0 0 1px rgba(22,163,74,.12)}.bp-market-logo-fallback{color:#15803d;font-size:12px;font-weight:950}.bp-market-price{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.bp-market-price strong{color:#0f172a;font-size:24px;font-weight:950;letter-spacing:-.03em}.bp-market-price span,.bp-market-snapshot{color:#64748b;font-size:12px;font-weight:700}.bp-market-change{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:11px;font-style:normal;font-weight:950;line-height:1}.bp-market-change.is-up{background:rgba(22,163,74,.12);color:#15803d}.bp-market-change.is-down{background:rgba(225,29,72,.11);color:#be123c}.bp-market-tags{display:flex;flex-wrap:wrap;gap:7px}.bp-market-tags span{border:1px solid rgba(148,163,184,.24);border-radius:999px;background:#fff;padding:5px 8px;color:#475569;font-size:11px;font-weight:850}.bp-trading-panel{overflow:hidden;border:1px solid rgba(148,163,184,.26);border-radius:18px;background:#0f172a}.bp-tradingview-frame{display:block;width:100%;min-height:520px;border:0}.dark .bp-market-search input,.dark .bp-market-search select,.dark .bp-market-card,.dark .bp-market-search-actions button,.dark .bp-market-actions button,.dark .bp-market-tags span{background:#101713;color:#f8fafc;border-color:rgba(148,163,184,.22)}.dark .bp-market-title strong,.dark .bp-market-price strong{color:#f8fafc}.dark .bp-market-title span,.dark .bp-market-price span,.dark .bp-market-snapshot{color:#94a3b8}.dark .bp-market-change.is-up{color:#86efac}.dark .bp-market-change.is-down{color:#fda4af}@media (max-width:1100px){.bp-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bp-market-search{grid-template-columns:1fr 1fr}}@media (max-width:700px){.bp-market-grid,.bp-market-search{grid-template-columns:1fr}.bp-market-card-head,.bp-market-actions{align-items:stretch;flex-direction:column}.bp-tradingview-frame{min-height:420px}}"
       + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
       + " @media (max-width:860px){.broker-deposit-proof-layout{grid-template-columns:1fr}.broker-deposit-proof-card{position:static}.broker-deposit-proof-form .broker-form-grid{grid-template-columns:1fr}}"
