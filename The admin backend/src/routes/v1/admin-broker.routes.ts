@@ -638,16 +638,19 @@ v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req,
   const investmentStatus = investmentStatusInput && Object.values(InvestmentStatus).includes(investmentStatusInput as InvestmentStatus) ? investmentStatusInput as InvestmentStatus : undefined;
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
   const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
+  const investmentId = typeof req.query.investmentId === "string" ? req.query.investmentId : undefined;
   const filterWhere: Prisma.InvestmentProfitScheduleWhereInput = {
     ...(investmentStatus ? { investment: { status: investmentStatus } } : {}),
     ...(clientId ? { clientId } : {}),
-    ...(productId ? { productId } : {})
+    ...(productId ? { productId } : {}),
+    ...(investmentId ? { investmentId } : {})
   };
   const where: Prisma.InvestmentProfitScheduleWhereInput = { ...filterWhere, ...(status ? { status: status.toUpperCase() } : {}) };
   const include = { client: true, product: true, instrument: true, investment: true, receipt: true } as const;
   if (status) {
+    const normalizedStatus = status.toUpperCase();
     const [rows, total] = await Promise.all([
-      prisma.investmentProfitSchedule.findMany({ where, include, orderBy: { scheduledAt: "asc" }, skip, take: limit }),
+      prisma.investmentProfitSchedule.findMany({ where, include, orderBy: { scheduledAt: normalizedStatus === "PENDING" ? "asc" : "desc" }, skip, take: limit }),
       prisma.investmentProfitSchedule.count({ where })
     ]);
     return ok(res, rows, 200, pageMeta(page, limit, total));

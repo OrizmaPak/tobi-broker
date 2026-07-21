@@ -9,7 +9,7 @@
     "approvals.html": ["Approvals", "Maker-checker decisions for deposits, withdrawals, product publication, and distributions."],
     "portfolio-products.html": ["Portfolio Products", "Broker-managed portfolio products, risk labels, visibility, minimums, and payout rules."],
     "client-investments.html": ["Client Investments", "Active subscriptions, mandate status, top-ups, exits, and reinvestment instructions."],
-    "dividends-profits.html": ["Dividends & Profits", "Client-facing dividend and profit history filtered by client and invested product."],
+    "dividends-profits.html": ["Dividends & Profits", "Client-facing realized dividend and profit history filtered by client and investment mandate."],
     "orders.html": ["Trading Orders", "Internal order-desk requests, approvals, fills, settlement, and client positions."],
     "options.html": ["Options Access", "Suitability applications, approval levels, restrictions, and options access decisions."],
     "payouts.html": ["Payouts", "Dividend and profit posting, reinvestment handling, schedules, and settlement state."],
@@ -288,7 +288,7 @@
     if (!id) return '<span class="muted">No record</span>';
     const attrs = ' data-investment-id="' + escapeHtml(id) + '" data-investment-name="' + escapeHtml(row?.product?.name || "Investment") + '"';
     const buttons = [];
-    buttons.push('<a class="btn primary" href="dividends-profits.html?clientId=' + encodeURIComponent(row?.clientId || "") + '&productId=' + encodeURIComponent(row?.productId || "") + '">View Dividends & Profits</a>');
+    buttons.push('<a class="btn primary" href="dividends-profits.html?clientId=' + encodeURIComponent(row?.clientId || "") + '&investmentId=' + encodeURIComponent(id) + '">View Dividends & Profits</a>');
     if (status === "ACTIVE") buttons.push('<button class="btn" type="button" data-action="investment-lifecycle" data-investment-action="hold"' + attrs + ">Hold</button>");
     if (status === "HELD") buttons.push('<button class="btn primary" type="button" data-action="investment-lifecycle" data-investment-action="resume"' + attrs + ">Resume</button>");
     if (!["CANCELLED", "CLOSED"].includes(status)) buttons.push('<button class="btn danger" type="button" data-action="investment-lifecycle" data-investment-action="cancel"' + attrs + ">Cancel/refund</button>");
@@ -836,9 +836,10 @@
     if (isDividendsProfitPage) {
       profitScheduleParams.set("limit", "20");
       profitScheduleParams.set("page", queryParam("page") || "1");
+      profitScheduleParams.set("status", "POSTED");
       profitScheduleParams.set("investmentStatus", "ACTIVE");
       if (queryParam("clientId")) profitScheduleParams.set("clientId", queryParam("clientId"));
-      if (queryParam("productId")) profitScheduleParams.set("productId", queryParam("productId"));
+      if (queryParam("investmentId")) profitScheduleParams.set("investmentId", queryParam("investmentId"));
     } else {
       profitScheduleParams.set("limit", "100");
     }
@@ -1529,47 +1530,65 @@
 
   function dividendsProfitsPage() {
     const selectedClientId = queryParam("clientId") || "";
-    const selectedProductId = queryParam("productId") || "";
+    const selectedInvestmentId = queryParam("investmentId") || "";
     const clientInvestments = selectedClientId ? data.investmentRecords.filter((row) => row.clientId === selectedClientId) : [];
+    const selectedInvestment = selectedInvestmentId ? clientInvestments.find((row) => row.id === selectedInvestmentId) : null;
     const selectedClientName = clientInvestments[0]?.client?.name || data.investmentRecords.find((row) => row.clientId === selectedClientId)?.client?.name || "";
     const clientOptions = Array.from(new Map(data.investmentRecords.filter((row) => row.clientId && row.client).map((row) => [row.clientId, row.client])).entries());
-    const clientLinks = ['<a class="btn ' + (!selectedClientId ? "primary" : "") + '" href="dividends-profits.html">All clients</a>'].concat(clientOptions.map(([id, client]) => '<a class="btn ' + (selectedClientId === id ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(id) + '">' + escapeHtml(client.name || client.email || id) + '</a>')).join("");
-    const productLinks = selectedClientId
-      ? ['<a class="btn ' + (!selectedProductId ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(selectedClientId) + '">All invested products</a>'].concat(clientInvestments.map((row) => '<a class="btn ' + (selectedProductId === row.productId ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(selectedClientId) + '&productId=' + encodeURIComponent(row.productId) + '">' + escapeHtml(row.product?.name || row.productId) + '</a>')).join("")
+    const clientLinks = clientOptions.length
+      ? clientOptions.map(([id, client]) => '<a class="btn ' + (selectedClientId === id ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(id) + '">' + escapeHtml(client.name || client.email || id) + '</a>').join("")
+      : '<span class="muted">No clients with active investments were found.</span>';
+    const investmentLinks = selectedClientId
+      ? clientInvestments.map((row) => {
+        const progress = investmentSnapshot(row);
+        return '<a class="btn ' + (selectedInvestmentId === row.id ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(selectedClientId) + '&investmentId=' + encodeURIComponent(row.id) + '">' + escapeHtml(row.product?.name || row.productId) + ' - ' + escapeHtml(formatMoney(row.investedAmount)) + ' - ' + escapeHtml(label(row.status)) + ' - P/L ' + escapeHtml(formatMoney(progress.profitAccrued)) + '</a>';
+      }).join("") || '<span class="muted">This client has no active investment mandates.</span>'
       : '<span class="muted">Choose a client to see invested products.</span>';
     const investmentRows = clientInvestments.map((row) => {
       const progress = investmentSnapshot(row);
-      return [row.product?.name || "-", formatMoney(row.investedAmount), formatMoney(row.currentValue), formatMoney(progress.profitAccrued), formatPercent(progress.actualizedPercent) + " actualized", badge(label(row.status))];
+      return [
+        row.product?.name || "-",
+        formatMoney(row.investedAmount),
+        formatMoney(row.currentValue),
+        formatMoney(progress.profitAccrued),
+        formatPercent(progress.actualizedPercent) + " actualized",
+        badge(label(row.status)),
+        '<a class="btn ' + (selectedInvestmentId === row.id ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(row.clientId) + '&investmentId=' + encodeURIComponent(row.id) + '">Open history</a>'
+      ];
     });
-    const visiblePayoutRows = data.profitSchedules;
+    const visiblePayoutRows = selectedInvestment ? data.profitSchedules.filter((row) => stripHtml(row[6]).toUpperCase() !== "PENDING") : [];
     const totalDividends = visiblePayoutRows.reduce((sum, row) => /dividend/i.test(stripHtml(row[2])) ? sum + Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, "")) : sum, 0);
     const totalProfits = visiblePayoutRows.reduce((sum, row) => /profit|bot/i.test(stripHtml(row[2])) ? sum + Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, "")) : sum, 0);
-    const nextPayoutRow = visiblePayoutRows
-      .map((row) => ({ label: stripHtml(row[1]), date: new Date(stripHtml(row[1])) }))
-      .filter((row) => !Number.isNaN(row.date.getTime()) && row.date >= new Date())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
-    const reinvestments = selectedClientId ? clientInvestments.filter((row) => row.reinvestPreference === "REINVEST").length : data.investmentRecords.filter((row) => row.reinvestPreference === "REINVEST").length;
+    const losses = visiblePayoutRows.reduce((sum, row) => Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, "")) < 0 ? sum + Math.abs(Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, ""))) : sum, 0);
+    const selectedPreference = selectedInvestment ? label(selectedInvestment.reinvestPreference || "WALLET") : "-";
     const summaryCards = '<div class="grid metrics">' +
       metric("Total Dividends", formatMoney(totalDividends), "Paid to date across income-generating holdings.", "Active") +
       metric("Total Profits", formatMoney(totalProfits), "Posted profit credits and realized gains.", "Active") +
-      metric("Next Scheduled Payout", nextPayoutRow ? nextPayoutRow.label : "Not scheduled", "Earliest upcoming distribution window.", "Pending") +
-      metric("Reinvestment Preference", reinvestments ? reinvestments + " mandate" + (reinvestments === 1 ? "" : "s") : "Wallet credit", "Based on current investment instructions.", "Info") +
+      metric("Total Losses", losses ? "-" + formatMoney(losses) : formatMoney(0), "Posted loss records for this exact investment.", losses ? "Risk" : "Info") +
+      metric("Settlement Preference", selectedPreference, "Based on this selected investment mandate.", "Info") +
       "</div>";
     const meta = appState.profitScheduleMeta || { page: 1, limit: 20, total: data.profitSchedules.length, pages: 1 };
     const currentPage = Number(meta.page || 1);
-    const totalPages = Number(meta.pages || 1);
+    const totalPages = selectedInvestment ? Number(meta.pages || 1) : 1;
     const pageHref = (page) => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       if (selectedClientId) params.set("clientId", selectedClientId);
-      if (selectedProductId) params.set("productId", selectedProductId);
+      if (selectedInvestmentId) params.set("investmentId", selectedInvestmentId);
       return "dividends-profits.html?" + params.toString();
     };
     const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
-    return section("Client and product filter", "Choose a client first, then choose one of the products that client is invested in.", '<div class="action-row">' + clientLinks + '</div><div class="action-row" style="margin-top:12px">' + productLinks + '</div>') +
+    const historyBody = !selectedClientId
+      ? '<div class="empty-state" style="display:block">Choose a client first. Dividends and profit history is only shown after selecting one specific investment mandate.</div>'
+      : !selectedInvestment
+        ? '<div class="empty-state" style="display:block">Choose one investment mandate above to view only realized dividend, profit, and loss history for that mandate.</div>'
+        : visiblePayoutRows.length
+          ? searchableTable("Search source, instrument...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"], visiblePayoutRows) + pagination
+          : '<div class="empty-state" style="display:block">No posted dividend, profit, or loss history exists for this selected investment yet. Pending schedules remain in Payout operations.</div>';
+    return section("Client and investment filter", "Choose a client first, then choose one exact investment mandate. This screen shows posted dividend, profit, and loss history only.", '<div class="action-row">' + clientLinks + '</div><div class="action-row" style="margin-top:12px">' + investmentLinks + '</div>') +
       summaryCards +
-      (selectedClientId ? section("Selected client investments", selectedClientName ? "Products currently linked to " + escapeHtml(selectedClientName) + "." : "Products currently linked to this client.", investmentRows.length ? table(["Product", "Invested", "Current value", "Running profit", "Actualized", "Status"], investmentRows) : '<div class="empty-state" style="display:block">No investments were found for this client.</div>') : "") +
-      section("Dividend and profit history", "Income and profit posting records aligned to the client plan.", searchableTable("Search source, instrument...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"], visiblePayoutRows) + pagination);
+      (selectedClientId ? section("Selected client investments", selectedClientName ? "Investment mandates currently linked to " + escapeHtml(selectedClientName) + "." : "Investment mandates currently linked to this client.", investmentRows.length ? table(["Product", "Invested", "Current value", "Running profit", "Actualized", "Status", "History"], investmentRows) : '<div class="empty-state" style="display:block">No investments were found for this client.</div>') : "") +
+      section("Dividend and profit history", "Only posted dividend, profit, and loss records for the selected investment mandate.", historyBody);
   }
 
   function payoutsPage() {
