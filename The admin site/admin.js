@@ -1101,6 +1101,7 @@
           instrumentLogoCell(row.instrument, "Portfolio"),
           pnlAmountCell(amount),
           payoutToneCell(mode === "RUNNING_PNL" ? "Running P/L" : mode, amount),
+          badge(label(row.status)),
           action
         ];
       });
@@ -1540,6 +1541,20 @@
       const progress = investmentSnapshot(row);
       return [row.product?.name || "-", formatMoney(row.investedAmount), formatMoney(row.currentValue), formatMoney(progress.profitAccrued), formatPercent(progress.actualizedPercent) + " actualized", badge(label(row.status))];
     });
+    const visiblePayoutRows = data.profitSchedules;
+    const totalDividends = visiblePayoutRows.reduce((sum, row) => /dividend/i.test(stripHtml(row[2])) ? sum + Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, "")) : sum, 0);
+    const totalProfits = visiblePayoutRows.reduce((sum, row) => /profit|bot/i.test(stripHtml(row[2])) ? sum + Number(String(stripHtml(row[4])).replace(/[^0-9.-]/g, "")) : sum, 0);
+    const nextPayoutRow = visiblePayoutRows
+      .map((row) => ({ label: stripHtml(row[1]), date: new Date(stripHtml(row[1])) }))
+      .filter((row) => !Number.isNaN(row.date.getTime()) && row.date >= new Date())
+      .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
+    const reinvestments = selectedClientId ? clientInvestments.filter((row) => row.reinvestPreference === "REINVEST").length : data.investmentRecords.filter((row) => row.reinvestPreference === "REINVEST").length;
+    const summaryCards = '<div class="grid metrics">' +
+      metric("Total Dividends", formatMoney(totalDividends), "Paid to date across income-generating holdings.", "Active") +
+      metric("Total Profits", formatMoney(totalProfits), "Posted profit credits and realized gains.", "Active") +
+      metric("Next Scheduled Payout", nextPayoutRow ? nextPayoutRow.label : "Not scheduled", "Earliest upcoming distribution window.", "Pending") +
+      metric("Reinvestment Preference", reinvestments ? reinvestments + " mandate" + (reinvestments === 1 ? "" : "s") : "Wallet credit", "Based on current investment instructions.", "Info") +
+      "</div>";
     const meta = appState.profitScheduleMeta || { page: 1, limit: 20, total: data.profitSchedules.length, pages: 1 };
     const currentPage = Number(meta.page || 1);
     const totalPages = Number(meta.pages || 1);
@@ -1552,8 +1567,9 @@
     };
     const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
     return section("Client and product filter", "Choose a client first, then choose one of the products that client is invested in.", '<div class="action-row">' + clientLinks + '</div><div class="action-row" style="margin-top:12px">' + productLinks + '</div>') +
+      summaryCards +
       (selectedClientId ? section("Selected client investments", selectedClientName ? "Products currently linked to " + escapeHtml(selectedClientName) + "." : "Products currently linked to this client.", investmentRows.length ? table(["Product", "Invested", "Current value", "Running profit", "Actualized", "Status"], investmentRows) : '<div class="empty-state" style="display:block">No investments were found for this client.</div>') : "") +
-      section("Dividend and profit history", "Shows dividend and profit rows for active investments only.", searchableTable("Search source, instrument...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Receipt"], data.profitSchedules) + pagination);
+      section("Dividend and profit history", "Income and profit posting records aligned to the client plan.", searchableTable("Search source, instrument...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"], visiblePayoutRows) + pagination);
   }
 
   function payoutsPage() {
