@@ -9,6 +9,7 @@
     "approvals.html": ["Approvals", "Maker-checker decisions for deposits, withdrawals, product publication, and distributions."],
     "portfolio-products.html": ["Portfolio Products", "Broker-managed portfolio products, risk labels, visibility, minimums, and payout rules."],
     "client-investments.html": ["Client Investments", "Active subscriptions, mandate status, top-ups, exits, and reinvestment instructions."],
+    "dividends-profits.html": ["Dividends & Profits", "Client-facing dividend and profit history filtered by client and invested product."],
     "orders.html": ["Trading Orders", "Internal order-desk requests, approvals, fills, settlement, and client positions."],
     "options.html": ["Options Access", "Suitability applications, approval levels, restrictions, and options access decisions."],
     "payouts.html": ["Payouts", "Dividend and profit posting, reinvestment handling, schedules, and settlement state."],
@@ -33,7 +34,7 @@
   const navGroups = [
     ["Operations", [["Overview", "index.html", "grid"], ["Queues", "queues.html", "list"], ["Clients", "clients.html", "users"], ["KYC Queue", "kyc.html", "shield"]]],
     ["Money Movement", [["Deposits", "deposits.html", "down"], ["Withdrawals", "withdrawals.html", "up"], ["Bank Verifications", "beneficiaries.html", "usercheck"], ["Approvals", "approvals.html", "shield"], ["Payouts", "payouts.html", "coins"]]],
-    ["Investments", [["Markets", "markets.html", "trend"], ["Instruments", "instruments.html", "chart"], ["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Risk & Compliance", "risk.html", "alert"]]],
+    ["Investments", [["Markets", "markets.html", "trend"], ["Instruments", "instruments.html", "chart"], ["Portfolio Products", "portfolio-products.html", "briefcase"], ["Client Investments", "client-investments.html", "chart"], ["Dividends & Profits", "dividends-profits.html", "coins"], ["Trading Orders", "orders.html", "list"], ["Options Access", "options.html", "shield"], ["Risk & Compliance", "risk.html", "alert"]]],
     ["Comms & Records", [["Reports", "reports.html", "file"], ["Notifications", "notifications.html", "bell"], ["Support Tickets", "support.html", "help"]]],
     ["System", [["Admin Users & Roles", "roles.html", "lock"], ["Platform Settings", "settings.html", "settings"], ["System Map", "admin-info-architecture.html", "map"]]]
   ];
@@ -287,7 +288,7 @@
     if (!id) return '<span class="muted">No record</span>';
     const attrs = ' data-investment-id="' + escapeHtml(id) + '" data-investment-name="' + escapeHtml(row?.product?.name || "Investment") + '"';
     const buttons = [];
-    buttons.push('<a class="btn primary" href="payouts.html?clientId=' + encodeURIComponent(row?.clientId || "") + '&productId=' + encodeURIComponent(row?.productId || "") + '">View Dividends & Profits</a>');
+    buttons.push('<a class="btn primary" href="dividends-profits.html?clientId=' + encodeURIComponent(row?.clientId || "") + '&productId=' + encodeURIComponent(row?.productId || "") + '">View Dividends & Profits</a>');
     if (status === "ACTIVE") buttons.push('<button class="btn" type="button" data-action="investment-lifecycle" data-investment-action="hold"' + attrs + ">Hold</button>");
     if (status === "HELD") buttons.push('<button class="btn primary" type="button" data-action="investment-lifecycle" data-investment-action="resume"' + attrs + ">Resume</button>");
     if (!["CANCELLED", "CLOSED"].includes(status)) buttons.push('<button class="btn danger" type="button" data-action="investment-lifecycle" data-investment-action="cancel"' + attrs + ">Cancel/refund</button>");
@@ -831,7 +832,8 @@
     }
     const instrumentsPath = "/api/v1/admin/instruments" + (instrumentParams.toString() ? "?" + instrumentParams.toString() : "");
     const profitScheduleParams = new URLSearchParams();
-    if (currentFile() === "payouts.html") {
+    const isDividendsProfitPage = currentFile() === "dividends-profits.html";
+    if (isDividendsProfitPage) {
       profitScheduleParams.set("limit", "20");
       profitScheduleParams.set("page", queryParam("page") || "1");
       if (queryParam("clientId")) profitScheduleParams.set("clientId", queryParam("clientId"));
@@ -850,7 +852,7 @@
       tryApi("/api/v1/admin/portfolio-products"),
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
-      currentFile() === "payouts.html" ? tryApiResponse(profitSchedulesPath) : tryApi(profitSchedulesPath),
+      isDividendsProfitPage ? tryApiResponse(profitSchedulesPath) : tryApi(profitSchedulesPath),
       tryApi("/api/v1/admin/markets"),
       currentFile() === "instruments.html" ? tryApiResponse(instrumentsPath) : tryApi(instrumentsPath),
       tryApi("/api/v1/admin/support/tickets?limit=100"),
@@ -1081,21 +1083,23 @@
       data.payouts = payouts.map((row) => [row.reference, row.instrument ? instrumentLogoCell(row.instrument, row.instrument.symbol) : row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
     }
 
-    const profitScheduleRows = currentFile() === "payouts.html" && profitSchedules && !Array.isArray(profitSchedules) ? profitSchedules.data : profitSchedules;
-    appState.profitScheduleMeta = currentFile() === "payouts.html" && profitSchedules && !Array.isArray(profitSchedules) && profitSchedules.meta ? profitSchedules.meta : { page: 1, limit: 20, total: Array.isArray(profitScheduleRows) ? profitScheduleRows.length : 0, pages: 1 };
+    const profitScheduleRows = currentFile() === "dividends-profits.html" && profitSchedules && !Array.isArray(profitSchedules) ? profitSchedules.data : profitSchedules;
+    appState.profitScheduleMeta = currentFile() === "dividends-profits.html" && profitSchedules && !Array.isArray(profitSchedules) && profitSchedules.meta ? profitSchedules.meta : { page: 1, limit: 20, total: Array.isArray(profitScheduleRows) ? profitScheduleRows.length : 0, pages: 1 };
     if (Array.isArray(profitScheduleRows)) {
       data.profitSchedules = profitScheduleRows.map((row) => {
-        const posted = row.receipt ? '<span class="muted">' + escapeHtml(row.receipt.reference) + '</span>' : '<span class="muted">Pending</span>';
+        const amount = Number(row.expectedAmount || 0);
+        const mode = row.receipt?.mode || row.mode || "WALLET";
+        const posted = row.receipt ? '<span class="muted">' + escapeHtml(row.receipt.reference) + '</span>' : '<span class="muted">No receipt</span>';
         const action = row.status === "PENDING"
           ? '<div class="action-row"><button class="btn primary" type="button" data-action="profit-schedule-apply" data-schedule-id="' + escapeHtml(row.id) + '">Apply now</button><button class="btn" type="button" data-action="profit-schedule-edit" data-schedule-id="' + escapeHtml(row.id) + '" data-schedule-amount="' + escapeHtml(row.expectedAmount) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Edit</button><button class="btn" type="button" data-action="profit-schedule-add" data-investment-id="' + escapeHtml(row.investmentId) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Add similar</button><button class="btn danger" type="button" data-action="profit-schedule-cancel" data-schedule-id="' + escapeHtml(row.id) + '">Cancel</button></div>'
           : posted;
         return [
-          row.client?.name || "-",
           row.product?.name || "-",
-          instrumentLogoCell(row.instrument, "Portfolio"),
           row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "-",
-          formatMoney(row.expectedAmount),
-          badge(label(row.type || "BOT_PROFIT")),
+          payoutToneCell(row.type || "BOT_PROFIT", amount),
+          instrumentLogoCell(row.instrument, "Portfolio"),
+          pnlAmountCell(amount),
+          payoutToneCell(mode === "RUNNING_PNL" ? "Running P/L" : mode, amount),
           badge(label(row.status)),
           action
         ];
@@ -1252,6 +1256,20 @@
       ? '<span class="instrument-logo-frame"><img src="' + escapeHtml(instrument.logoUrl) + '" alt="" loading="lazy"></span>'
       : '<span class="instrument-logo-placeholder">' + escapeHtml(String(labelText).slice(0, 1).toUpperCase()) + '</span>';
     return '<span class="instrument-logo-cell">' + logo + '<strong>' + escapeHtml(nameText) + '</strong></span>';
+  }
+
+  function payoutToneCell(value, amountValue) {
+    const amount = Number(amountValue || 0);
+    const text = label(value || "Profit");
+    const isLoss = amount < 0 || /loss/i.test(text);
+    return '<span class="badge ' + (isLoss ? "danger" : "success") + '">' + escapeHtml(text) + "</span>";
+  }
+
+  function pnlAmountCell(value) {
+    const amount = Number(value || 0);
+    const className = amount < 0 ? "danger" : amount > 0 ? "success" : "info";
+    const prefix = amount > 0 ? "+" : "";
+    return '<span class="badge ' + className + '">' + prefix + formatMoney(amount) + "</span>";
   }
 
   function decisionButton(label, kind, result, apiAction) {
@@ -1504,15 +1522,15 @@
     return section("Options suitability applications", "Options remain high risk and inaccessible until compliance records a suitability decision.", filterableTable("Search client, level, status...", ["Account", "Client", "Experience", "Score", "Requested level", "Status", "Decision note", "Action"], rows)) + section("Access policy", "Client-facing options controls must match these backend decisions.", details([["Default access", "Not applied"], ["Required", "Approved KYC, disclosures, and suitability"], ["Risk", "High; capital loss and time-decay warnings"], ["Admin authority", "Compliance or super admin"]]));
   }
 
-  function payoutsPage() {
+  function dividendsProfitsPage() {
     const selectedClientId = queryParam("clientId") || "";
     const selectedProductId = queryParam("productId") || "";
     const clientInvestments = selectedClientId ? data.investmentRecords.filter((row) => row.clientId === selectedClientId) : [];
     const selectedClientName = clientInvestments[0]?.client?.name || data.investmentRecords.find((row) => row.clientId === selectedClientId)?.client?.name || "";
     const clientOptions = Array.from(new Map(data.investmentRecords.filter((row) => row.clientId && row.client).map((row) => [row.clientId, row.client])).entries());
-    const clientLinks = ['<a class="btn ' + (!selectedClientId ? "primary" : "") + '" href="payouts.html">All clients</a>'].concat(clientOptions.map(([id, client]) => '<a class="btn ' + (selectedClientId === id ? "primary" : "") + '" href="payouts.html?clientId=' + encodeURIComponent(id) + '">' + escapeHtml(client.name || client.email || id) + '</a>')).join("");
+    const clientLinks = ['<a class="btn ' + (!selectedClientId ? "primary" : "") + '" href="dividends-profits.html">All clients</a>'].concat(clientOptions.map(([id, client]) => '<a class="btn ' + (selectedClientId === id ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(id) + '">' + escapeHtml(client.name || client.email || id) + '</a>')).join("");
     const productLinks = selectedClientId
-      ? ['<a class="btn ' + (!selectedProductId ? "primary" : "") + '" href="payouts.html?clientId=' + encodeURIComponent(selectedClientId) + '">All invested products</a>'].concat(clientInvestments.map((row) => '<a class="btn ' + (selectedProductId === row.productId ? "primary" : "") + '" href="payouts.html?clientId=' + encodeURIComponent(selectedClientId) + '&productId=' + encodeURIComponent(row.productId) + '">' + escapeHtml(row.product?.name || row.productId) + '</a>')).join("")
+      ? ['<a class="btn ' + (!selectedProductId ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(selectedClientId) + '">All invested products</a>'].concat(clientInvestments.map((row) => '<a class="btn ' + (selectedProductId === row.productId ? "primary" : "") + '" href="dividends-profits.html?clientId=' + encodeURIComponent(selectedClientId) + '&productId=' + encodeURIComponent(row.productId) + '">' + escapeHtml(row.product?.name || row.productId) + '</a>')).join("")
       : '<span class="muted">Choose a client to see invested products.</span>';
     const investmentRows = clientInvestments.map((row) => {
       const progress = investmentSnapshot(row);
@@ -1526,12 +1544,16 @@
       params.set("page", String(page));
       if (selectedClientId) params.set("clientId", selectedClientId);
       if (selectedProductId) params.set("productId", selectedProductId);
-      return "payouts.html?" + params.toString();
+      return "dividends-profits.html?" + params.toString();
     };
     const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
     return section("Client and product filter", "Choose a client first, then choose one of the products that client is invested in.", '<div class="action-row">' + clientLinks + '</div><div class="action-row" style="margin-top:12px">' + productLinks + '</div>') +
       (selectedClientId ? section("Selected client investments", selectedClientName ? "Products currently linked to " + escapeHtml(selectedClientName) + "." : "Products currently linked to this client.", investmentRows.length ? table(["Product", "Invested", "Current value", "Running profit", "Actualized", "Status"], investmentRows) : '<div class="empty-state" style="display:block">No investments were found for this client.</div>') : "") +
-      section("Bot profit schedule", "Pending rows are prioritized. Use Apply now to post a pending bot P/L receipt immediately; posted rows are locked.", filterableTable("Search client, product, instrument...", ["Client", "Product", "Instrument", "Scheduled", "Expected P/L", "Type", "Status", "Action"], data.profitSchedules) + pagination) +
+      section("Dividend and profit history", "This mirrors the client portal Dividends & Profits table, with admin actions for pending rows.", filterableTable("Search source, instrument, status...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"], data.profitSchedules) + pagination);
+  }
+
+  function payoutsPage() {
+    return "" +
       section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
   }
 
@@ -1852,6 +1874,7 @@
       case "approvals.html": return approvalsPage();
       case "portfolio-products.html": return productsPage();
       case "client-investments.html": return investmentsPage();
+      case "dividends-profits.html": return dividendsProfitsPage();
       case "orders.html": return ordersPage();
       case "options.html": return optionsPage();
       case "payouts.html": return payoutsPage();
