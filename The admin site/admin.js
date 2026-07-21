@@ -54,6 +54,7 @@
     investments: [],
     investmentRecords: [],
     payouts: [],
+    profitSchedules: [],
     approvals: [],
     orders: [],
     positions: [],
@@ -796,6 +797,7 @@
     data.investments = [];
     data.investmentRecords = [];
     data.payouts = [];
+    data.profitSchedules = [];
     data.markets = [];
     data.marketRecords = [];
     data.instruments = [];
@@ -822,7 +824,7 @@
       if (queryParam("q")) instrumentParams.set("q", queryParam("q"));
     }
     const instrumentsPath = "/api/v1/admin/instruments" + (instrumentParams.toString() ? "?" + instrumentParams.toString() : "");
-    const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, markets, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
+    const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, profitSchedules, markets, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi(kycPath),
       tryApi("/api/v1/admin/kyc/requirements"),
@@ -832,6 +834,7 @@
       tryApi("/api/v1/admin/portfolio-products"),
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
+      tryApi("/api/v1/admin/profit-schedules?limit=100"),
       tryApi("/api/v1/admin/markets"),
       currentFile() === "instruments.html" ? tryApiResponse(instrumentsPath) : tryApi(instrumentsPath),
       tryApi("/api/v1/admin/support/tickets?limit=100"),
@@ -1059,6 +1062,25 @@
 
     if (Array.isArray(payouts)) {
       data.payouts = payouts.map((row) => [row.reference, row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
+    }
+
+    if (Array.isArray(profitSchedules)) {
+      data.profitSchedules = profitSchedules.map((row) => {
+        const posted = row.receipt ? '<span class="muted">' + escapeHtml(row.receipt.reference) + '</span>' : '<span class="muted">Pending</span>';
+        const action = row.status === "PENDING" && new Date(row.scheduledAt).getTime() > Date.now()
+          ? '<div class="action-row"><button class="btn" type="button" data-action="profit-schedule-edit" data-schedule-id="' + escapeHtml(row.id) + '" data-schedule-amount="' + escapeHtml(row.expectedAmount) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Edit</button><button class="btn" type="button" data-action="profit-schedule-add" data-investment-id="' + escapeHtml(row.investmentId) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Add similar</button><button class="btn danger" type="button" data-action="profit-schedule-cancel" data-schedule-id="' + escapeHtml(row.id) + '">Cancel</button></div>'
+          : posted;
+        return [
+          row.client?.name || "-",
+          row.product?.name || "-",
+          row.instrument?.symbol || "Portfolio",
+          row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "-",
+          formatMoney(row.expectedAmount),
+          badge(label(row.type || "BOT_PROFIT")),
+          badge(label(row.status)),
+          action
+        ];
+      });
     }
 
     if (Array.isArray(markets)) {
@@ -1455,7 +1477,8 @@
   }
 
   function payoutsPage() {
-    return section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
+    return section("Bot profit schedule", "Upcoming bot P/L receipt rows can be edited before their scheduled posting time. Posted rows are locked.", filterableTable("Search client, product, instrument...", ["Client", "Product", "Instrument", "Scheduled", "Expected P/L", "Type", "Status", "Action"], data.profitSchedules)) +
+      section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
   }
 
   function marketsPage() {
@@ -2058,7 +2081,8 @@
       "deposit-method-toggle", "deposit-category-toggle", "withdrawal-method-save",
       "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision",
       "product-save", "product-allocation-save", "market-save", "market-status-toggle",
-      "instrument-save", "investment-lifecycle-confirm"
+      "instrument-save", "investment-lifecycle-confirm", "profit-schedule-edit",
+      "profit-schedule-add", "profit-schedule-cancel"
     ].includes(action);
   }
 
@@ -2165,6 +2189,9 @@
           else if (action === "record-confirm") await submitRecordDecision();
           else if (action === "investment-lifecycle") openInvestmentLifecycleModal(node.dataset);
           else if (action === "investment-lifecycle-confirm") await submitInvestmentLifecycleAction();
+          else if (action === "profit-schedule-edit") await editProfitSchedule(node.dataset);
+          else if (action === "profit-schedule-add") await addSimilarProfitSchedule(node.dataset);
+          else if (action === "profit-schedule-cancel") await cancelProfitSchedule(node.dataset.scheduleId);
           else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
           else if (action === "deposit-method-new") openDepositMethodEditor(node.dataset.methodType);
@@ -2351,6 +2378,82 @@
     closeModal();
     render();
     toast(label(pending.action) + " completed for " + pending.name + ".");
+  }
+
+  function promptProfitAmount(currentValue) {
+    const value = window.prompt("Enter the expected P/L amount. Use a negative number for a loss.", String(currentValue || "0"));
+    if (value === null) return null;
+    const amount = Number(String(value).replace(/[^0-9.-]/g, ""));
+    if (!Number.isFinite(amount)) throw new Error("Enter a valid profit or loss amount.");
+    return amount;
+  }
+
+  function promptScheduleTime(currentValue) {
+    const current = currentValue ? new Date(currentValue) : new Date(Date.now() + 60 * 60 * 1000);
+    const fallback = Number.isNaN(current.getTime()) ? new Date(Date.now() + 60 * 60 * 1000) : current;
+    const local = new Date(fallback.getTime() - fallback.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const value = window.prompt("Enter scheduled time in local YYYY-MM-DDTHH:mm format.", local);
+    if (value === null) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()) || date <= new Date()) throw new Error("Enter a future schedule time.");
+    return date.toISOString();
+  }
+
+  async function editProfitSchedule(dataset) {
+    const id = dataset.scheduleId || "";
+    if (!id) { toast("No schedule row selected."); return; }
+    try {
+      const expectedAmount = promptProfitAmount(dataset.scheduleAmount);
+      if (expectedAmount === null) return;
+      const scheduledAt = promptScheduleTime(dataset.scheduleAt);
+      if (scheduledAt === null) return;
+      const note = window.prompt("Audit note for this schedule change.", "Adjusted upcoming bot P/L schedule.") || "Adjusted upcoming bot P/L schedule.";
+      await api("/api/v1/admin/profit-schedules/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify({ expectedAmount, scheduledAt, note })
+      });
+      await loadBackendData();
+      render();
+      toast("Profit schedule updated.");
+    } catch (error) {
+      toast(error?.message || "Profit schedule could not be updated.");
+    }
+  }
+
+  async function addSimilarProfitSchedule(dataset) {
+    const investmentId = dataset.investmentId || "";
+    if (!investmentId) { toast("No investment selected for schedule creation."); return; }
+    try {
+      const expectedAmount = promptProfitAmount("0");
+      if (expectedAmount === null) return;
+      const base = dataset.scheduleAt ? new Date(dataset.scheduleAt) : new Date();
+      const defaultAt = Number.isNaN(base.getTime()) ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : new Date(base.getTime() + 60 * 60 * 1000).toISOString();
+      const scheduledAt = promptScheduleTime(defaultAt);
+      if (scheduledAt === null) return;
+      const note = window.prompt("Audit note for this new schedule row.", "Added admin bot P/L schedule row.") || "Added admin bot P/L schedule row.";
+      await api("/api/v1/admin/profit-schedules", {
+        method: "POST",
+        body: JSON.stringify({ investmentId, expectedAmount, scheduledAt, note })
+      });
+      await loadBackendData();
+      render();
+      toast("Profit schedule row added.");
+    } catch (error) {
+      toast(error?.message || "Profit schedule row could not be added.");
+    }
+  }
+
+  async function cancelProfitSchedule(id) {
+    if (!id) { toast("No schedule row selected."); return; }
+    const note = window.prompt("Audit note for cancelling this upcoming schedule row.", "Cancelled upcoming bot P/L schedule row.");
+    if (note === null) return;
+    await api("/api/v1/admin/profit-schedules/" + encodeURIComponent(id), {
+      method: "DELETE",
+      body: JSON.stringify({ note: note || "Cancelled upcoming bot P/L schedule row." })
+    });
+    await loadBackendData();
+    render();
+    toast("Profit schedule row cancelled.");
   }
 
   async function waiveBeneficiaryCooldown(id) {

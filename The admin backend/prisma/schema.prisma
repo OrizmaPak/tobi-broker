@@ -387,6 +387,8 @@ model Client {
   paymentMethods      PaymentMethod[]
   ledgerTransactions  LedgerTransaction[]
   investments         ClientInvestment[]
+  profitSchedules     InvestmentProfitSchedule[]
+  tradeReceipts       InvestmentTradeReceipt[]
   payouts             Payout[]
   distributionItems   DistributionItem[]
   watchlist           WatchlistItem[]
@@ -773,6 +775,8 @@ model PortfolioProduct {
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   investments        ClientInvestment[]
+  profitSchedules    InvestmentProfitSchedule[]
+  tradeReceipts      InvestmentTradeReceipt[]
   versions           PortfolioProductVersion[]
   allocations        PortfolioAllocation[]
   feeRules           FeeRule[]
@@ -850,6 +854,8 @@ model ClientInvestment {
   transactions         InvestmentTransaction[]
   valuations           InvestmentValuation[]
   holdings             InvestmentHolding[]
+  profitSchedules      InvestmentProfitSchedule[]
+  tradeReceipts        InvestmentTradeReceipt[]
   distributionItems    DistributionItem[]
 
   @@index([clientId, status])
@@ -866,6 +872,66 @@ model InvestmentTransaction {
   ledgerTransactionId String?
   createdAt           DateTime         @default(now())
   investment          ClientInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+}
+
+model InvestmentProfitSchedule {
+  id               String                  @id @default(cuid())
+  investmentId     String
+  clientId         String
+  productId        String
+  instrumentId     String?
+  scheduledAt      DateTime
+  type             String                  @default("BOT_PROFIT")
+  expectedAmount   Decimal                 @db.Decimal(18, 2)
+  actualAmount     Decimal?                @db.Decimal(18, 2)
+  status           String                  @default("PENDING")
+  strategyName     String                  @default("BullPort HFT Bot")
+  note             String?
+  postedAt         DateTime?
+  createdByAdminId String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  investment       ClientInvestment        @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  client           Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product          PortfolioProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  instrument       Instrument?             @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+  receipt          InvestmentTradeReceipt?
+
+  @@unique([investmentId, scheduledAt])
+  @@index([clientId, status, scheduledAt])
+  @@index([status, scheduledAt])
+}
+
+model InvestmentTradeReceipt {
+  id             String                   @id @default(cuid())
+  scheduleId     String                   @unique
+  investmentId   String
+  clientId       String
+  productId      String
+  instrumentId   String?
+  reference      String                   @unique
+  strategyName   String
+  side           String
+  entryAt        DateTime
+  exitAt         DateTime
+  entryPrice     Decimal                  @db.Decimal(24, 8)
+  exitPrice      Decimal                  @db.Decimal(24, 8)
+  quantity       Decimal                  @db.Decimal(24, 8)
+  notional       Decimal                  @db.Decimal(18, 2)
+  grossPnl       Decimal                  @db.Decimal(18, 2)
+  fees           Decimal                  @default(0) @db.Decimal(18, 2)
+  netPnl         Decimal                  @db.Decimal(18, 2)
+  source         String
+  sourceSnapshot Json?
+  createdAt      DateTime                 @default(now())
+  schedule       InvestmentProfitSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  investment     ClientInvestment         @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  client         Client                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product        PortfolioProduct         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  instrument     Instrument?              @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, createdAt])
+  @@index([investmentId, createdAt])
 }
 
 model InvestmentValuation {
@@ -919,6 +985,8 @@ model Instrument {
   prices              PriceSnapshot[]
   allocations         PortfolioAllocation[]
   holdings            InvestmentHolding[]
+  profitSchedules     InvestmentProfitSchedule[]
+  tradeReceipts       InvestmentTradeReceipt[]
   watchlistedBy       WatchlistItem[]
   orders              Order[]
   positions           Position[]

@@ -628,6 +628,85 @@ v1AdminBrokerRouter.post("/distributions/:id/request-approval", portfolioRoles, 
   return ok(res, approval, 201);
 }));
 
+v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req, res) => {
+  await accrueAllInvestmentProfits();
+  const { page, limit, skip } = pageInput(req.query);
+  const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  const where: Prisma.InvestmentProfitScheduleWhereInput = status ? { status: status.toUpperCase() } : {};
+  const [rows, total] = await Promise.all([
+    prisma.investmentProfitSchedule.findMany({
+      where,
+      include: { client: true, product: true, instrument: true, investment: true, receipt: true },
+      orderBy: { scheduledAt: "asc" },
+      skip,
+      take: limit
+    }),
+    prisma.investmentProfitSchedule.count({ where })
+  ]);
+  return ok(res, rows, 200, pageMeta(page, limit, total));
+}));
+
+const profitScheduleInput = z.object({
+  scheduledAt: z.coerce.date().optional(),
+  expectedAmount: z.coerce.number().min(-1_000_000).max(1_000_000).optional(),
+  type: z.enum(["BOT_PROFIT", "BOT_LOSS", "DIVIDEND", "PROFIT"]).optional(),
+  instrumentId: z.string().trim().min(1).optional().nullable(),
+  note: z.string().trim().max(1000).optional()
+});
+
+v1AdminBrokerRouter.post("/profit-schedules", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = profitScheduleInput.extend({ investmentId: z.string().min(1), scheduledAt: z.coerce.date(), expectedAmount: z.coerce.number().min(-1_000_000).max(1_000_000) }).parse(req.body);
+  if (input.scheduledAt <= new Date()) throw new ApiError(422, "Only future schedule rows can be created", "SCHEDULE_NOT_FUTURE");
+  const investment = await prisma.clientInvestment.findUnique({ where: { id: input.investmentId }, include: { product: true, client: true } });
+  if (!investment || investment.status !== "ACTIVE") throw new ApiError(404, "Active investment was not found", "INVESTMENT_NOT_FOUND");
+  const row = await prisma.investmentProfitSchedule.create({
+    data: {
+      investmentId: investment.id,
+      clientId: investment.clientId,
+      productId: investment.productId,
+      instrumentId: input.instrumentId || null,
+      scheduledAt: input.scheduledAt,
+      expectedAmount: input.expectedAmount,
+      type: input.type || (input.expectedAmount < 0 ? "BOT_LOSS" : "BOT_PROFIT"),
+      note: input.note || "Admin-added bot P/L schedule row.",
+      createdByAdminId: req.user!.id
+    },
+    include: { client: true, product: true, instrument: true, investment: true, receipt: true }
+  });
+  await writeAudit("createProfitSchedule", "InvestmentProfitSchedule", row.id, undefined, { req, after: { expectedAmount: input.expectedAmount, scheduledAt: input.scheduledAt } });
+  return ok(res, row, 201);
+}));
+
+v1AdminBrokerRouter.patch("/profit-schedules/:id", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = profitScheduleInput.parse(req.body);
+  const before = await prisma.investmentProfitSchedule.findUnique({ where: { id: String(req.params.id) } });
+  if (!before) throw new ApiError(404, "Profit schedule row was not found", "SCHEDULE_NOT_FOUND");
+  if (before.status !== "PENDING" || before.scheduledAt <= new Date()) throw new ApiError(409, "Only pending future schedule rows can be changed", "SCHEDULE_LOCKED");
+  if (input.scheduledAt && input.scheduledAt <= new Date()) throw new ApiError(422, "Schedule time must remain in the future", "SCHEDULE_NOT_FUTURE");
+  const row = await prisma.investmentProfitSchedule.update({
+    where: { id: before.id },
+    data: {
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+      ...(input.expectedAmount !== undefined ? { expectedAmount: input.expectedAmount, type: input.type || (input.expectedAmount < 0 ? "BOT_LOSS" : "BOT_PROFIT") } : input.type ? { type: input.type } : {}),
+      ...(input.instrumentId !== undefined ? { instrumentId: input.instrumentId || null } : {}),
+      ...(input.note !== undefined ? { note: input.note } : {})
+    },
+    include: { client: true, product: true, instrument: true, investment: true, receipt: true }
+  });
+  await writeAudit("updateProfitSchedule", "InvestmentProfitSchedule", row.id, undefined, { req, before, after: row });
+  return ok(res, row);
+}));
+
+v1AdminBrokerRouter.delete("/profit-schedules/:id", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ note: z.string().trim().min(5).max(1000).default("Cancelled by admin before scheduled posting.") }).parse(req.body || {});
+  const before = await prisma.investmentProfitSchedule.findUnique({ where: { id: String(req.params.id) } });
+  if (!before) throw new ApiError(404, "Profit schedule row was not found", "SCHEDULE_NOT_FOUND");
+  if (before.status !== "PENDING" || before.scheduledAt <= new Date()) throw new ApiError(409, "Only pending future schedule rows can be cancelled", "SCHEDULE_LOCKED");
+  const row = await prisma.investmentProfitSchedule.update({ where: { id: before.id }, data: { status: "CANCELLED", note: input.note } });
+  await writeAudit("cancelProfitSchedule", "InvestmentProfitSchedule", row.id, undefined, { req, before, after: row });
+  return ok(res, row);
+}));
+
 v1AdminBrokerRouter.get("/risk/alerts", readRoles, asyncHandler(async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const rows = await prisma.riskAlert.findMany({ where: status ? { status: status as never } : {}, include: { client: true, product: true, instrument: true }, orderBy: [{ severity: "desc" }, { createdAt: "desc" }] });

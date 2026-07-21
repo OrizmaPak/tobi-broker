@@ -1494,13 +1494,23 @@
     }));
     if (distributions.length) {
       replaceList(DEMO.payouts, distributions.map(function (row) {
+        const receipt = row.receipt || null;
+        const instrument = row.instrument || (receipt && receipt.instrument) || null;
         return {
           source: row.investment && row.investment.product ? row.investment.product.name : (row.batch ? labelize(row.batch.type) : "Distribution"),
           date: formatDate(row.createdAt),
-          type: row.batch ? labelize(row.batch.type) : "Distribution",
+          type: row.batch ? labelize(row.batch.type) : labelize(row.type || "Bot Profit"),
           amount: money(numberValue(row.netAmount)),
-          mode: labelize(row.mode || "WALLET"),
-          status: labelize(row.status)
+          mode: row.mode === "RUNNING_PNL" ? "Running P/L" : labelize(row.mode || "WALLET"),
+          status: labelize(row.status),
+          instrument: instrument ? (instrument.symbol || instrument.name || "Instrument") : "Portfolio",
+          receipt: receipt ? receipt.reference : "-",
+          receiptMeta: receipt ? [
+            receipt.strategyName || "BullPort HFT Bot",
+            receipt.side || "BOT",
+            "Lot " + numberValue(receipt.quantity).toLocaleString("en-US", { maximumFractionDigits: 8 }),
+            "Source: " + (receipt.source || "Scheduled model")
+          ].join(" / ") : ""
         };
       }));
     }
@@ -2429,9 +2439,10 @@
       card("Reinvestment Preference", reinvestments ? reinvestments + " mandate" + (reinvestments === 1 ? "" : "s") : "Wallet credit", "Based on current investment instructions.", "bg-sky-500/10 text-sky-600 dark:text-sky-300") +
       "</div>" +
       section("Dividend and profit history", "Income and profit posting records aligned to the client plan.", table(
-        ["Source", "Date", "Type", "Amount", "Settlement", "Status"],
+        ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"],
         DEMO.payouts.map(function (row) {
-          return [row.source, row.date, row.type, row.amount, row.mode, badge(row.status, statusTone(row.status))];
+          const receipt = row.receipt && row.receipt !== "-" ? '<span class="font-semibold text-primary">' + escapeHtml(row.receipt) + '</span><p class="mt-1 text-xs text-muted-foreground">' + escapeHtml(row.receiptMeta || "") + '</p>' : '<span class="text-xs text-muted-foreground">No receipt</span>';
+          return [escapeHtml(row.source), row.date, row.type, escapeHtml(row.instrument || "Portfolio"), row.amount, row.mode, badge(row.status, statusTone(row.status)), receipt];
         })
       ));
   }

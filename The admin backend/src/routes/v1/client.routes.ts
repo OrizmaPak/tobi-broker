@@ -8,7 +8,7 @@ import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot, money } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { collectDepositProofData, findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
-import { accrueClientInvestmentProfits, cancelInvestmentTx } from "../../services/investment-accrual.service";
+import { accrueClientInvestmentProfits, cancelInvestmentTx, ensureInvestmentProfitScheduleForInvestmentTx } from "../../services/investment-accrual.service";
 import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
@@ -661,6 +661,7 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
       },
       include: { product: true }
     });
+    await ensureInvestmentProfitScheduleForInvestmentTx(tx, investment.id);
     return investment;
   });
   if (!result.cached) await notifyClient({ clientId: id, email: client.email, category: "Investment", title: "Portfolio subscription active", body: `${product.name} has been added to your investments.`, actionUrl: "active-investments.html" });
@@ -795,8 +796,30 @@ v1ClientRouter.post("/options/apply", requireCsrf, asyncHandler(async (req, res)
 }));
 
 v1ClientRouter.get("/distributions", asyncHandler(async (req, res) => {
-  const rows = await prisma.distributionItem.findMany({ where: { clientId: clientId(req) }, include: { batch: true, investment: { include: { product: true } } }, orderBy: { createdAt: "desc" } });
-  return ok(res, rows);
+  const id = clientId(req);
+  await accrueClientInvestmentProfits(id);
+  const [distributions, botEvents] = await Promise.all([
+    prisma.distributionItem.findMany({ where: { clientId: id }, include: { batch: true, investment: { include: { product: true } } }, orderBy: { createdAt: "desc" } }),
+    prisma.investmentProfitSchedule.findMany({
+      where: { clientId: id, status: "POSTED" },
+      include: { investment: { include: { product: true } }, instrument: true, receipt: true },
+      orderBy: { postedAt: "desc" },
+      take: 200
+    })
+  ]);
+  const receipts = botEvents.map((row) => ({
+    id: row.id,
+    type: row.type,
+    netAmount: row.actualAmount || row.expectedAmount,
+    mode: "RUNNING_PNL",
+    status: row.status,
+    createdAt: row.postedAt || row.scheduledAt,
+    investment: row.investment,
+    instrument: row.instrument,
+    receipt: row.receipt,
+    batch: null
+  }));
+  return ok(res, [...receipts, ...distributions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
 }));
 
 v1ClientRouter.put("/investments/:id/distribution-preference", requireCsrf, asyncHandler(async (req, res) => {
