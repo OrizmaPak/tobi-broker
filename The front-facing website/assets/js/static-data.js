@@ -6,7 +6,7 @@ window.APP_STATIC_DATA = {
     address: "London, United Kingdom",
     supportHours: "Monday - Friday, 9:00 AM - 5:00 PM",
     tagline: "Multi-Asset Investing Built for Growth, Income and Control.",
-    risk: "Market data is informational. Investing involves risk. Returns are not guaranteed.",
+    risk: "Product access and account features may depend on eligibility and approval.",
     marketHours: {
       label: "Global Markets",
       timeZone: "America/New_York",
@@ -112,7 +112,7 @@ window.APP_STATIC_DATA = {
       feeSummary: "Illustrative annual management fee from 0.75% plus normal execution costs where applicable.",
       dividendProfitStructure: "Income events can be posted for reporting and either reinvested or held in wallet balances when the portal is connected.",
       rebalancingInfo: "Reviewed quarterly to manage duration risk, issuer concentration and income stability.",
-      disclaimer: "Even conservative allocations can decline in value. Income levels and capital preservation are not guaranteed.",
+      disclaimer: "Portfolio availability, income settings and account features may depend on eligibility and approval.",
       image: "wp-content/uploads/2025/09/account-v1-1.jpg",
       allocation: [
         { label: "Bonds", value: 45 },
@@ -135,7 +135,7 @@ window.APP_STATIC_DATA = {
       feeSummary: "Illustrative annual management fee from 1.00% with standard execution and custody cost assumptions.",
       dividendProfitStructure: "Income and realized gains can be reported monthly with optional reinvestment instructions.",
       rebalancingInfo: "Reviewed monthly to maintain allocation discipline and control drift across risk buckets.",
-      disclaimer: "Balanced portfolios still carry market, liquidity and allocation risk. Actual returns can be lower or negative.",
+      disclaimer: "Portfolio availability, allocation settings and reporting features may depend on eligibility and approval.",
       image: "wp-content/uploads/2025/09/account-v1-2.jpg",
       allocation: [
         { label: "ETFs", value: 40 },
@@ -181,7 +181,7 @@ window.APP_STATIC_DATA = {
       feeSummary: "Illustrative annual management fee from 0.95% plus instrument-level transaction costs.",
       dividendProfitStructure: "Dividend receipts can be shown in periodic reports and may be reinvested or left as available balance.",
       rebalancingInfo: "Reviewed around earnings seasons, payout changes and valuation shifts across the dividend basket.",
-      disclaimer: "Dividend payouts can be reduced, delayed or cancelled. Capital losses can outweigh income received.",
+      disclaimer: "Dividend reporting and income features may depend on issuer events, account eligibility and approval.",
       image: "wp-content/uploads/2025/09/standard-account-v-1-1.jpg",
       allocation: [
         { label: "Dividend Stocks", value: 55 },
@@ -200,11 +200,11 @@ window.APP_STATIC_DATA = {
       minimumInvestment: "$5,000",
       suggestedDuration: "24+ months",
       assetMix: "60% growth stocks, 25% sector ETFs, 10% international equities, 5% cash-like instruments",
-      estimatedReturnRange: "Projected 8% - 18% annually, simulated and subject to significant drawdown risk",
+      estimatedReturnRange: "Projected 8% - 18% annually, simulated for presentation",
       feeSummary: "Illustrative annual management fee from 1.20% plus execution costs tied to active portfolio changes.",
       dividendProfitStructure: "Income may be limited. Performance reporting should distinguish unrealized gains from realized exits.",
       rebalancingInfo: "Reviewed monthly to manage sector concentration, valuation compression and volatility spikes.",
-      disclaimer: "Growth portfolios can experience sharp losses over short periods. Investors should be prepared for higher drawdowns.",
+      disclaimer: "Growth portfolio access and reporting features may depend on eligibility and approval.",
       image: "wp-content/uploads/2025/09/all-market-1-2.jpg",
       allocation: [
         { label: "Growth Stocks", value: 60 },
@@ -227,7 +227,7 @@ window.APP_STATIC_DATA = {
       feeSummary: "Illustrative advisory and premium management fee set after mandate review, account scope and reporting requirements.",
       dividendProfitStructure: "Income, realized gains and portfolio reporting cadence are defined inside the agreed management mandate.",
       rebalancingInfo: "Managed according to client mandate with periodic review, suitability controls and portfolio oversight.",
-      disclaimer: "Tailored portfolios still involve risk. Customization does not eliminate market loss, liquidity risk or execution risk.",
+      disclaimer: "Tailored portfolio access, customization and reporting features may depend on eligibility and approval.",
       image: "wp-content/uploads/2025/09/platform-v2-1.jpg",
       allocation: [
         { label: "Equities", value: 30 },
@@ -404,7 +404,7 @@ window.APP_STATIC_DATA = {
     {
       name: "Options",
       image: "wp-content/uploads/2025/09/all-market-1-6.jpg",
-      description: "Advanced derivatives content with suitability, approval and risk warnings.",
+      description: "Advanced derivatives content with approval and account-access context.",
       href: "pages/options.html"
     }
   ],
@@ -462,9 +462,9 @@ window.APP_STATIC_DATA = {
       summary: "A practical introduction to market risk, liquidity risk, concentration and time horizon.",
       readTime: "6 min read",
       body: [
-        "Investment risk is the possibility that outcomes differ from expectations, including partial or total loss of capital.",
-        "Risk should be reviewed through volatility, liquidity, concentration, investor objective and time horizon instead of headline return alone.",
-        "No allocation removes risk entirely, so portfolio selection should start with suitability, downside tolerance and clear liquidity planning."
+        "Investment outcomes can differ from expectations, so it helps to compare products by objective, time horizon and account fit.",
+        "Portfolio review should consider volatility, liquidity, concentration and the investor's preferred planning horizon.",
+        "Portfolio selection should start with clear objectives, account readiness and eligibility for the selected product."
       ]
     },
     {
@@ -477,7 +477,7 @@ window.APP_STATIC_DATA = {
       body: [
         "Stocks represent ownership in listed companies and their prices can move with earnings, rates, sentiment and industry conditions.",
         "ETFs bundle securities into one traded instrument and can improve diversification across sectors, geographies or themes.",
-        "Both asset classes can lose value, and real results are affected by costs, taxes, timing and market liquidity."
+        "Both asset classes can be affected by costs, taxes, timing and market liquidity."
       ]
     },
     {
@@ -516,7 +516,7 @@ window.APP_STATIC_DATA = {
       body: [
         "Options are contracts whose value can change quickly because of price movement, time decay, volatility and liquidity conditions.",
         "A call provides upside-oriented exposure while a put can provide downside or hedging exposure depending on how it is used.",
-        "Options are not suitable for everyone and should be accessed only after suitability review and explicit approval."
+        "Options access may require review and approval."
       ]
     },
     {
@@ -598,7 +598,7 @@ window.APP_STATIC_DATA = {
     },
     {
       title: "Options Risk",
-      text: "Options are advanced instruments. They can lose value quickly, may expire worthless and may not be suitable for all investors."
+      text: "Options are advanced instruments and access may require review and approval."
     },
     {
       title: "Currency Risk",

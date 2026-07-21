@@ -73,6 +73,13 @@
     return `${safe >= 0 ? "+" : ""}${safe.toFixed(2)}%`;
   }
 
+  function compactNumber(value) {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 1
+    }).format(Number(value || 0));
+  }
+
   function riskClass(value) {
     const text = String(value || "").toLowerCase();
     if (text.includes("low")) return "low";
@@ -118,6 +125,45 @@
       return "pages/stocks-etfs.html";
     }
     return "pages/markets.html";
+  }
+
+  function instrumentDetailHref(item) {
+    return `pages/instrument-detail.html?symbol=${encodeURIComponent(item.symbol || "")}`;
+  }
+
+  function cleanInstrumentSymbol(symbol) {
+    return String(symbol || "").split(/\s+/)[0].replace(/[^A-Za-z0-9.:-]/g, "").toUpperCase();
+  }
+
+  function tradingViewSymbol(itemOrSymbol) {
+    const item = typeof itemOrSymbol === "string" ? { symbol: itemOrSymbol, assetClass: "Stock" } : itemOrSymbol || {};
+    const symbol = cleanInstrumentSymbol(item.symbol);
+    const explicitMap = {
+      AAPL: "NASDAQ:AAPL",
+      MSFT: "NASDAQ:MSFT",
+      TSLA: "NASDAQ:TSLA",
+      SPY: "AMEX:SPY",
+      VEA: "AMEX:VEA",
+      GLD: "AMEX:GLD",
+      USO: "AMEX:USO",
+      BND: "NASDAQ:BND",
+      IEF: "NASDAQ:IEF",
+      NDX: "NASDAQ:NDX",
+      DJI: "DJ:DJI"
+    };
+    if (explicitMap[symbol]) return explicitMap[symbol];
+    if (String(item.assetClass || "").toLowerCase().includes("etf")) return `AMEX:${symbol}`;
+    if (String(item.assetClass || "").toLowerCase().includes("index")) return symbol;
+    return `NASDAQ:${symbol}`;
+  }
+
+  function buildTradingViewWidget(symbol, theme = "dark") {
+    const safeSymbol = escapeHtml(symbol || "NASDAQ:TSLA");
+    return `
+      <div class="tradingview-widget-container app-tv-widget" data-tradingview-symbol="${safeSymbol}" data-tradingview-theme="${escapeHtml(theme)}">
+        <div class="tradingview-widget-container__widget"></div>
+        <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank"><span class="blue-text">Track all markets on TradingView</span></a></div>
+      </div>`;
   }
 
   function money(value, currency = "USD") {
@@ -255,6 +301,22 @@
     window.setTimeout(() => {
       body.classList.add("app-ready");
     }, delay);
+  }
+
+  function installLoaderDismissButton() {
+    if (document.querySelector("[data-loader-dismiss]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "app-loader-cancel";
+    button.dataset.loaderDismiss = "true";
+    button.setAttribute("aria-label", "Dismiss loading screen");
+    button.innerHTML = "<span>Cancel</span><b aria-hidden=\"true\">X</b>";
+    button.addEventListener("click", () => {
+      loaderReleased = true;
+      body.classList.add("app-ready", "app-loader-dismissed");
+      button.remove();
+    });
+    body.appendChild(button);
   }
 
   function currentFor(item) {
@@ -591,7 +653,7 @@
           <div class="app-footer__grid">
             <div>
               <a href="${link("index.html")}" aria-label="${escapeHtml(data.brand.name)} home">${logo(true)}</a>
-              <p style="margin-top:22px;">Explore managed portfolios, multi-asset markets, risk education, clear fees and secure client onboarding.</p>
+              <p style="margin-top:22px;">Explore managed portfolios, multi-asset markets, education, clear fees and secure client onboarding.</p>
               <p class="app-footer__risk">${escapeHtml(data.brand.risk)}</p>
             </div>
             <div>
@@ -747,7 +809,7 @@
       {
         title: "Pricing and Risk",
         eyebrow: "Disclosure",
-        text: "Fees, reporting, risk disclosures and account-readiness information before any portal activity begins.",
+        text: "Fees, reporting and account-readiness information before any portal activity begins.",
         href: "pages/pricing-fees.html"
       }
     ];
@@ -831,7 +893,7 @@
     const panels = [
       {
         text: "Review onboarding, KYC, wallet funding, reporting and statements in one secure client flow.",
-        bullets: ["Secure account access", "Portfolio reporting visibility", "Investor education and risk disclosures", "Wallet funding readiness"]
+        bullets: ["Secure account access", "Portfolio reporting visibility", "Investor education", "Wallet funding readiness"]
       },
       {
         text: "Explore instruments, market snapshots, education and pricing notes before making a decision.",
@@ -974,7 +1036,7 @@
     target.insertAdjacentHTML("afterend", `
       <section class="static-section static-section--soft app-home-disclaimer">
         <div class="static-container">
-          <p class="static-notice">${escapeHtml(data.brand.risk)}</p>
+          <p class="static-notice">Account access, portfolio tools and funding routes may depend on eligibility and approval.</p>
         </div>
       </section>`);
   }
@@ -1034,6 +1096,131 @@
     if (accessTitle) accessTitle.innerHTML = "Master the Markets <br>with Structure";
   }
 
+  function renderTradingViewShowcase() {
+    if (document.querySelector(".app-tradingview-showcase")) return;
+    const marketSection = document.querySelector('[data-id="1ddc498"]');
+    if (!marketSection) return;
+
+    marketSection.insertAdjacentHTML("afterend", `
+      <section class="app-tradingview-showcase" id="trading-workspace" aria-labelledby="tradingview-showcase-title">
+        <div class="app-tradingview-showcase__glow" aria-hidden="true"></div>
+        <div class="static-container app-tradingview-showcase__inner">
+          <div class="app-tradingview-showcase__copy">
+            <span class="app-tradingview-showcase__eyebrow"><i></i> Interactive market workspace</span>
+            <h2 id="tradingview-showcase-title">See the market.<br><em>Study the move.</em></h2>
+            <p>Explore price action in a professional charting environment. Switch timeframes, apply indicators and study global instruments before making your next decision.</p>
+            <div class="app-tradingview-showcase__features" aria-label="Chart capabilities">
+              <div><strong>100+</strong><span>technical indicators</span></div>
+              <div><strong>12</strong><span>drawing tools</span></div>
+              <div><strong>Multi</strong><span>timeframe analysis</span></div>
+            </div>
+            <a class="app-tradingview-showcase__cta" href="${link("pages/markets.html")}">Explore all markets <i class="icon-right-arrow" aria-hidden="true"></i></a>
+          </div>
+          <div class="app-tradingview-terminal">
+            <div class="app-tradingview-terminal__topbar">
+              <div class="app-tradingview-terminal__status"><span></span> Market workspace</div>
+              <div class="app-tradingview-terminal__symbols" aria-hidden="true">
+                <b>TSLA</b><b>NASDAQ</b><b>EV</b>
+              </div>
+              <div class="app-tradingview-terminal__live">LIVE CHART</div>
+            </div>
+            <div class="app-tradingview-terminal__body">
+              ${buildTradingViewWidget("NASDAQ:TSLA", "dark")}
+            </div>
+          </div>
+        </div>
+      </section>`);
+  }
+
+  function renderTestimonialsShowcase() {
+    const section = document.querySelector('[data-id="e65b068"]');
+    if (!section || section.dataset.testimonialsEnhanced === "true") return;
+
+    const portraits = [
+      ["34381970", "testimonials-v1-1.jpg"],
+      ["33100454", "testimonials-v1-2.jpg"],
+      ["34207040", "testimonials-v1-3.jpg"],
+      ["37605833", "t4-270x355.jpg"],
+      ["10029839", "t5-270x355.jpg"],
+      ["29856511", "t6-270x355.jpg"],
+      ["29811345", "t7-270x355.jpg"],
+      ["15908505", "t8-270x355.jpg"],
+      ["13375849", "t9-370x505.jpg"],
+      ["8279012", "t10-270x355.jpg"],
+      ["1181686", "t11-270x355.jpg"],
+      ["2379004", "t12-270x355.jpg"]
+    ].map(([id, fallback]) => ({
+      src: `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=640`,
+      fallback: asset(`wp-content/uploads/2025/09/${fallback}`)
+    }));
+
+    const testimonials = [
+      ["Amara N.", "Growth investor · Lagos", "The portfolio breakdowns make it easy to see where my money is allocated and what level of risk I am taking.", "4.9"],
+      ["Daniel K.", "New investor · Berlin", "I could compare strategies, fees and risk levels without feeling overwhelmed. The education-first approach stands out.", "4.8"],
+      ["Olivia D.", "Portfolio investor · Austin", "The dashboard feels focused. Performance, allocation and reporting are where I expect them to be.", "5.0"],
+      ["Marcus T.", "Income investor · Toronto", "Clear dividend reporting and transparent portfolio notes give me a much better picture of my income strategy.", "4.9"],
+      ["Priya S.", "Long-term investor · Singapore", "The market tools are detailed enough to explore an idea, while the portfolio guidance keeps the bigger picture in view.", "4.8"],
+      ["Noah W.", "ETF investor · London", "From registration to portfolio selection, every step is explained in plain language. That clarity matters.", "4.9"],
+      ["Sofia M.", "Balanced investor · Madrid", "I like being able to review multiple asset classes in one place without the experience feeling cluttered.", "5.0"],
+      ["Ethan R.", "Active investor · Melbourne", "The charting workspace and market snapshots give me a useful starting point before I review a position.", "4.8"],
+      ["Aisha B.", "Commodity investor · Dubai", "Risk information is visible instead of buried. It makes each portfolio easier to evaluate with confidence.", "4.9"],
+      ["Lucas F.", "Dividend investor · Paris", "The fee summaries are refreshingly direct, and the reporting tools make the whole platform feel considered.", "4.9"],
+      ["Maya C.", "First-time investor · Nairobi", "The learning resources helped me understand the difference between market movement and long-term portfolio strategy.", "5.0"],
+      ["James O.", "Multi-asset investor · Dublin", "A polished experience with the right balance of market access, portfolio context and account visibility.", "4.8"]
+    ];
+
+    const cards = testimonials.map((item, index) => {
+      const portrait = portraits[index];
+      return `
+        <article class="app-testimonial-card">
+          <div class="app-testimonial-card__top">
+            <img src="${portrait.src}" data-fallback="${portrait.fallback}" alt="Illustrative profile portrait for ${escapeHtml(item[0])}" loading="lazy">
+            <div><strong>${escapeHtml(item[0])}</strong><span>${escapeHtml(item[1])}</span></div>
+            <div class="app-testimonial-card__rating"><b>${escapeHtml(item[3])}</b><span>★★★★★</span></div>
+          </div>
+          <blockquote>“${escapeHtml(item[2])}”</blockquote>
+          <div class="app-testimonial-card__verified"><i>✓</i> Illustrative client story</div>
+        </article>`;
+    }).join("");
+
+    section.dataset.testimonialsEnhanced = "true";
+    section.id = "investor-stories";
+    section.classList.add("app-testimonials-section");
+    section.innerHTML = `
+      <div class="app-testimonials-shell">
+        <div class="app-testimonials-header">
+          <div>
+            <span class="app-testimonials-kicker">Investor perspectives</span>
+            <h2>Built to feel clear.<br><em>Designed to earn confidence.</em></h2>
+          </div>
+          <div class="app-testimonials-summary">
+            <div><strong>4.9</strong><span>★★★★★</span></div>
+            <p>Illustrative rating based on the sample stories below.</p>
+          </div>
+        </div>
+        <div class="app-testimonials-stage">
+          <button class="app-testimonials-arrow app-testimonials-arrow--prev" type="button" aria-label="Previous testimonials">←</button>
+          <div class="app-testimonials-track" tabindex="0">${cards}</div>
+          <button class="app-testimonials-arrow app-testimonials-arrow--next" type="button" aria-label="Next testimonials">→</button>
+        </div>
+        <div class="app-testimonials-footer">
+          <p>Sample testimonials and profile images are used to demonstrate the intended website experience. Replace them with verified client feedback before publishing.</p>
+          <span><b>12</b> investor perspectives</span>
+        </div>
+      </div>`;
+
+    section.querySelectorAll("img[data-fallback]").forEach((image) => {
+      image.addEventListener("error", () => {
+        if (image.src !== image.dataset.fallback) image.src = image.dataset.fallback;
+      }, { once: true });
+    });
+
+    const track = section.querySelector(".app-testimonials-track");
+    const scrollCards = (direction) => track.scrollBy({ left: direction * Math.min(track.clientWidth * 0.84, 920), behavior: "smooth" });
+    section.querySelector(".app-testimonials-arrow--prev").addEventListener("click", () => scrollCards(-1));
+    section.querySelector(".app-testimonials-arrow--next").addEventListener("click", () => scrollCards(1));
+  }
+
   function enhanceTemplateHome() {
     document.querySelectorAll(".elementor-21 > .static-hidden").forEach((child) => child.classList.remove("static-hidden"));
     document.querySelectorAll(".elementor-21 .e-con.e-parent, .elementor-218 .e-con.e-parent").forEach((section) => {
@@ -1081,6 +1268,8 @@
     updateProcessTemplate();
     updateChooseUsTemplate();
     updateBlogTemplate();
+    renderTradingViewShowcase();
+    renderTestimonialsShowcase();
     injectHomeDisclaimer();
   }
 
@@ -1119,15 +1308,15 @@
         <td data-market-change class="${hasChange ? (positive ? "change-up" : "change-down") : ""}">${escapeHtml(formatPercent(item.changePercent))}</td>
         <td><span class="static-badge static-badge--risk static-badge--${riskClass(item.riskLevel)}">${escapeHtml(item.riskLevel)}</span></td>
         <td data-market-chart><small>${escapeHtml(item.priceSource || "Admin managed")}<br>${escapeHtml(sourceTime)}</small></td>
-        <td><a class="static-link" href="${link(item.href)}">View Details</a></td>
+        <td><a class="static-link" href="${link(instrumentDetailHref(item))}">View More</a></td>
       </tr>`;
   }
 
   function marketTable(filter) {
     const items = filter ? data.instruments.filter(filter) : data.instruments;
     return `
-      <div class="static-market-table-block" data-market-table>
-        <p class="static-market-table__note">${data.marketDataAvailable ? "Prices are admin-managed snapshots, not a live exchange feed." : "Market prices are temporarily unavailable."} Market information is not financial advice.</p>
+      <div class="static-market-table-block" data-market-table data-page-size="6">
+        <p class="static-market-table__note">${data.marketDataAvailable ? "Prices are admin-managed snapshots, not a live exchange feed." : "Market prices are temporarily unavailable."} Use this table for instrument discovery and comparison.</p>
         <div class="static-market-table">
           <table>
             <thead>
@@ -1144,6 +1333,7 @@
             <tbody>${items.map(instrumentRow).join("")}</tbody>
           </table>
         </div>
+        <div class="static-table-pagination" data-table-pagination aria-label="Table pagination"></div>
       </div>`;
   }
 
@@ -1260,15 +1450,18 @@
 
   function feeTable() {
     return `
-      <div class="static-market-table">
-        <table>
-          <thead>
-            <tr><th>Fee</th><th>Value</th><th>Note</th></tr>
-          </thead>
-          <tbody>
-            ${data.fees.map((fee) => `<tr><td>${escapeHtml(fee.label)}</td><td>${escapeHtml(fee.value)}</td><td>${escapeHtml(fee.note)}</td></tr>`).join("")}
-          </tbody>
-        </table>
+      <div class="static-market-table-block" data-market-table data-page-size="8">
+        <div class="static-market-table">
+          <table>
+            <thead>
+              <tr><th>Fee</th><th>Value</th><th>Note</th></tr>
+            </thead>
+            <tbody>
+              ${data.fees.map((fee) => `<tr><td>${escapeHtml(fee.label)}</td><td>${escapeHtml(fee.value)}</td><td>${escapeHtml(fee.note)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="static-table-pagination" data-table-pagination aria-label="Table pagination"></div>
       </div>`;
   }
 
@@ -1290,7 +1483,7 @@
   function renderPortfolios() {
     return pageWrap(
       "Managed Portfolios",
-      "Review six structured portfolio models with risk levels, minimums, allocation mix, reporting notes and suitability-first language.",
+      "Review six structured portfolio models with minimums, allocation mix, reporting notes and account-access context.",
       `
         <section class="static-section">
           <div class="static-container">
@@ -1300,8 +1493,8 @@
         <section class="static-section static-section--dark">
           <div class="static-container">
             <div class="static-heading">
-              <div><span class="static-kicker">Portfolio standards</span><h2>Every allocation should be reviewed through risk, duration and suitability.</h2></div>
-              <p>Estimated return ranges are illustrative only. Investors should compare fees, liquidity expectations and rebalancing policy before selecting a mandate.</p>
+              <div><span class="static-kicker">Portfolio standards</span><h2>Every allocation should be reviewed through duration, fees and account fit.</h2></div>
+              <p>Use the portfolio notes to compare minimums, fee structure, reporting cadence and rebalancing policy before selecting a mandate.</p>
             </div>
             <div class="static-grid static-grid--3">${trustHtml()}</div>
           </div>
@@ -1396,9 +1589,9 @@
               ${infoCards([
                 { title: "What stocks are", text: "Stocks represent ownership in listed companies and can support capital growth, dividend income or sector exposure." },
                 { title: "What ETFs are", text: "ETFs package multiple securities into one traded instrument for diversified or thematic access." },
-                { title: "Main risks", text: "Equity risk, valuation risk, sector concentration, liquidity shifts and market-wide drawdowns all matter." },
-                { title: "Blue-chip stocks", text: "Large established companies often offer stability relative to smaller issuers, but they still carry market risk." },
-                { title: "Growth stocks", text: "Growth names can offer stronger upside potential, though drawdowns and volatility can be meaningfully higher." },
+                { title: "Key considerations", text: "Valuation, sector concentration, liquidity and broader market conditions all matter." },
+                { title: "Blue-chip stocks", text: "Large established companies are often used by investors seeking recognizable, mature issuers." },
+                { title: "Growth stocks", text: "Growth names are often used by investors looking for companies with expanding revenue or market share." },
                 { title: "Dividend stocks and sector ETFs", text: "Income-oriented equities and sector funds can support portfolio targeting, but payouts and sector trends can change quickly." }
               ])}
             </div>
@@ -1414,10 +1607,108 @@
             <div class="static-cta" style="margin-top:28px;">
               <div>
                 <h2>Want a managed route into stocks and ETFs?</h2>
-                <p>Explore the balanced, dividend and equity growth portfolios for structured exposure with defined risk language.</p>
+                <p>Explore the balanced, dividend and equity growth portfolios for structured exposure with clear account-access language.</p>
               </div>
               <a class="static-button" href="${link("pages/portfolios.html")}">Explore Portfolios</a>
             </div>
+          </div>
+        </section>`
+    );
+  }
+
+  function renderInstrumentDetail() {
+    const requestedSymbol = cleanInstrumentSymbol(new URLSearchParams(location.search).get("symbol"));
+    const item = data.instruments.find((instrument) => cleanInstrumentSymbol(instrument.symbol) === requestedSymbol)
+      || data.instruments.find((instrument) => instrument.assetClass === "Stock")
+      || data.instruments[0];
+    const hasChange = item.changePercent !== null && item.changePercent !== undefined;
+    const positive = hasChange && Number(item.changePercent) >= 0;
+    const changeLabel = formatPercent(item.changePercent);
+    const sourceTime = item.priceAsOf
+      ? new Date(item.priceAsOf).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+      : "No snapshot published";
+    const points = Array.isArray(item.chartData) && item.chartData.length ? item.chartData : [item.price || 0];
+    const firstPoint = Number(points[0] || 0);
+    const lastPoint = Number(points[points.length - 1] || item.price || 0);
+    const rangeMove = firstPoint ? ((lastPoint - firstPoint) / firstPoint) * 100 : Number(item.changePercent || 0);
+    const rangeHigh = Math.max(...points.map((point) => Number(point || 0)));
+    const rangeLow = Math.min(...points.map((point) => Number(point || 0)));
+    const tvSymbol = tradingViewSymbol(item);
+    const related = data.instruments
+      .filter((instrument) => instrument.symbol !== item.symbol && instrument.assetClass === item.assetClass)
+      .slice(0, 4);
+
+    return pageWrap(
+      `${item.symbol} Performance`,
+      `${item.name} market view, published snapshot details and TradingView charting workspace.`,
+      `
+        <section class="static-section static-section--instrument-detail">
+          <div class="static-container">
+            <div class="instrument-detail-layout">
+              <div class="instrument-detail-copy">
+                <a class="static-link instrument-detail-back" href="${link(item.href || "pages/markets.html")}">Back to market table</a>
+                <span class="static-kicker">${escapeHtml(item.assetClass)}</span>
+                <h2>${escapeHtml(item.name)}</h2>
+                <p>${escapeHtml(item.symbol)} is shown with BullPort's published snapshot data and a TradingView chart for deeper technical review.</p>
+                <div class="instrument-metric-grid">
+                  <div>
+                    <span>Last price</span>
+                    <strong>${escapeHtml(formatPrice(item.price, item.assetClass))}</strong>
+                  </div>
+                  <div>
+                    <span>Published change</span>
+                    <strong class="${positive ? "change-up" : hasChange ? "change-down" : ""}">${escapeHtml(changeLabel)}</strong>
+                  </div>
+                  <div>
+                    <span>Snapshot move</span>
+                    <strong class="${rangeMove >= 0 ? "change-up" : "change-down"}">${escapeHtml(formatPercent(rangeMove))}</strong>
+                  </div>
+                  <div>
+                    <span>Risk level</span>
+                    <strong>${escapeHtml(item.riskLevel)}</strong>
+                  </div>
+                </div>
+                <div class="instrument-detail-card">
+                  <h3>Performance Snapshot</h3>
+                  <p>Recent range: ${escapeHtml(formatPrice(rangeLow, item.assetClass))} low to ${escapeHtml(formatPrice(rangeHigh, item.assetClass))} high.</p>
+                  <p>Source: ${escapeHtml(item.priceSource || "Admin managed")} · ${escapeHtml(sourceTime)}</p>
+                </div>
+              </div>
+              <div class="instrument-chart-panel">
+                <div class="instrument-chart-panel__top">
+                  <div><span>${escapeHtml(tvSymbol)}</span><strong>TradingView chart</strong></div>
+                  <b>${escapeHtml(compactNumber(item.price || 0))}</b>
+                </div>
+                ${buildTradingViewWidget(tvSymbol, "dark")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="static-section static-section--soft">
+          <div class="static-container">
+            <div class="static-heading">
+              <div><span class="static-kicker">Instrument context</span><h2>Review the details before moving into the client portal.</h2></div>
+              <p>Public market pages are for discovery and education. Account-specific trading, funding and suitability checks remain inside the secure platform.</p>
+            </div>
+            <div class="static-grid static-grid--3">
+              ${infoCards([
+                { title: "Asset class", text: `${item.symbol} is categorized as ${item.assetClass}. Compare it with similar instruments before taking exposure.` },
+                { title: "Profile", text: `${item.riskLevel} profile shown for quick comparison across instruments and market categories.` },
+                { title: "Charting workflow", text: "Use TradingView indicators, drawing tools and timeframe controls to inspect trend, volatility and support/resistance areas." }
+              ])}
+            </div>
+            ${related.length ? `
+              <div class="instrument-related">
+                <h3>Related ${escapeHtml(item.assetClass)} instruments</h3>
+                <div class="static-grid static-grid--4">
+                  ${related.map((instrument) => `
+                    <a class="instrument-related-card" href="${link(instrumentDetailHref(instrument))}">
+                      <span>${escapeHtml(instrument.symbol)}</span>
+                      <strong>${escapeHtml(instrument.name)}</strong>
+                      <small>${escapeHtml(formatPrice(instrument.price, instrument.assetClass))}</small>
+                    </a>`).join("")}
+                </div>
+              </div>` : ""}
           </div>
         </section>`
     );
@@ -1436,7 +1727,7 @@
                 { title: "What commodity investing means", text: "Commodity exposure links investor outcomes to materials such as metals, energy and agriculture products." },
                 { title: "Supported commodities", text: "Gold, oil-linked instruments, cocoa, maize, soybean, rice and commodity ETFs appear in the current content model." },
                 { title: "Why investors use commodities", text: "They are often used for diversification, inflation awareness and exposure to supply-demand cycles." },
-                { title: "Commodity risks", text: "Policy, weather, transportation, storage, futures structure and liquidity can all affect outcomes sharply." },
+                { title: "Commodity considerations", text: "Policy, weather, transportation, storage, futures structure and liquidity can affect commodity-linked exposure." },
                 { title: "Commodity ETFs", text: "Commodity-linked ETFs can simplify access but may behave differently from spot prices because of fund structure and roll costs." },
                 { title: "Portfolio use", text: "Commodity allocations often work best as part of a broader portfolio rather than as a stand-alone concentration." }
               ])}
@@ -1470,11 +1761,11 @@
 
     return pageWrap(
       "Options",
-      "Options are advanced instruments and may not be suitable for all investors.",
+      "Options access, education and watchlist context for approved accounts.",
       `
         <section class="static-section">
           <div class="static-container">
-            <p class="static-notice">Options involve significant risk and are not suitable for all investors. Access may require approval.</p>
+            <p class="static-notice">Access to options may require approval.</p>
             <div class="static-grid static-grid--3" style="margin-top:28px;">
               ${infoCards([
                 { title: "Call Options", text: "A call option gives the holder the right, but not the obligation, to buy an asset at a stated strike price before expiry." },
@@ -1482,7 +1773,7 @@
                 { title: "Strike Price", text: "The strike price is the reference level at which the option contract can be exercised." },
                 { title: "Expiry Date", text: "Options have a fixed lifetime. As expiry approaches, time value can erode quickly." },
                 { title: "Premium", text: "The premium is the price paid or received for the option contract and can change with volatility, time and asset movement." },
-                { title: "Why options are high-risk", text: "Leverage, time decay, volatility shifts and low liquidity can create rapid losses, including a total loss of premium." }
+                { title: "Approval context", text: "Options access can depend on account type, experience level, product scope and platform approval." }
               ])}
             </div>
           </div>
@@ -1491,24 +1782,24 @@
           <div class="static-container">
             <div class="static-heading">
               <div><span class="static-kicker">Eligibility</span><h2>Options access should be status-driven and suitability-based.</h2></div>
-              <p>Approval should consider investor knowledge, account type, risk tolerance, local rules and product scope.</p>
+              <p>Approval can consider investor knowledge, account type, local rules and product scope.</p>
             </div>
             ${statusGrid(statuses)}
             <div class="static-grid static-two-col" style="margin-top:28px;">
               <div class="static-card">
                 <div class="static-card__body">
-                  <h3>Risk warning</h3>
+                  <h3>Access notes</h3>
                   ${bulletList([
-                    "Options can expire worthless.",
-                    "Small price moves can have large impact on option value.",
-                    "Liquidity may be limited in some contracts.",
-                    "Approval does not remove suitability or loss risk."
+                    "Options access may require approval.",
+                    "Supported contracts can vary by account.",
+                    "Some strategies may require additional review.",
+                    "Account permissions can be updated over time."
                   ])}
                 </div>
               </div>
               <div>
                 <h3 class="static-section-title" style="font-size:30px;margin-bottom:10px;">Options watchlist</h3>
-                <p class="static-lead" style="margin-bottom:18px;">These instruments are informational and should be reviewed with full risk context.</p>
+                <p class="static-lead" style="margin-bottom:18px;">These instruments are shown for watchlist and education context.</p>
                 ${marketTable(filter)}
               </div>
             </div>
@@ -1591,7 +1882,7 @@
                   <span class="static-badge">${escapeHtml(post.readTime)}</span>
                 </div>
                 ${post.body.map((paragraph) => `<p class="static-lead static-detail-copy">${escapeHtml(paragraph)}</p>`).join("")}
-                <p class="static-notice">Educational content only. It is not personalized financial advice.</p>
+                <p class="static-notice">Use this guide as general education before continuing into account-specific workflows.</p>
               </div>
             </div>
           </div>
@@ -1618,7 +1909,7 @@
         </section>
         <section class="static-section static-section--soft">
           <div class="static-container">
-            <p class="static-notice">${escapeHtml(data.brand.risk)} Funding and withdrawals should happen only inside authenticated client modules.</p>
+            <p class="static-notice">Funding and withdrawals happen only inside authenticated client modules.</p>
           </div>
         </section>`
     );
@@ -1648,7 +1939,7 @@
   function renderFaqs() {
     return pageWrap(
       "FAQs",
-      "Answers for account creation, KYC, funding, portfolios, dividends, fees, risks, options approval and support.",
+      "Answers for account creation, KYC, funding, portfolios, dividends, fees, options approval and support.",
       `
         <section class="static-section">
           <div class="static-container static-legal">
@@ -1671,7 +1962,7 @@
           <div class="static-container">
             <div class="static-heading">
               <div><span class="static-kicker">Positioning</span><h2>Built for clear portfolio access and disclosure-first investor education.</h2></div>
-              <p>${escapeHtml(data.brand.name)} presents portfolios, market categories, risk language, pricing and onboarding context before any secured portal activity begins.</p>
+              <p>${escapeHtml(data.brand.name)} presents portfolios, market categories, pricing and onboarding context before any secured portal activity begins.</p>
             </div>
             <div class="static-grid static-grid--3">${trustHtml()}</div>
           </div>
@@ -1745,7 +2036,7 @@
   function renderContact() {
     return pageWrap(
       "Contact",
-      "Speak with support about onboarding, portfolios, markets, pricing, risk disclosures or portal readiness.",
+      "Speak with support about onboarding, portfolios, markets, pricing or portal readiness.",
       `
         <section class="static-section static-section--contact-intake">
           <div class="static-container">
@@ -1757,7 +2048,7 @@
                 <div class="contact-intake-routes">
                   <div><strong>Onboarding</strong><span>Account setup, KYC and portal readiness.</span></div>
                   <div><strong>Money movement</strong><span>Funding, withdrawal and payment-route questions.</span></div>
-                  <div><strong>Investments</strong><span>Portfolios, market access, reporting and risk review.</span></div>
+                  <div><strong>Investments</strong><span>Portfolios, market access, reporting and account review.</span></div>
                 </div>
                 <div class="contact-intake-details">
                   <p><span>Email</span><a href="mailto:${escapeHtml(data.brand.email)}">${escapeHtml(data.brand.email)}</a></p>
@@ -1773,7 +2064,7 @@
                   <p>We'll respond with the next step or route you into the secure client portal.</p>
                 </div>
                 ${contactForm()}
-                <p class="static-notice">${escapeHtml(data.brand.risk)}</p>
+                <p class="static-notice">Account features and product access may depend on eligibility and approval.</p>
               </div>
             </div>
           </div>
@@ -1792,7 +2083,7 @@
           <div class="static-container static-legal">
             <h2>Informational website</h2>
             <p>This website explains platform concepts, published portfolios, instruments, pricing and education. A client relationship begins only after account approval and acceptance of the applicable terms.</p>
-            <h2>No guarantee</h2>
+            <h2>Account Review</h2>
             <p>${escapeHtml(data.brand.risk)}</p>
             <h2>Portal separation</h2>
             <p>Funding, withdrawals, KYC, account statements and investment activity are completed only inside authenticated client portal workflows.</p>
@@ -1837,7 +2128,7 @@
             <div class="static-cta">
               <div>
                 <h2>Return to the main website.</h2>
-                <p>Use the navigation to review portfolios, markets, education, pricing, risk disclosure or support.</p>
+                <p>Use the navigation to review portfolios, markets, education, pricing or support.</p>
               </div>
               <a class="static-button" href="${link("index.html")}">Go Home</a>
             </div>
@@ -1854,6 +2145,7 @@
       portfolios: renderPortfolios,
       markets: renderMarkets,
       "stocks-etfs": renderStocksEtfs,
+      "instrument-detail": renderInstrumentDetail,
       commodities: renderCommodities,
       options: renderOptions,
       "how-it-works": renderHowItWorks,
@@ -1950,6 +2242,70 @@
     });
   }
 
+  function renderTradingViewWidgets() {
+    document.querySelectorAll(".app-tv-widget[data-tradingview-symbol]").forEach((container) => {
+      if (container.dataset.tradingviewLoaded === "true") return;
+      container.dataset.tradingviewLoaded = "true";
+      const script = document.createElement("script");
+      script.type = "text/javascript";
+      script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+      script.async = true;
+      script.textContent = JSON.stringify({
+        autosize: true,
+        symbol: container.dataset.tradingviewSymbol || "NASDAQ:TSLA",
+        interval: "D",
+        timezone: "Etc/UTC",
+        theme: container.dataset.tradingviewTheme || "dark",
+        style: "1",
+        locale: "en",
+        allow_symbol_change: true,
+        calendar: false,
+        support_host: "https://www.tradingview.com"
+      });
+      container.appendChild(script);
+    });
+  }
+
+  function bindPaginatedTables() {
+    document.querySelectorAll("[data-market-table]").forEach((block) => {
+      if (block.dataset.paginationBound === "true") return;
+      const rows = Array.from(block.querySelectorAll("tbody tr"));
+      const controls = block.querySelector("[data-table-pagination]");
+      const pageSize = Number(block.dataset.pageSize || 8);
+      if (!controls || rows.length <= pageSize) {
+        if (controls) controls.innerHTML = "";
+        return;
+      }
+
+      block.dataset.paginationBound = "true";
+      let currentPage = 1;
+      const totalPages = Math.ceil(rows.length / pageSize);
+
+      const render = () => {
+        rows.forEach((row, index) => {
+          const visible = index >= (currentPage - 1) * pageSize && index < currentPage * pageSize;
+          row.hidden = !visible;
+        });
+        controls.innerHTML = `
+          <button type="button" data-table-prev ${currentPage === 1 ? "disabled" : ""}>Previous</button>
+          <span>Page ${currentPage} of ${totalPages}</span>
+          <button type="button" data-table-next ${currentPage === totalPages ? "disabled" : ""}>Next</button>
+        `;
+      };
+
+      controls.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        if (button.matches("[data-table-prev]")) currentPage = Math.max(1, currentPage - 1);
+        if (button.matches("[data-table-next]")) currentPage = Math.min(totalPages, currentPage + 1);
+        render();
+        block.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      render();
+    });
+  }
+
   function applySeo() {
     const seo = {
       home: {
@@ -1967,6 +2323,10 @@
       "stocks-etfs": {
         title: `Stocks & ETFs | ${data.brand.name}`,
         description: "Understand blue-chip stocks, growth stocks, dividend stocks, sector ETFs and international ETF exposure."
+      },
+      "instrument-detail": {
+        title: `Instrument Performance | ${data.brand.name}`,
+        description: "Review an instrument snapshot with TradingView charting and performance context."
       },
       commodities: {
         title: `Commodities | ${data.brand.name}`,
@@ -2083,6 +2443,7 @@
     renderFooter();
     remapLegacyLinks();
     bindForms();
+    bindPaginatedTables();
     markRequiredFields();
     bindContactVideo();
     replaceBrandText();
@@ -2091,6 +2452,7 @@
     applySeo();
     startMarketStatusClock();
     startMarketFeed();
+    renderTradingViewWidgets();
     appInitialized = true;
     releasePageLoader();
     window.setTimeout(() => releasePageLoader(true), 3500);
@@ -2106,6 +2468,8 @@
     });
     init();
   }
+
+  installLoaderDismissButton();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

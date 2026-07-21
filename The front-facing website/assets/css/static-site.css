@@ -64,6 +64,52 @@ body[data-page] .loader-wrap {
   display: none !important;
 }
 
+.app-loader-cancel {
+  align-items: center;
+  background: #1f251e;
+  border: 1px solid rgba(36, 177, 36, 0.28);
+  border-radius: 999px;
+  box-shadow: 0 14px 34px rgba(31, 37, 30, 0.18);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: "Figtree", sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 10px;
+  line-height: 1;
+  min-height: 42px;
+  padding: 0 9px 0 16px;
+  position: fixed;
+  right: 24px;
+  top: 22px;
+  transition: background 0.2s ease, opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+  z-index: 100000;
+}
+
+.app-loader-cancel b {
+  align-items: center;
+  background: var(--app-green);
+  border-radius: 50%;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 11px;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.app-loader-cancel:hover {
+  background: #11170f;
+  transform: translateY(-1px);
+}
+
+body[data-page].app-ready .app-loader-cancel {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 @keyframes appLogoPulse {
   0%,
   100% {
@@ -533,6 +579,44 @@ body[data-page] .loader-wrap {
 
 .static-market-table tr:last-child td {
   border-bottom: 0;
+}
+
+.static-market-table tr[hidden] {
+  display: none !important;
+}
+
+.static-table-pagination {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: flex-end;
+}
+
+.static-table-pagination:empty {
+  display: none;
+}
+
+.static-table-pagination button {
+  background: var(--app-ink);
+  border: 0;
+  border-radius: 4px;
+  color: var(--app-white);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.static-table-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.static-table-pagination span {
+  color: var(--app-muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .change-up {
@@ -1955,6 +2039,192 @@ body.app-nav-open {
   margin-top: 14px;
 }
 
+.static-section--instrument-detail {
+  background:
+    linear-gradient(135deg, rgba(36, 177, 36, 0.08), rgba(31, 37, 30, 0.03)),
+    #ffffff;
+}
+
+.instrument-detail-layout {
+  align-items: stretch;
+  display: grid;
+  gap: 34px;
+  grid-template-columns: minmax(300px, 0.85fr) minmax(520px, 1.15fr);
+}
+
+.instrument-detail-copy {
+  min-width: 0;
+}
+
+.instrument-detail-back {
+  margin-bottom: 22px;
+}
+
+.instrument-detail-copy h2 {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: clamp(38px, 5vw, 64px);
+  letter-spacing: 0;
+  line-height: 1.02;
+  margin: 0 0 18px;
+}
+
+.instrument-detail-copy > p {
+  color: var(--app-muted);
+  font-size: 17px;
+  line-height: 1.7;
+  margin: 0 0 26px;
+}
+
+.instrument-metric-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 18px;
+}
+
+.instrument-metric-grid div,
+.instrument-detail-card,
+.instrument-chart-panel,
+.instrument-related-card {
+  background: var(--app-white);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  box-shadow: var(--app-shadow);
+}
+
+.instrument-metric-grid div {
+  padding: 18px;
+}
+
+.instrument-metric-grid span,
+.instrument-chart-panel__top span {
+  color: var(--app-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.instrument-metric-grid strong {
+  color: var(--app-ink);
+  display: block;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.instrument-detail-card {
+  padding: 24px;
+}
+
+.instrument-detail-card h3,
+.instrument-related h3 {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 26px;
+  margin: 0 0 10px;
+}
+
+.instrument-detail-card p {
+  color: var(--app-muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.instrument-detail-card p + p {
+  margin-top: 8px;
+}
+
+.instrument-chart-panel {
+  background: #0f1210;
+  border-color: rgba(31, 37, 30, 0.18);
+  color: var(--app-white);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.instrument-chart-panel__top {
+  align-items: center;
+  background: #191e18;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  min-height: 70px;
+  padding: 0 22px;
+}
+
+.instrument-chart-panel__top span {
+  color: #8ee06e;
+  margin-bottom: 3px;
+}
+
+.instrument-chart-panel__top strong {
+  color: var(--app-white);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 22px;
+}
+
+.instrument-chart-panel__top b {
+  background: rgba(36, 177, 36, 0.14);
+  border: 1px solid rgba(36, 177, 36, 0.35);
+  border-radius: 4px;
+  color: #b9f4b7;
+  font-family: "Chakra Petch", sans-serif;
+  padding: 8px 12px;
+}
+
+.instrument-chart-panel .app-tv-widget,
+.instrument-chart-panel .tradingview-widget-container__widget {
+  height: 560px;
+  min-height: 560px;
+  width: 100%;
+}
+
+.instrument-chart-panel .tradingview-widget-copyright {
+  display: none;
+}
+
+.instrument-related {
+  margin-top: 34px;
+}
+
+.instrument-related-card {
+  display: block;
+  padding: 22px;
+  text-decoration: none !important;
+}
+
+.instrument-related-card span,
+.instrument-related-card strong,
+.instrument-related-card small {
+  display: block;
+}
+
+.instrument-related-card span {
+  color: var(--app-green-dark);
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.instrument-related-card strong {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 20px;
+  line-height: 1.2;
+  min-height: 48px;
+}
+
+.instrument-related-card small {
+  color: var(--app-muted);
+  font-weight: 800;
+  margin-top: 12px;
+}
+
 @media (max-width: 1199px) {
   .main-menu .main-menu__list > li + li,
   .stricky-header .main-menu__list > li + li {
@@ -2057,6 +2327,10 @@ body.app-nav-open {
 
   .contact-video-panel__media {
     min-height: 340px;
+  }
+
+  .instrument-detail-layout {
+    grid-template-columns: 1fr;
   }
 
   .contact-video-panel__content {
@@ -2190,6 +2464,28 @@ body.app-nav-open {
     font-size: 32px;
   }
 
+  .static-table-pagination {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .instrument-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .instrument-chart-panel__top {
+    align-items: flex-start;
+    display: grid;
+  }
+
+  .instrument-chart-panel .app-tv-widget,
+  .instrument-chart-panel .tradingview-widget-container__widget {
+    height: 460px;
+    min-height: 460px;
+  }
+
   .app-header-actions {
     display: none;
   }
@@ -2287,4 +2583,593 @@ body.app-nav-open {
   font-weight: 950;
   line-height: 1;
   margin-left: 4px;
+}
+
+/* Homepage market workspace */
+.app-tradingview-showcase {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(36, 177, 36, 0.18), transparent 34%),
+    linear-gradient(145deg, #11170f 0%, #20291d 52%, #161c14 100%);
+  color: #fff;
+  overflow: hidden;
+  padding: 112px 0;
+  position: relative;
+}
+
+.app-tradingview-showcase__glow {
+  background: rgba(36, 177, 36, 0.14);
+  border-radius: 999px;
+  filter: blur(90px);
+  height: 320px;
+  pointer-events: none;
+  position: absolute;
+  right: -80px;
+  top: -120px;
+  width: 420px;
+}
+
+.app-tradingview-showcase__inner {
+  align-items: center;
+  display: grid;
+  gap: clamp(42px, 6vw, 88px);
+  grid-template-columns: minmax(300px, 0.72fr) minmax(560px, 1.35fr);
+  position: relative;
+  z-index: 1;
+}
+
+.app-tradingview-showcase__copy {
+  max-width: 470px;
+}
+
+.app-tradingview-showcase__eyebrow,
+.app-testimonials-kicker {
+  align-items: center;
+  color: #98df7f;
+  display: inline-flex;
+  font-family: "Figtree", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 9px;
+  letter-spacing: 0.16em;
+  margin-bottom: 22px;
+  text-transform: uppercase;
+}
+
+.app-tradingview-showcase__eyebrow i {
+  background: #3fd331;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px rgba(63, 211, 49, 0.12);
+  height: 7px;
+  width: 7px;
+}
+
+.app-tradingview-showcase h2,
+.app-testimonials-header h2 {
+  color: inherit;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: clamp(44px, 4.4vw, 68px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  margin: 0 0 26px;
+}
+
+.app-tradingview-showcase h2 em,
+.app-testimonials-header h2 em {
+  color: #8ee06e;
+  font-style: normal;
+}
+
+.app-tradingview-showcase__copy > p {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 17px;
+  line-height: 1.72;
+  margin: 0;
+}
+
+.app-tradingview-showcase__features {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 32px 0;
+  padding: 22px 0;
+}
+
+.app-tradingview-showcase__features div {
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0 14px;
+}
+
+.app-tradingview-showcase__features div:first-child {
+  padding-left: 0;
+}
+
+.app-tradingview-showcase__features div:last-child {
+  border-right: 0;
+}
+
+.app-tradingview-showcase__features strong,
+.app-tradingview-showcase__features span {
+  display: block;
+}
+
+.app-tradingview-showcase__features strong {
+  color: #fff;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 21px;
+}
+
+.app-tradingview-showcase__features span {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  line-height: 1.25;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.app-tradingview-showcase__cta {
+  align-items: center;
+  background: var(--app-green);
+  border-radius: 4px;
+  color: #fff !important;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 800;
+  gap: 12px;
+  margin-bottom: 26px;
+  padding: 15px 20px;
+  text-decoration: none !important;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.app-tradingview-showcase__cta:hover {
+  background: #32c62e;
+  transform: translateY(-2px);
+}
+
+.app-tradingview-showcase__copy small {
+  color: rgba(255, 255, 255, 0.38);
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.app-tradingview-terminal {
+  background: #0f1210;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.45), 0 0 0 8px rgba(255, 255, 255, 0.025);
+  min-width: 0;
+  overflow: hidden;
+  transform: perspective(1400px) rotateY(-1.2deg);
+}
+
+.app-tradingview-terminal__topbar {
+  align-items: center;
+  background: #191e18;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 0 18px;
+}
+
+.app-tradingview-terminal__status,
+.app-tradingview-terminal__live {
+  align-items: center;
+  color: rgba(255, 255, 255, 0.72);
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-tradingview-terminal__status span {
+  background: #45db39;
+  border-radius: 50%;
+  box-shadow: 0 0 9px rgba(69, 219, 57, 0.8);
+  height: 7px;
+  width: 7px;
+}
+
+.app-tradingview-terminal__symbols {
+  display: flex;
+  gap: 7px;
+}
+
+.app-tradingview-terminal__symbols b {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 6px 9px;
+}
+
+.app-tradingview-terminal__live {
+  color: #74db64;
+}
+
+.app-tradingview-terminal__body,
+.app-tradingview-terminal .tradingview-widget-container,
+.app-tradingview-terminal .tradingview-widget-container__widget {
+  height: 560px;
+  min-height: 560px;
+  width: 100%;
+}
+
+.app-tradingview-terminal .tradingview-widget-copyright {
+  display: none;
+}
+
+/* Homepage testimonial gallery */
+.app-testimonials-section {
+  background:
+    radial-gradient(circle at 88% 10%, rgba(36, 177, 36, 0.12), transparent 30%),
+    #f3f7f1 !important;
+  display: block !important;
+  overflow: hidden;
+  padding: 112px 0 104px !important;
+}
+
+.app-testimonials-shell {
+  margin: 0 auto;
+  max-width: 1320px;
+  padding: 0 24px;
+  width: 100%;
+}
+
+.app-testimonials-header {
+  align-items: flex-end;
+  display: flex;
+  gap: 42px;
+  justify-content: space-between;
+  margin-bottom: 46px;
+}
+
+.app-testimonials-kicker {
+  color: var(--app-green-dark);
+  margin-bottom: 16px;
+}
+
+.app-testimonials-header h2 {
+  color: var(--app-ink);
+  font-size: clamp(42px, 4.6vw, 66px);
+  margin: 0;
+}
+
+.app-testimonials-header h2 em {
+  color: var(--app-green-dark);
+}
+
+.app-testimonials-summary {
+  align-items: center;
+  border-left: 1px solid #cfd8cc;
+  display: flex;
+  gap: 20px;
+  margin-bottom: 3px;
+  max-width: 390px;
+  padding-left: 28px;
+}
+
+.app-testimonials-summary > div strong,
+.app-testimonials-summary > div span {
+  display: block;
+}
+
+.app-testimonials-summary > div strong {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 36px;
+  line-height: 1;
+}
+
+.app-testimonials-summary > div span,
+.app-testimonial-card__rating span {
+  color: #e5a900;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.app-testimonials-summary p {
+  color: var(--app-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.app-testimonials-stage {
+  position: relative;
+}
+
+.app-testimonials-track {
+  display: grid;
+  gap: 18px;
+  grid-auto-columns: calc((100% - 36px) / 3);
+  grid-auto-flow: column;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 8px 2px 25px;
+  scrollbar-color: var(--app-green) rgba(31, 37, 30, 0.08);
+  scrollbar-width: thin;
+  scroll-snap-type: inline mandatory;
+}
+
+.app-testimonials-track::-webkit-scrollbar {
+  height: 4px;
+}
+
+.app-testimonials-track::-webkit-scrollbar-thumb {
+  background: var(--app-green);
+  border-radius: 20px;
+}
+
+.app-testimonials-track::-webkit-scrollbar-track {
+  background: rgba(31, 37, 30, 0.08);
+}
+
+.app-testimonial-card {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #dfe7dc;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(31, 37, 30, 0.07);
+  display: flex;
+  flex-direction: column;
+  min-height: 330px;
+  padding: 28px;
+  scroll-snap-align: start;
+}
+
+.app-testimonial-card__top {
+  align-items: center;
+  display: grid;
+  gap: 13px;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+}
+
+.app-testimonial-card__top img {
+  background: #e7eee5;
+  border: 3px solid #fff;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 1px #d9e3d7;
+  height: 54px;
+  object-fit: cover;
+  object-position: center 22%;
+  width: 54px;
+}
+
+.app-testimonial-card__top strong,
+.app-testimonial-card__top span {
+  display: block;
+}
+
+.app-testimonial-card__top strong {
+  color: var(--app-ink);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.app-testimonial-card__top > div:nth-child(2) span {
+  color: #7b8279;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.app-testimonial-card__rating {
+  text-align: right;
+}
+
+.app-testimonial-card__rating b {
+  color: var(--app-ink);
+  display: block;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 15px;
+}
+
+.app-testimonial-card blockquote {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: #3a4138;
+  flex: 1;
+  font-family: "Figtree", sans-serif;
+  font-size: 18px;
+  font-style: normal;
+  line-height: 1.65;
+  margin: 30px 0 24px;
+  padding: 0;
+}
+
+.app-testimonial-card blockquote::before,
+.app-testimonial-card blockquote::after {
+  display: none !important;
+}
+
+.app-testimonial-card__verified {
+  align-items: center;
+  color: #738070;
+  display: flex;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-testimonial-card__verified i {
+  align-items: center;
+  background: #e6f6df;
+  border-radius: 50%;
+  color: var(--app-green-dark);
+  display: inline-flex;
+  font-size: 9px;
+  font-style: normal;
+  height: 18px;
+  justify-content: center;
+  width: 18px;
+}
+
+.app-testimonials-arrow {
+  align-items: center;
+  background: var(--app-ink);
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 21px;
+  height: 48px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  top: calc(50% - 24px);
+  transition: background 0.2s ease, transform 0.2s ease;
+  width: 48px;
+  z-index: 4;
+}
+
+.app-testimonials-arrow:hover {
+  background: var(--app-green-dark);
+  transform: scale(1.04);
+}
+
+.app-testimonials-arrow--prev {
+  left: -24px;
+}
+
+.app-testimonials-arrow--next {
+  right: -24px;
+}
+
+.app-testimonials-footer {
+  align-items: center;
+  display: flex;
+  gap: 28px;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.app-testimonials-footer p {
+  color: #7a8178;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 720px;
+}
+
+.app-testimonials-footer > span {
+  color: #6d746b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.app-testimonials-footer > span b {
+  color: var(--app-green-dark);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 20px;
+  margin-right: 4px;
+}
+
+@media (max-width: 1100px) {
+  .app-tradingview-showcase__inner {
+    grid-template-columns: 1fr;
+  }
+
+  .app-tradingview-showcase__copy {
+    max-width: 720px;
+  }
+
+  .app-tradingview-terminal {
+    transform: none;
+  }
+
+  .app-testimonials-track {
+    grid-auto-columns: calc((100% - 18px) / 2);
+  }
+}
+
+@media (max-width: 767px) {
+  .app-tradingview-showcase,
+  .app-testimonials-section {
+    padding: 78px 0 !important;
+  }
+
+  .app-tradingview-showcase__inner {
+    display: block;
+  }
+
+  .app-tradingview-showcase__copy {
+    margin-bottom: 40px;
+  }
+
+  .app-tradingview-showcase h2,
+  .app-testimonials-header h2 {
+    font-size: 40px;
+  }
+
+  .app-tradingview-showcase__features {
+    gap: 0;
+  }
+
+  .app-tradingview-showcase__features div {
+    padding: 0 9px;
+  }
+
+  .app-tradingview-terminal__symbols {
+    display: none;
+  }
+
+  .app-tradingview-terminal__body,
+  .app-tradingview-terminal .tradingview-widget-container,
+  .app-tradingview-terminal .tradingview-widget-container__widget {
+    height: 460px;
+    min-height: 460px;
+  }
+
+  .app-testimonials-shell {
+    padding: 0 18px;
+  }
+
+  .app-testimonials-header {
+    align-items: flex-start;
+    display: block;
+    margin-bottom: 32px;
+  }
+
+  .app-testimonials-summary {
+    border-left: 0;
+    border-top: 1px solid #cfd8cc;
+    margin-top: 24px;
+    padding-left: 0;
+    padding-top: 20px;
+  }
+
+  .app-testimonials-track {
+    grid-auto-columns: 88%;
+  }
+
+  .app-testimonial-card {
+    min-height: 350px;
+    padding: 22px;
+  }
+
+  .app-testimonial-card blockquote {
+    font-size: 17px;
+  }
+
+  .app-testimonials-arrow {
+    display: none;
+  }
+
+  .app-testimonials-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
 }
