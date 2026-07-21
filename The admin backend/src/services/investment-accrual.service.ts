@@ -240,14 +240,23 @@ async function createTradeReceiptTx(tx: Db, investment: InvestmentForProfit, sch
 }
 
 async function postProfitScheduleTx(tx: Db, investment: InvestmentForProfit, schedule: ProfitScheduleWithInstrument, now = new Date()) {
+  const current: InvestmentWithProduct = await tx.clientInvestment.findUniqueOrThrow({ where: { id: investment.id }, include: { product: true } });
+  if (current.status !== "ACTIVE") {
+    if (["CANCELLED", "CLOSED"].includes(current.status)) {
+      await tx.investmentProfitSchedule.updateMany({
+        where: { id: schedule.id, status: "PENDING" },
+        data: { status: "CANCELLED", note: "Cancelled because the investment is closed." }
+      });
+    }
+    return null;
+  }
   const claimed = await tx.investmentProfitSchedule.updateMany({
-    where: { id: schedule.id, status: "PENDING" },
+    where: { id: schedule.id, status: "PENDING", investment: { status: "ACTIVE" } },
     data: { status: "PROCESSING" }
   });
   if (claimed.count !== 1) return null;
 
   const actualAmount: Prisma.Decimal = new Prisma.Decimal(schedule.expectedAmount).toDecimalPlaces(2);
-  const current: InvestmentWithProduct = await tx.clientInvestment.findUniqueOrThrow({ where: { id: investment.id }, include: { product: true } });
   const profitAccrued: Prisma.Decimal = new Prisma.Decimal(current.profitAccrued || 0).plus(actualAmount).toDecimalPlaces(2);
   const currentValue: Prisma.Decimal = new Prisma.Decimal(current.investedAmount).plus(profitAccrued).toDecimalPlaces(2);
   const unitPrice: Prisma.Decimal = current.units.isPositive() ? currentValue.div(current.units) : new Prisma.Decimal(1);
