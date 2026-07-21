@@ -759,6 +759,7 @@ model PortfolioProduct {
   subscriptionType   String                    @default("FLEXIBLE")
   currency           String                    @default("USD")
   payoutRule         String
+  payoutInterval     String                    @default("HOURLY")
   durationDays       Int?
   payoutCycleCount   Int                       @default(0)
   projectedReturnMin Decimal?                  @db.Decimal(8, 4)
@@ -840,6 +841,7 @@ model ClientInvestment {
   currency             String                  @default("USD")
   status               InvestmentStatus        @default(PENDING)
   reinvestPreference   DistributionMode        @default(WALLET)
+  payoutInterval       String                  @default("HOURLY")
   projectedReturnLabel String?
   nextAction           String?
   profitAccrued        Decimal                 @default(0) @db.Decimal(18, 2)

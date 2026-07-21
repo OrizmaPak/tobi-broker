@@ -178,7 +178,8 @@
     pendingProductId: null,
     pendingProductAllocationId: null,
     pendingInvestmentAction: null,
-    instrumentMeta: { page: 1, limit: 25, total: 0, pages: 1 }
+    instrumentMeta: { page: 1, limit: 25, total: 0, pages: 1 },
+    profitScheduleMeta: { page: 1, limit: 20, total: 0, pages: 1 }
   };
 
   const liveRefs = {};
@@ -248,6 +249,10 @@
     if (!Number.isFinite(duration) || duration <= 0) return "Open-ended";
     const windows = cycleCount + 1;
     return duration + " days x " + windows + " payout " + (windows === 1 ? "window" : "windows");
+  }
+
+  function productPayoutIntervalText(product) {
+    return label(product?.payoutInterval || "HOURLY");
   }
 
   function formatPercent(value) {
@@ -824,6 +829,14 @@
       if (queryParam("q")) instrumentParams.set("q", queryParam("q"));
     }
     const instrumentsPath = "/api/v1/admin/instruments" + (instrumentParams.toString() ? "?" + instrumentParams.toString() : "");
+    const profitScheduleParams = new URLSearchParams();
+    if (currentFile() === "payouts.html") {
+      profitScheduleParams.set("limit", "20");
+      profitScheduleParams.set("page", queryParam("page") || "1");
+    } else {
+      profitScheduleParams.set("limit", "100");
+    }
+    const profitSchedulesPath = "/api/v1/admin/profit-schedules" + (profitScheduleParams.toString() ? "?" + profitScheduleParams.toString() : "");
     const [clients, kyc, kycRequirements, deposits, withdrawals, beneficiaries, products, investments, payouts, profitSchedules, markets, instruments, tickets, auditLogs, approvals, orders, positions, optionsApplications, riskAlerts, reports, notifications, adminUsers, settingsRows, tasks] = await Promise.all([
       tryApi("/api/v1/admin/clients?limit=100"),
       tryApi(kycPath),
@@ -834,7 +847,7 @@
       tryApi("/api/v1/admin/portfolio-products"),
       tryApi("/api/v1/admin/investments?limit=100"),
       tryApi("/api/v1/admin/distributions"),
-      tryApi("/api/v1/admin/profit-schedules?limit=100"),
+      currentFile() === "payouts.html" ? tryApiResponse(profitSchedulesPath) : tryApi(profitSchedulesPath),
       tryApi("/api/v1/admin/markets"),
       currentFile() === "instruments.html" ? tryApiResponse(instrumentsPath) : tryApi(instrumentsPath),
       tryApi("/api/v1/admin/support/tickets?limit=100"),
@@ -1020,6 +1033,7 @@
           subscriptionType: premium.subscriptionType || "FLEXIBLE",
           currency: premium.currency || "USD",
           payout: premium.payoutRule,
+          payoutInterval: premium.payoutInterval || "HOURLY",
           visibility: label(premium.status),
           status: premium.status,
           version: Number(premium.version || 1),
@@ -1064,11 +1078,13 @@
       data.payouts = payouts.map((row) => [row.reference, row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
     }
 
-    if (Array.isArray(profitSchedules)) {
-      data.profitSchedules = profitSchedules.map((row) => {
+    const profitScheduleRows = currentFile() === "payouts.html" && profitSchedules && !Array.isArray(profitSchedules) ? profitSchedules.data : profitSchedules;
+    appState.profitScheduleMeta = currentFile() === "payouts.html" && profitSchedules && !Array.isArray(profitSchedules) && profitSchedules.meta ? profitSchedules.meta : { page: 1, limit: 20, total: Array.isArray(profitScheduleRows) ? profitScheduleRows.length : 0, pages: 1 };
+    if (Array.isArray(profitScheduleRows)) {
+      data.profitSchedules = profitScheduleRows.map((row) => {
         const posted = row.receipt ? '<span class="muted">' + escapeHtml(row.receipt.reference) + '</span>' : '<span class="muted">Pending</span>';
-        const action = row.status === "PENDING" && new Date(row.scheduledAt).getTime() > Date.now()
-          ? '<div class="action-row"><button class="btn" type="button" data-action="profit-schedule-edit" data-schedule-id="' + escapeHtml(row.id) + '" data-schedule-amount="' + escapeHtml(row.expectedAmount) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Edit</button><button class="btn" type="button" data-action="profit-schedule-add" data-investment-id="' + escapeHtml(row.investmentId) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Add similar</button><button class="btn danger" type="button" data-action="profit-schedule-cancel" data-schedule-id="' + escapeHtml(row.id) + '">Cancel</button></div>'
+        const action = row.status === "PENDING"
+          ? '<div class="action-row"><button class="btn primary" type="button" data-action="profit-schedule-apply" data-schedule-id="' + escapeHtml(row.id) + '">Apply now</button><button class="btn" type="button" data-action="profit-schedule-edit" data-schedule-id="' + escapeHtml(row.id) + '" data-schedule-amount="' + escapeHtml(row.expectedAmount) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Edit</button><button class="btn" type="button" data-action="profit-schedule-add" data-investment-id="' + escapeHtml(row.investmentId) + '" data-schedule-at="' + escapeHtml(row.scheduledAt) + '">Add similar</button><button class="btn danger" type="button" data-action="profit-schedule-cancel" data-schedule-id="' + escapeHtml(row.id) + '">Cancel</button></div>'
           : posted;
         return [
           row.client?.name || "-",
@@ -1477,7 +1493,12 @@
   }
 
   function payoutsPage() {
-    return section("Bot profit schedule", "Upcoming bot P/L receipt rows can be edited before their scheduled posting time. Posted rows are locked.", filterableTable("Search client, product, instrument...", ["Client", "Product", "Instrument", "Scheduled", "Expected P/L", "Type", "Status", "Action"], data.profitSchedules)) +
+    const meta = appState.profitScheduleMeta || { page: 1, limit: 20, total: data.profitSchedules.length, pages: 1 };
+    const currentPage = Number(meta.page || 1);
+    const totalPages = Number(meta.pages || 1);
+    const pageHref = (page) => "payouts.html?page=" + encodeURIComponent(String(page));
+    const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
+    return section("Bot profit schedule", "Pending rows are prioritized. Use Apply now to post a pending bot P/L receipt immediately; posted rows are locked.", filterableTable("Search client, product, instrument...", ["Client", "Product", "Instrument", "Scheduled", "Expected P/L", "Type", "Status", "Action"], data.profitSchedules) + pagination) +
       section("Payout operations", "Post dividends, profit credits, reinvestments, and scheduled distributions.", filterableTable("Search payout, source, mode...", ["Reference", "Source", "Amount", "Mode", "Date", "Status", "Action"], data.payouts.map((row) => [row[0], row[1], row[2], row[3], row[4], badge(row[5]), modalButton("Open", "payout")])), modalButton("Post payout", "payout", "primary"));
   }
 
@@ -1713,7 +1734,7 @@
       productBannerHtml(p, "hero") +
       bannerManager +
       '<div class="grid two">' +
-      section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Subscription type", badge(label(p.subscriptionType || "FLEXIBLE"))], ["Payout rule", escapeHtml(p.payout)], ["Duration", p.durationDays ? escapeHtml(String(p.durationDays) + " days") : "Open-ended"], ["Cycles", escapeHtml(productCycleText(p))], ["Projected return type", escapeHtml(productReturnTypeText(p))], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
+      section("Product terms", "These are the terms attached to publication version " + p.version + ".", details([["Product", escapeHtml(p.name)], ["Risk", badge(p.risk)], ["Minimum", p.minimum + " " + escapeHtml(p.currency)], ["Subscription type", badge(label(p.subscriptionType || "FLEXIBLE"))], ["Payout rule", escapeHtml(p.payout)], ["P/L interval", escapeHtml(productPayoutIntervalText(p))], ["Duration", p.durationDays ? escapeHtml(String(p.durationDays) + " days") : "Open-ended"], ["Cycles", escapeHtml(productCycleText(p))], ["Projected return type", escapeHtml(productReturnTypeText(p))], ["Projected return", escapeHtml(returnRange)], ["Status", badge(p.visibility)]]) + '<h3>Strategy description</h3><p class="muted product-copy">' + escapeHtml(p.description || "No description recorded.") + '</p>', '<button class="btn" type="button" data-action="product-edit">Edit terms</button>') +
       section("Publication readiness", "Every check must be complete before a request can enter Approvals.", checklist([["Terms version", "Version " + p.version + " ready"], ["Active instruments", allocationInstrumentsAvailable ? "Available" : "Required"], ["Allocation total", allocationReady ? "100% ready" : allocationTotal + "% configured"], ["Approval state", p.status === "PENDING_APPROVAL" ? "Pending" : p.status === "PUBLISHED" ? "Approved" : "Not requested"]])) +
       "</div>" +
       section("Portfolio allocation", "Only active, investable instruments can be included. Saving changes returns a published or pending product to draft.", allocationBody, allocationAction) +
@@ -2082,7 +2103,7 @@
       "withdrawal-method-toggle", "beneficiary-cooloff-waive", "setting-save", "decision",
       "product-save", "product-allocation-save", "market-save", "market-status-toggle",
       "instrument-save", "investment-lifecycle-confirm", "profit-schedule-edit",
-      "profit-schedule-add", "profit-schedule-cancel"
+      "profit-schedule-add", "profit-schedule-apply", "profit-schedule-cancel"
     ].includes(action);
   }
 
@@ -2191,6 +2212,7 @@
           else if (action === "investment-lifecycle-confirm") await submitInvestmentLifecycleAction();
           else if (action === "profit-schedule-edit") await editProfitSchedule(node.dataset);
           else if (action === "profit-schedule-add") await addSimilarProfitSchedule(node.dataset);
+          else if (action === "profit-schedule-apply") await applyProfitSchedule(node.dataset.scheduleId);
           else if (action === "profit-schedule-cancel") await cancelProfitSchedule(node.dataset.scheduleId);
           else if (action === "task-status") await updateTaskStatus(node.dataset.taskId, node.dataset.taskStatus);
           else if (action === "report-download") await downloadAdminReport(node.dataset.reportId);
@@ -2388,14 +2410,15 @@
     return amount;
   }
 
-  function promptScheduleTime(currentValue) {
+  function promptScheduleTime(currentValue, options = {}) {
     const current = currentValue ? new Date(currentValue) : new Date(Date.now() + 60 * 60 * 1000);
     const fallback = Number.isNaN(current.getTime()) ? new Date(Date.now() + 60 * 60 * 1000) : current;
     const local = new Date(fallback.getTime() - fallback.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    const value = window.prompt("Enter scheduled time in local YYYY-MM-DDTHH:mm format.", local);
+    const value = window.prompt(options.allowPast ? "Enter scheduled time in local YYYY-MM-DDTHH:mm format. Past times are allowed for pending rows." : "Enter scheduled time in local YYYY-MM-DDTHH:mm format.", local);
     if (value === null) return null;
     const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date <= new Date()) throw new Error("Enter a future schedule time.");
+    if (Number.isNaN(date.getTime())) throw new Error("Enter a valid schedule time.");
+    if (!options.allowPast && date <= new Date()) throw new Error("Enter a future schedule time.");
     return date.toISOString();
   }
 
@@ -2405,7 +2428,7 @@
     try {
       const expectedAmount = promptProfitAmount(dataset.scheduleAmount);
       if (expectedAmount === null) return;
-      const scheduledAt = promptScheduleTime(dataset.scheduleAt);
+      const scheduledAt = promptScheduleTime(dataset.scheduleAt, { allowPast: true });
       if (scheduledAt === null) return;
       const note = window.prompt("Audit note for this schedule change.", "Adjusted upcoming bot P/L schedule.") || "Adjusted upcoming bot P/L schedule.";
       await api("/api/v1/admin/profit-schedules/" + encodeURIComponent(id), {
@@ -2441,6 +2464,19 @@
     } catch (error) {
       toast(error?.message || "Profit schedule row could not be added.");
     }
+  }
+
+  async function applyProfitSchedule(id) {
+    if (!id) { toast("No schedule row selected."); return; }
+    const note = window.prompt("Audit note for applying this pending P/L now.", "Applied pending bot P/L schedule immediately.");
+    if (note === null) return;
+    await api("/api/v1/admin/profit-schedules/" + encodeURIComponent(id) + "/apply", {
+      method: "POST",
+      body: JSON.stringify({ note: note || "Applied pending bot P/L schedule immediately." })
+    });
+    await loadBackendData();
+    render();
+    toast("Pending P/L applied and receipt posted.");
   }
 
   async function cancelProfitSchedule(id) {
@@ -2624,6 +2660,7 @@
       '<label>Payout rule<input name="productPayout" maxlength="200" value="' + escapeHtml(product?.payoutRule || "Quarterly") + '" placeholder="e.g. Every cycle"></label>' +
       '<label>Payout duration in days<input name="productDuration" type="number" min="1" step="1" value="' + escapeHtml(product?.durationDays || "") + '" placeholder="e.g. 30"></label>' +
       '<label>Cycle count<input name="productCycleCount" type="number" min="0" max="120" step="1" value="' + escapeHtml(product?.payoutCycleCount ?? 0) + '"></label>' +
+      '<label>P/L interval<select name="productPayoutInterval"><option value="HOURLY" ' + selectedAttr(product?.payoutInterval || "HOURLY", "HOURLY") + '>Hourly</option><option value="DAILY" ' + selectedAttr(product?.payoutInterval, "DAILY") + '>Daily</option><option value="WEEKLY" ' + selectedAttr(product?.payoutInterval, "WEEKLY") + '>Weekly</option><option value="MONTHLY" ' + selectedAttr(product?.payoutInterval, "MONTHLY") + '>Monthly</option></select></label>' +
       '<label>Projected return type<select name="productReturnType"><option value="FLEXIBLE" ' + selectedAttr(returnType, "FLEXIBLE") + '>Flexible return</option><option value="FIXED" ' + selectedAttr(returnType, "FIXED") + '>Fixed return</option></select></label>' +
       '<label>Return value mode<select name="productReturnMode"><option value="RANGE" ' + selectedAttr(returnMode, "RANGE") + '>Range - minimum and maximum</option><option value="FIXED" ' + selectedAttr(returnMode, "FIXED") + '>Fixed - one value</option></select></label>' +
       '<label>Projected return minimum / fixed (%)<input name="productReturnMin" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(product?.projectedReturnMin ?? "") + '"></label>' +
@@ -2666,6 +2703,7 @@
       subscriptionType: root?.querySelector('[name="productSubscriptionType"]')?.value || "FLEXIBLE",
       currency: (root?.querySelector('[name="productCurrency"]')?.value.trim() || "USD").toUpperCase(),
       payoutRule: root?.querySelector('[name="productPayout"]')?.value.trim() || "",
+      payoutInterval: root?.querySelector('[name="productPayoutInterval"]')?.value || "HOURLY",
       durationDays: optionalNumber("productDuration"),
       payoutCycleCount: optionalNumber("productCycleCount") ?? 0,
       projectedReturnMin: optionalNumber("productReturnMin"),
@@ -2686,6 +2724,7 @@
     if (payload.disclosure.length < 20) { toast("Add a risk disclosure of at least twenty characters."); return; }
     if (payload.durationDays !== undefined && (!Number.isInteger(payload.durationDays) || payload.durationDays <= 0)) { toast("Duration must be a positive whole number of days."); return; }
     if (!Number.isInteger(payload.payoutCycleCount) || payload.payoutCycleCount < 0) { toast("Cycle count must be a non-negative whole number."); return; }
+    if (!["HOURLY", "DAILY", "WEEKLY", "MONTHLY"].includes(payload.payoutInterval)) { toast("Choose a valid P/L interval."); return; }
     if (!["FIXED", "FLEXIBLE"].includes(payload.projectedReturnType)) { toast("Choose a valid projected return type."); return; }
     if (!["FIXED", "RANGE"].includes(payload.projectedReturnMode)) { toast("Choose fixed or range return mode."); return; }
     if (payload.projectedReturnType === "FIXED" && payload.projectedReturnMode !== "FIXED") { toast("Fixed projected return must use fixed return mode."); return; }
@@ -3343,7 +3382,7 @@
         await api("/api/v1/admin/tasks", { method: "POST", body: JSON.stringify({ title: values[0] || "Operational follow-up", description: note, category: pageContext(), priority: values.some((value) => /high|urgent/i.test(value)) ? "High" : "Normal" }) });
       } else if (apiAction === "createPortfolioProduct") {
         const risk = /high/i.test(values[1]) ? "HIGH" : /low/i.test(values[1]) ? "LOW" : /custom/i.test(values[1]) ? "CUSTOM" : "MODERATE";
-        await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), subscriptionType: "FLEXIBLE", currency: "USD", payoutRule: "Quarterly", durationDays: 90, payoutCycleCount: 0, projectedReturnType: "FLEXIBLE", projectedReturnMode: "RANGE", projectedReturnMin: 4, projectedReturnMax: 8, disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
+        await api("/api/v1/admin/portfolio-products", { method: "POST", body: JSON.stringify({ name: values[0], description: note.length >= 10 ? note : "Broker managed portfolio product", riskLevel: risk, minimum: Number(String(values[2]).replace(/[^0-9.]/g, "")), subscriptionType: "FLEXIBLE", currency: "USD", payoutRule: "Quarterly", payoutInterval: "HOURLY", durationDays: 90, payoutCycleCount: 0, projectedReturnType: "FLEXIBLE", projectedReturnMode: "RANGE", projectedReturnMin: 4, projectedReturnMax: 8, disclosure: "Returns are projected and market-based. Capital and income are not guaranteed.", eligibility: {} }) });
       } else if (apiAction === "upsertInstrument") {
         const risk = /high/i.test(values[5]) ? "HIGH" : /low/i.test(values[5]) ? "LOW" : /custom/i.test(values[5]) ? "CUSTOM" : "MODERATE";
         const status = /inactive/i.test(values[6]) ? "INACTIVE" : /suspend/i.test(values[6]) ? "SUSPENDED" : /restrict/i.test(values[6]) ? "RESTRICTED" : "ACTIVE";

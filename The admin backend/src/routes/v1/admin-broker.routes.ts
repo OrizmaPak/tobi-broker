@@ -6,7 +6,7 @@ import { prisma } from "../../lib/prisma";
 import { requireAdmin, requireAdminRoles, requireCsrf } from "../../middleware/auth";
 import { writeAudit } from "../../services/audit.service";
 import { storePublicImage } from "../../services/file.service";
-import { accrueAllInvestmentProfits, accrueInvestmentProfitTx, cancelInvestmentTx } from "../../services/investment-accrual.service";
+import { accrueAllInvestmentProfits, accrueInvestmentProfitTx, applyProfitScheduleNowTx, cancelInvestmentTx } from "../../services/investment-accrual.service";
 import { captureWalletHoldTx, creditClientCashTx, releaseWalletHoldTx } from "../../services/ledger.service";
 import { notifyClientTx } from "../../services/notification.service";
 
@@ -23,6 +23,7 @@ const money = z.coerce.number().nonnegative().max(1_000_000_000);
 const productSubscriptionTypes = ["FIXED", "FLEXIBLE"] as const;
 const productReturnTypes = ["FIXED", "FLEXIBLE"] as const;
 const productReturnModes = ["FIXED", "RANGE"] as const;
+const productPayoutIntervals = ["HOURLY", "DAILY", "WEEKLY", "MONTHLY"] as const;
 
 function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -100,6 +101,7 @@ const productSchema = z.object({
   subscriptionType: z.enum(productSubscriptionTypes).default("FLEXIBLE"),
   currency: z.string().length(3).default("USD"),
   payoutRule: z.string().trim().min(3).max(200),
+  payoutInterval: z.enum(productPayoutIntervals).default("HOURLY"),
   durationDays: z.coerce.number().int().positive().optional(),
   payoutCycleCount: z.coerce.number().int().nonnegative().max(120).default(0),
   projectedReturnMin: z.coerce.number().nonnegative().max(100).optional(),
@@ -633,16 +635,32 @@ v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req,
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const where: Prisma.InvestmentProfitScheduleWhereInput = status ? { status: status.toUpperCase() } : {};
-  const [rows, total] = await Promise.all([
-    prisma.investmentProfitSchedule.findMany({
-      where,
-      include: { client: true, product: true, instrument: true, investment: true, receipt: true },
-      orderBy: { scheduledAt: "asc" },
-      skip,
-      take: limit
-    }),
-    prisma.investmentProfitSchedule.count({ where })
+  const include = { client: true, product: true, instrument: true, investment: true, receipt: true } as const;
+  if (status) {
+    const [rows, total] = await Promise.all([
+      prisma.investmentProfitSchedule.findMany({ where, include, orderBy: { scheduledAt: "asc" }, skip, take: limit }),
+      prisma.investmentProfitSchedule.count({ where })
+    ]);
+    return ok(res, rows, 200, pageMeta(page, limit, total));
+  }
+
+  const pendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { status: "PENDING" };
+  const nonPendingWhere: Prisma.InvestmentProfitScheduleWhereInput = { status: { not: "PENDING" } };
+  const [pendingTotal, nonPendingTotal] = await Promise.all([
+    prisma.investmentProfitSchedule.count({ where: pendingWhere }),
+    prisma.investmentProfitSchedule.count({ where: nonPendingWhere })
   ]);
+  const pendingTake = skip < pendingTotal ? Math.min(limit, pendingTotal - skip) : 0;
+  const pendingRows = pendingTake
+    ? await prisma.investmentProfitSchedule.findMany({ where: pendingWhere, include, orderBy: { scheduledAt: "asc" }, skip, take: pendingTake })
+    : [];
+  const remaining = limit - pendingRows.length;
+  const nonPendingSkip = Math.max(0, skip - pendingTotal);
+  const nonPendingRows = remaining
+    ? await prisma.investmentProfitSchedule.findMany({ where: nonPendingWhere, include, orderBy: { scheduledAt: "desc" }, skip: nonPendingSkip, take: remaining })
+    : [];
+  const rows = [...pendingRows, ...nonPendingRows];
+  const total = pendingTotal + nonPendingTotal;
   return ok(res, rows, 200, pageMeta(page, limit, total));
 }));
 
@@ -681,8 +699,7 @@ v1AdminBrokerRouter.patch("/profit-schedules/:id", portfolioRoles, asyncHandler(
   const input = profitScheduleInput.parse(req.body);
   const before = await prisma.investmentProfitSchedule.findUnique({ where: { id: String(req.params.id) } });
   if (!before) throw new ApiError(404, "Profit schedule row was not found", "SCHEDULE_NOT_FOUND");
-  if (before.status !== "PENDING" || before.scheduledAt <= new Date()) throw new ApiError(409, "Only pending future schedule rows can be changed", "SCHEDULE_LOCKED");
-  if (input.scheduledAt && input.scheduledAt <= new Date()) throw new ApiError(422, "Schedule time must remain in the future", "SCHEDULE_NOT_FUTURE");
+  if (before.status !== "PENDING") throw new ApiError(409, "Only pending schedule rows can be changed", "SCHEDULE_LOCKED");
   const row = await prisma.investmentProfitSchedule.update({
     where: { id: before.id },
     data: {
@@ -697,11 +714,18 @@ v1AdminBrokerRouter.patch("/profit-schedules/:id", portfolioRoles, asyncHandler(
   return ok(res, row);
 }));
 
+v1AdminBrokerRouter.post("/profit-schedules/:id/apply", portfolioRoles, asyncHandler(async (req, res) => {
+  const input = z.object({ note: z.string().trim().min(5).max(1000).default("Applied pending bot P/L schedule immediately.") }).parse(req.body || {});
+  const row = await prisma.$transaction((tx) => applyProfitScheduleNowTx(tx, String(req.params.id), req.user!.id));
+  await writeAudit("applyProfitSchedule", "InvestmentProfitSchedule", row.id, undefined, { req, after: row, reason: input.note });
+  return ok(res, row);
+}));
+
 v1AdminBrokerRouter.delete("/profit-schedules/:id", portfolioRoles, asyncHandler(async (req, res) => {
   const input = z.object({ note: z.string().trim().min(5).max(1000).default("Cancelled by admin before scheduled posting.") }).parse(req.body || {});
   const before = await prisma.investmentProfitSchedule.findUnique({ where: { id: String(req.params.id) } });
   if (!before) throw new ApiError(404, "Profit schedule row was not found", "SCHEDULE_NOT_FOUND");
-  if (before.status !== "PENDING" || before.scheduledAt <= new Date()) throw new ApiError(409, "Only pending future schedule rows can be cancelled", "SCHEDULE_LOCKED");
+  if (before.status !== "PENDING") throw new ApiError(409, "Only pending schedule rows can be cancelled", "SCHEDULE_LOCKED");
   const row = await prisma.investmentProfitSchedule.update({ where: { id: before.id }, data: { status: "CANCELLED", note: input.note } });
   await writeAudit("cancelProfitSchedule", "InvestmentProfitSchedule", row.id, undefined, { req, before, after: row });
   return ok(res, row);

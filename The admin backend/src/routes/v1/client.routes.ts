@@ -8,7 +8,7 @@ import { requireClient, requireCsrf } from "../../middleware/auth";
 import { approvedKyc, clientDashboard, clientSnapshot, money } from "../../services/client.service";
 import { storePrivateFile } from "../../services/file.service";
 import { collectDepositProofData, findDepositMethod, getDepositMethodsSetting } from "../../services/deposit-method.service";
-import { accrueClientInvestmentProfits, cancelInvestmentTx, ensureInvestmentProfitScheduleForInvestmentTx } from "../../services/investment-accrual.service";
+import { accrueClientInvestmentProfits, cancelInvestmentTx, ensureInvestmentProfitScheduleForInvestmentTx, transferInvestmentProfitToWalletTx } from "../../services/investment-accrual.service";
 import { collectWithdrawalVerificationData, findWithdrawalMethod, getWithdrawalMethodsSetting } from "../../services/withdrawal-method.service";
 import { idempotentMutation } from "../../services/idempotency.service";
 import { buildKycChecklist, KYC_DOCUMENT_SIDES, summarizeKycChecklist } from "../../services/kyc.service";
@@ -655,6 +655,7 @@ v1ClientRouter.post("/investments", requireCsrf, asyncHandler(async (req, res) =
         clientId: id, productId: product.id, productVersionId: productVersion.id,
         investedAmount: input.amount, currentValue: input.amount, units: input.amount,
         currency: product.currency, status: "ACTIVE", reinvestPreference: input.reinvestPreference,
+        payoutInterval: product.payoutInterval || "HOURLY",
         projectedReturnLabel: productReturnLabel(product), nextAction: schedule.nextAction, maturityDate: schedule.maturityDate, profitAccruedAt: new Date(),
         transactions: { create: { reference: reference("INV"), type: "SUBSCRIPTION", amount: input.amount, units: input.amount, unitPrice: 1, ledgerTransactionId: ledger.id } },
         valuations: { create: { value: input.amount, unitPrice: 1, source: "Subscription value", asOf: new Date() } }
@@ -678,6 +679,21 @@ v1ClientRouter.post("/investments/:id/cancel", requireCsrf, asyncHandler(async (
     actorId: id,
     actorLabel: "Client",
     note: input.note || "Cancelled by client"
+  }));
+  return ok(res, row);
+}));
+
+v1ClientRouter.post("/investments/:id/profit-transfer", requireCsrf, asyncHandler(async (req, res) => {
+  const id = clientId(req);
+  const input = z.object({ amount: z.coerce.number().positive().optional(), note: z.string().trim().max(1000).optional() }).parse(req.body || {});
+  const investment = await prisma.clientInvestment.findFirst({ where: { id: String(req.params.id), clientId: id } });
+  if (!investment) throw new ApiError(404, "Investment was not found", "INVESTMENT_NOT_FOUND");
+  const row = await prisma.$transaction((tx) => transferInvestmentProfitToWalletTx(tx, {
+    investmentId: investment.id,
+    clientId: id,
+    amount: input.amount,
+    actorId: id,
+    note: input.note || "Transferred available portfolio profit to wallet"
   }));
   return ok(res, row);
 }));

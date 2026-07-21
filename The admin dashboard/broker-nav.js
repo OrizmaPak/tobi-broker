@@ -1440,6 +1440,7 @@
         status: labelize(row.status),
         rawStatus: status,
         canCancel: investmentCanCancel(status),
+        canTransferProfit: progress.profitAccrued > 0 && investmentCanCancel(status),
         action: "Review"
       };
     }));
@@ -2267,8 +2268,9 @@
         ["Portfolio", "Invested", "Current value", "Running profit", "Actualized", "Next action", "Status", "Action"],
         DEMO.investments.map(function (row) {
           const review = '<button type="button" data-broker-action="investment-action" data-broker-investment-id="' + escapeHtml(row.id || "") + '" data-broker-investment="' + escapeHtml(row.name) + '" class="font-semibold text-primary">Review</button>';
+          const transfer = row.canTransferProfit ? '<button type="button" data-broker-action="investment-profit-transfer" data-broker-investment-id="' + escapeHtml(row.id || "") + '" data-broker-investment="' + escapeHtml(row.name) + '" data-broker-profit="' + escapeHtml(row.runningProfit) + '" class="font-semibold text-emerald-600 dark:text-emerald-300">Transfer profit</button>' : "";
           const cancel = row.canCancel ? '<button type="button" data-broker-action="investment-cancel" data-broker-investment-id="' + escapeHtml(row.id || "") + '" data-broker-investment="' + escapeHtml(row.name) + '" class="font-semibold text-rose-500">Cancel</button>' : '<span class="text-xs font-semibold text-muted-foreground">Refunded</span>';
-          return [escapeHtml(row.name), money(row.invested), money(row.current), money(row.runningProfit), percentLabel(row.actualizedPercent) + " of " + money(row.projectedProfit), escapeHtml(row.payout), badge(row.status, statusTone(row.status)), '<div class="flex flex-wrap gap-3">' + review + cancel + "</div>"];
+          return [escapeHtml(row.name), money(row.invested), money(row.current), money(row.runningProfit), percentLabel(row.actualizedPercent) + " of " + money(row.projectedProfit), escapeHtml(row.payout), badge(row.status, statusTone(row.status)), '<div class="flex flex-wrap gap-3">' + review + transfer + cancel + "</div>"];
         })
       ));
   }
@@ -3758,6 +3760,21 @@
         return;
       case "investment-action":
         navigateTo("portfolio.html?investment=" + encodeURIComponent(node.getAttribute("data-broker-investment-id") || ""));
+        return;
+      case "investment-profit-transfer":
+        try {
+          const investmentId = node.getAttribute("data-broker-investment-id") || "";
+          const availableProfit = numberValue(node.getAttribute("data-broker-profit"));
+          if (!investmentId) throw new Error("This investment is not available for profit transfer.");
+          if (availableProfit <= 0) throw new Error("There is no positive profit available to transfer.");
+          const value = window.prompt("Enter profit amount to transfer to wallet. Capital remains inside the portfolio.", String(availableProfit));
+          if (value === null) return;
+          const amount = numberValue(value);
+          if (amount <= 0) throw new Error("Enter a positive transfer amount.");
+          if (amount > availableProfit) throw new Error("You can only transfer available profit. Capital requires cancelling the investment.");
+          await apiRequest("/api/v1/client/investments/" + encodeURIComponent(investmentId) + "/profit-transfer", { method: "POST", body: JSON.stringify({ amount, note: "Transferred accrued portfolio profit to wallet" }) }, false);
+          await refreshLiveView("Portfolio profit transferred to wallet.", "success");
+        } catch (error) { toast((error && error.message) || "Could not transfer portfolio profit.", "warning"); }
         return;
       case "investment-cancel":
         try {
