@@ -1075,7 +1075,7 @@
     }
 
     if (Array.isArray(payouts)) {
-      data.payouts = payouts.map((row) => [row.reference, row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
+      data.payouts = payouts.map((row) => [row.reference, row.instrument ? instrumentLogoCell(row.instrument, row.instrument.symbol) : row.product?.name || row.type, formatMoney(row.netAmount), row.type, row.periodEnd ? new Date(row.periodEnd).toLocaleDateString() : "-", label(row.status)]);
     }
 
     const profitScheduleRows = currentFile() === "payouts.html" && profitSchedules && !Array.isArray(profitSchedules) ? profitSchedules.data : profitSchedules;
@@ -1089,7 +1089,7 @@
         return [
           row.client?.name || "-",
           row.product?.name || "-",
-          row.instrument?.symbol || "Portfolio",
+          instrumentLogoCell(row.instrument, "Portfolio"),
           row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "-",
           formatMoney(row.expectedAmount),
           badge(label(row.type || "BOT_PROFIT")),
@@ -1240,6 +1240,15 @@
 
   function modalButton(label, modal, kind) {
     return '<button type="button" class="btn ' + (kind || "") + '" data-action="open-modal" data-modal="' + modal + '">' + label + "</button>";
+  }
+
+  function instrumentLogoCell(instrument, fallbackLabel) {
+    const labelText = instrument?.symbol || fallbackLabel || "Portfolio";
+    const nameText = instrument?.name ? instrument.symbol + " - " + instrument.name : labelText;
+    const logo = instrument?.logoUrl
+      ? '<span class="instrument-logo-frame"><img src="' + escapeHtml(instrument.logoUrl) + '" alt="" loading="lazy"></span>'
+      : '<span class="instrument-logo-placeholder">' + escapeHtml(String(labelText).slice(0, 1).toUpperCase()) + '</span>';
+    return '<span class="instrument-logo-cell">' + logo + '<strong>' + escapeHtml(nameText) + '</strong></span>';
   }
 
   function decisionButton(label, kind, result, apiAction) {
