@@ -708,8 +708,27 @@ v1ClientRouter.post("/investments/:id/exit", requireCsrf, asyncHandler(async (re
 }));
 
 v1ClientRouter.get("/instruments", asyncHandler(async (req, res) => {
-  const category = typeof req.query.category === "string" ? req.query.category : undefined;
-  const rows = await prisma.instrument.findMany({ where: { status: { notIn: ["INACTIVE", "SUSPENDED", "HIDDEN"] }, ...(category ? { category: { equals: category, mode: "insensitive" } } : {}) }, orderBy: { symbol: "asc" } });
+  const category = typeof req.query.category === "string" ? req.query.category.trim() : "";
+  const market = typeof req.query.market === "string" ? req.query.market.trim() : "";
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 200);
+  const where: Prisma.InstrumentWhereInput = {
+    status: { notIn: ["INACTIVE", "SUSPENDED", "HIDDEN"] },
+    ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
+    ...(market ? { OR: [{ market: { equals: market, mode: "insensitive" } }, { marketRecord: { slug: { equals: market, mode: "insensitive" } } }] } : {}),
+    ...(q ? {
+      AND: [{
+        OR: [
+          { id: q },
+          { symbol: { contains: q, mode: "insensitive" } },
+          { name: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { market: { contains: q, mode: "insensitive" } }
+        ]
+      }]
+    } : {})
+  };
+  const rows = await prisma.instrument.findMany({ where, include: { marketRecord: true }, orderBy: [{ market: "asc" }, { symbol: "asc" }], take: limit });
   return ok(res, rows);
 }));
 

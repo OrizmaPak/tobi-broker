@@ -329,6 +329,21 @@
     return file === "" ? "index.html" : file;
   }
 
+  function queryValue(name) {
+    return new URLSearchParams(location.search).get(name) || "";
+  }
+
+  function setQueryValues(values) {
+    const params = new URLSearchParams(location.search);
+    Object.keys(values).forEach(function (key) {
+      const value = values[key];
+      if (value === null || value === undefined || value === "") params.delete(key);
+      else params.set(key, value);
+    });
+    const next = currentFile() + (params.toString() ? "?" + params.toString() : "");
+    history.pushState({}, "", next);
+  }
+
   function isAuthPage() {
     const cur = currentFile();
     return cur === "login.html" || cur === "register.html" || cur === "forgot-password.html";
@@ -558,6 +573,42 @@
     if (product && (product.projectedReturnMode === "FIXED" || product.projectedReturnType === "FIXED")) return max || min;
     if (!min || min === max) return max || min;
     return min.replace(/%$/, "") + " - " + max;
+  }
+
+  function instrumentLogo(row) {
+    const url = row && row.logoUrl ? String(row.logoUrl) : "";
+    const fallback = escapeHtml(String((row && (row.symbol || row.name)) || "BP").slice(0, 3).toUpperCase());
+    if (url) return '<img class="bp-market-logo" src="' + escapeHtml(url) + '" alt="' + escapeHtml(row.symbol || row.name || "Instrument") + ' logo" loading="lazy">';
+    return '<span class="bp-market-logo bp-market-logo-fallback">' + fallback + "</span>";
+  }
+
+  function tradingViewSymbol(row) {
+    const symbol = String((row && row.symbol) || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const market = String((row && row.market) || "").toUpperCase();
+    const category = String((row && row.category) || "").toUpperCase();
+    if (!symbol) return "NASDAQ:AAPL";
+    if (category.indexOf("CRYPTO") !== -1 || ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"].indexOf(symbol) !== -1) return "BINANCE:" + symbol + "USDT";
+    if (category.indexOf("FOREX") !== -1 || symbol.length === 6) return "FX:" + symbol;
+    if (market.indexOf("NYSE") !== -1) return "NYSE:" + symbol;
+    if (market.indexOf("NASDAQ") !== -1 || category.indexOf("STOCK") !== -1 || category.indexOf("ETF") !== -1) return "NASDAQ:" + symbol;
+    return symbol;
+  }
+
+  function tradingViewChart(row) {
+    const params = new URLSearchParams({
+      symbol: tradingViewSymbol(row),
+      interval: "60",
+      theme: document.documentElement.classList.contains("dark") ? "dark" : "light",
+      style: "1",
+      locale: "en",
+      hide_top_toolbar: "false",
+      hide_side_toolbar: "false",
+      allow_symbol_change: "true",
+      save_image: "false",
+      details: "true",
+      calendar: "false"
+    });
+    return '<iframe class="bp-tradingview-frame" title="TradingView chart for ' + escapeHtml(row.symbol || row.name || "instrument") + '" src="https://s.tradingview.com/widgetembed/?' + escapeHtml(params.toString()) + '" loading="lazy"></iframe>';
   }
 
   function productReturnPercent(product) {
@@ -1353,6 +1404,9 @@
       name: row.name,
       category: category,
       market: row.market || "Global",
+      marketLogoUrl: row.marketRecord && row.marketRecord.logoUrl ? row.marketRecord.logoUrl : "",
+      marketSlug: row.marketRecord && row.marketRecord.slug ? row.marketRecord.slug : "",
+      logoUrl: row.logoUrl || "",
       currency: row.currency || "USD",
       price: row.currentPrice == null ? "Unavailable" : money(numberValue(row.currentPrice)),
       priceSource: row.priceSource || "Admin managed",
@@ -1425,6 +1479,7 @@
         symbol: row.symbol,
         theme: row.name,
         price: row.price,
+        logoUrl: row.logoUrl,
         move: "Snapshot",
         note: row.priceAsOf ? row.priceSource + " at " + formatDate(row.priceAsOf) : "No market snapshot is currently published."
       };
@@ -1678,7 +1733,16 @@
     }
     if (["investment-plans.html", "plan-detail.html"].includes(cur)) load("/api/v1/client/portfolios", "products");
     if (["active-investments.html", "portfolio.html", "analytics.html"].includes(cur)) load("/api/v1/client/investments", "investments");
-    if (["portfolio.html", "analytics.html", "market.html", "screener.html", "movers.html", "earnings.html", "trading.html"].includes(cur)) load("/api/v1/client/instruments", "instruments");
+    if (cur === "market.html") {
+      const params = new URLSearchParams();
+      if (queryValue("q")) params.set("q", queryValue("q"));
+      if (queryValue("market")) params.set("market", queryValue("market"));
+      if (queryValue("category")) params.set("category", queryValue("category"));
+      params.set("limit", "120");
+      load("/api/v1/client/instruments?" + params.toString(), "instruments");
+    } else if (cur === "trading.html" && queryValue("instrument")) {
+      load("/api/v1/client/instruments?q=" + encodeURIComponent(queryValue("instrument")) + "&limit=20", "instruments");
+    } else if (["portfolio.html", "analytics.html", "screener.html", "movers.html", "earnings.html", "trading.html"].includes(cur)) load("/api/v1/client/instruments", "instruments");
     if (cur === "watchlist.html") {
       load("/api/v1/client/instruments", "instruments");
       load("/api/v1/client/watchlist", "watchlist");
@@ -2301,40 +2365,48 @@
   }
 
   function marketBody() {
+    const search = queryValue("q");
+    const selectedMarket = queryValue("market");
+    const selectedCategory = queryValue("category");
+    const markets = Array.from(new Set(DEMO.instruments.map(function (row) { return row.market; }).filter(Boolean))).sort();
+    const categories = Array.from(new Set(DEMO.instruments.map(function (row) { return row.category; }).filter(Boolean))).sort();
+    const filters = '<form class="bp-market-search" data-broker-market-search="true"><label><span>Search instruments</span><input name="q" value="' + escapeHtml(search) + '" placeholder="Search BTC, Apple, ETF, NASDAQ..."></label><label><span>Market</span><select name="market"><option value="">All markets</option>' + markets.map(function (market) { return '<option value="' + escapeHtml(market) + '" ' + (market === selectedMarket ? "selected" : "") + ">" + escapeHtml(market) + "</option>"; }).join("") + '</select></label><label><span>Category</span><select name="category"><option value="">All categories</option>' + categories.map(function (category) { return '<option value="' + escapeHtml(category) + '" ' + (category === selectedCategory ? "selected" : "") + ">" + escapeHtml(category) + "</option>"; }).join("") + '</select></label><div class="bp-market-search-actions"><button type="submit">Search market</button><button type="button" data-broker-action="market-clear">Clear</button></div></form>';
+    const cards = DEMO.instruments.length ? '<div class="bp-market-grid">' + DEMO.instruments.map(function (row) {
+      const snapshot = row.priceAsOf ? "Updated " + formatDate(row.priceAsOf) : "Awaiting broker snapshot";
+      return '<article class="bp-market-card">'
+        + '<div class="bp-market-card-head"><div class="bp-market-title">' + instrumentLogo(row) + '<div><strong>' + escapeHtml(row.symbol) + '</strong><span>' + escapeHtml(row.name) + '</span></div></div>' + badge(row.risk, riskTone(row.risk)) + '</div>'
+        + '<div class="bp-market-price"><strong>' + escapeHtml(row.price) + '</strong><span>' + escapeHtml(row.currency) + '</span></div>'
+        + '<div class="bp-market-tags"><span>' + escapeHtml(row.market) + '</span><span>' + escapeHtml(row.category) + '</span><span>' + escapeHtml(row.tradable === "Yes" ? "Tradable" : "Watch only") + '</span><span>' + escapeHtml(row.investable === "Yes" ? "Investable" : "Not investable") + '</span></div>'
+        + '<p class="bp-market-snapshot">' + escapeHtml(snapshot) + '</p>'
+        + '<div class="bp-market-actions"><button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + escapeHtml(row.id) + '">Add to watchlist</button><button type="button" data-broker-action="trading-open" data-broker-instrument-id="' + escapeHtml(row.id) + '">Open trading panel</button></div>'
+        + '</article>';
+    }).join("") + "</div>" : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No instruments matched this backend search.</div>';
     return '' +
-      section("Supported instrument coverage", "The market page now reflects the broker's multi-asset instrument universe.", table(
-        ["Symbol", "Instrument", "Category", "Market", "Currency", "Current price", "Source", "Risk", "Tradable", "Investable", "Status", "Action"],
-        DEMO.instruments.map(function (row) {
-          const source = row.priceAsOf ? row.priceSource + " - " + formatDate(row.priceAsOf) : "No snapshot";
-          return [row.symbol, row.name, row.category, row.market, row.currency, row.price, source, badge(row.risk, riskTone(row.risk)), row.tradable, row.investable, badge(row.status, statusTone(row.status)), '<button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + row.id + '" class="font-semibold text-primary">Save</button>'];
-        })
-      )) +
+      section("Market explorer", "Search and filter the broker-supported instrument universe. Add instruments to your watchlist or open the trading panel for chart review.", filters + cards) +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-6">' + section("Watch themes", "Priority watch areas for the current client account.", miniList(DEMO.watchlist, function (row) {
-        return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + row.symbol + " - " + row.theme + '</p><span class="text-sm font-semibold">' + row.price + '</span></div><p class="mt-1 text-sm text-muted-foreground">' + row.note + '</p><p class="mt-2 text-xs text-emerald-600 dark:text-emerald-300">' + row.move + "</p></div>";
-      })) + "</div>" +
-      '<div class="xl:col-span-6">' + section("Market disclosures", "Returns remain projected, estimated or market-based; nothing is framed as guaranteed.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument values are admin-managed snapshots with a named source and timestamp, not a live exchange feed.</p><p>Options, commodities and sector concentration carry higher volatility and are surfaced with higher risk labels and access controls.</p><p>Users must complete KYC, wallet funding and risk review before restricted actions become available.</p></div>') + "</div>" +
+      '<div class="xl:col-span-6">' + section("Favorites / Watchlist", "Favorite instruments from Market appear on the Watchlist page for quick review.", DEMO.watchlist.length ? miniList(DEMO.watchlist.slice(0, 5), function (row) {
+        return '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><div class="flex items-center justify-between gap-3"><p class="text-sm font-semibold">' + escapeHtml(row.symbol) + " - " + escapeHtml(row.theme) + '</p><span class="text-sm font-semibold">' + escapeHtml(row.price) + '</span></div><p class="mt-1 text-sm text-muted-foreground">' + escapeHtml(row.note) + '</p><a class="mt-2 inline-flex text-xs font-semibold text-primary" href="trading.html?instrument=' + encodeURIComponent(row.instrumentId || "") + '">Open trading panel</a></div>';
+      }) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No favorites yet. Use Add to watchlist on any instrument.</div>') + "</div>" +
+      '<div class="xl:col-span-6">' + section("Market data note", "Charts are external TradingView widgets; account actions still route through BullPort order review.", '<div class="space-y-3 text-sm text-muted-foreground"><p>Instrument prices are broker-managed snapshots. Search/filter results come from the backend instrument database.</p><p>TradingView widgets are free embeddable widgets with TradingView branding and market availability limits.</p><p>Clicking Open trading panel loads the selected symbol context and keeps order submission inside BullPort.</p></div>') + "</div>" +
       "</div>";
   }
 
   function tradingBody() {
-    const selected = DEMO.instruments[0];
+    const targetId = queryValue("instrument");
+    const selected = DEMO.instruments.find(function (row) { return row.id === targetId || row.symbol === targetId; }) || DEMO.instruments[0];
     if (!selected) return section("Trading workspace", "The internal order desk accepts requests only for published instruments.", '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No instrument is currently available.</div>');
     return '' +
       '<div class="grid grid-cols-1 gap-6 xl:grid-cols-12">' +
-      '<div class="xl:col-span-8">' + section(selected.name + " (" + selected.symbol + ")", "Submit an instruction for internal desk review. This is not represented as live exchange execution.", keyValueRows([
+      '<div class="xl:col-span-8">' + section(selected.name + " (" + selected.symbol + ")", "TradingView chart preview plus BullPort internal order request controls.", '<div class="bp-trading-panel">' + tradingViewChart(selected) + '</div><div class="mt-4 flex flex-wrap gap-3"><button type="button" data-broker-action="order-create" data-broker-instrument-id="' + escapeHtml(selected.id) + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Create order request</button><button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + escapeHtml(selected.id) + '" class="inline-flex items-center rounded-md border border-primary/30 px-4 py-2 text-sm font-semibold text-primary">Add to watchlist</button></div>') + "</div>" +
+      '<div class="xl:col-span-4">' + section("Instrument controls", "Eligibility and instrument controls from the broker API.", keyValueRows([
         { label: "Published price", value: selected.price },
-        { label: "Price source", value: selected.priceSource },
         { label: "Snapshot time", value: selected.priceAsOf ? formatDate(selected.priceAsOf) : "Unavailable" },
-        { label: "Execution mode", value: "Internal order desk" }
-      ]) + '<div class="mt-4"><button type="button" data-broker-action="order-create" data-broker-instrument-id="' + selected.id + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Create order request</button></div>') + "</div>" +
-      '<div class="xl:col-span-4">' + section("Trade setup summary", "Eligibility and instrument controls from the broker API.", keyValueRows([
         { label: "Category", value: selected.category },
         { label: "Market", value: selected.market },
-        { label: "Current price", value: selected.price },
         { label: "Risk", value: selected.risk },
         { label: "Tradable", value: selected.tradable },
-        { label: "Investable", value: selected.investable }
+        { label: "Investable", value: selected.investable },
+        { label: "Execution mode", value: "Internal order desk" }
       ])) + "</div>" +
       "</div>" +
       section("Recent order activity", "Trade status, execution outcome and approvals.", table(
@@ -2352,9 +2424,9 @@
     return '<div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">' + DEMO.watchlist.map(function (row) {
       const moveTone = "info";
       return '<section class="rounded-xl border border-border bg-card p-5 shadow-sm">'
-        + '<div class="flex items-start justify-between gap-3"><div><div class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">' + row.symbol + '</div><h2 class="mt-3 text-lg font-semibold tracking-tight">' + row.theme + '</h2><p class="mt-2 text-sm text-muted-foreground">' + row.note + '</p></div>' + badge(row.move, moveTone) + '</div>'
+        + '<div class="flex items-start justify-between gap-3"><div class="bp-market-title">' + instrumentLogo(row) + '<div><div class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">' + escapeHtml(row.symbol) + '</div><h2 class="mt-3 text-lg font-semibold tracking-tight">' + escapeHtml(row.theme) + '</h2><p class="mt-2 text-sm text-muted-foreground">' + escapeHtml(row.note) + '</p></div></div>' + badge(row.move, moveTone) + '</div>'
         + '<div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current price</p><p class="mt-2 text-sm font-semibold">' + row.price + '</p></div><div class="rounded-lg border border-border/70 bg-background/60 px-4 py-3"><p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Watch status</p><p class="mt-2 text-sm font-semibold">Tracked for market review</p></div></div>'
-        + '<div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><a href="trading.html" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Open instrument</a><button type="button" data-broker-action="watchlist-remove" data-broker-instrument-id="' + row.instrumentId + '" class="text-sm font-semibold text-primary">Remove</button></div>'
+        + '<div class="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-4"><a href="trading.html?instrument=' + encodeURIComponent(row.instrumentId || "") + '" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Open trading panel</a><button type="button" data-broker-action="watchlist-remove" data-broker-instrument-id="' + escapeHtml(row.instrumentId || "") + '" class="text-sm font-semibold text-primary">Remove</button></div>'
         + '</section>';
     }).join("") + "</div>";
   }
@@ -3868,6 +3940,12 @@
           await refreshLiveView("Instrument removed from your watchlist.", "success");
         } catch (error) { toast((error && error.message) || "Could not remove the instrument.", "warning"); }
         return;
+      case "trading-open":
+        navigateTo("trading.html?instrument=" + encodeURIComponent(node.getAttribute("data-broker-instrument-id") || ""));
+        return;
+      case "market-clear":
+        navigateTo("market.html");
+        return;
       case "order-create":
         showModal("Create order request", '<p>The instruction is submitted to BullPort\'s internal order desk for risk review and approval.</p><div class="broker-form-grid"><input type="hidden" name="instrumentId" value="' + (node.getAttribute("data-broker-instrument-id") || "") + '"><label class="broker-form-field"><span>Side</span><select name="side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label><label class="broker-form-field"><span>Order type</span><select name="type"><option value="MARKET">Market snapshot</option><option value="LIMIT">Limit</option></select></label>' + modalField("Quantity", "quantity", "number", "1", 'min="0.00000001" step="0.00000001"') + modalField("Limit price (required for limit)", "limitPrice", "number", "", 'min="0.01" step="0.01"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="order-confirm">Submit order request</button>');
         return;
@@ -4039,6 +4117,20 @@
         });
       }
     });
+    document.querySelectorAll("[data-broker-market-search]").forEach(function (form) {
+      if (form.dataset.brokerBound === "true") return;
+      form.dataset.brokerBound = "true";
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const data = new FormData(form);
+        const params = new URLSearchParams();
+        ["q", "market", "category"].forEach(function (key) {
+          const value = String(data.get(key) || "").trim();
+          if (value) params.set(key, value);
+        });
+        navigateTo("market.html" + (params.toString() ? "?" + params.toString() : ""));
+      });
+    });
   }
 
   function markRequiredFields() {
@@ -4163,6 +4255,7 @@
       + " .broker-deposit-proof-modal{display:grid;gap:16px}.broker-deposit-proof-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid rgba(22,163,74,.18);border-radius:18px;background:linear-gradient(135deg,rgba(240,253,244,.92),rgba(255,255,255,.92));padding:14px 16px}.broker-deposit-proof-intro span{display:inline-flex;flex:none;border-radius:999px;background:#16a34a;color:#fff;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.broker-deposit-proof-intro p{margin:0;color:#475569;font-size:13px;line-height:1.55}.broker-deposit-proof-layout{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1fr);gap:16px;align-items:start}.broker-deposit-proof-card,.broker-deposit-proof-form{min-width:0;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#fff;padding:16px;box-shadow:0 14px 32px rgba(15,23,42,.06)}.broker-deposit-proof-card{position:sticky;top:0;background:linear-gradient(180deg,#ffffff,#f8fbf9)}.broker-deposit-proof-card>small{display:block;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-card>strong{display:block;margin-top:6px;color:#101713;font-size:18px;font-weight:900;line-height:1.25}.broker-deposit-proof-card .grid{margin-top:14px}.broker-deposit-proof-note{margin-top:12px;border-radius:14px;background:#f8fafc;padding:12px}.broker-deposit-proof-note span{display:block;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-note p{margin:5px 0 0;color:#101713;font-size:13px;font-weight:750;line-height:1.45}.broker-deposit-proof-instructions{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-deposit-proof-form .broker-form-grid{margin-top:0;grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-proof-form .broker-form-field:has(textarea),.broker-deposit-proof-form .broker-form-field:has(input[type=file]),.broker-deposit-proof-form .text-xs{grid-column:1/-1}.broker-deposit-proof-form .text-xs{margin:-4px 0 0;color:#64748b;font-size:12px;line-height:1.45}"
       + " .broker-deposit-status{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}.broker-deposit-status i{height:7px;width:7px;border-radius:999px;background:currentColor;box-shadow:0 0 0 4px currentColor;opacity:.72}.broker-deposit-status.is-success{border-color:rgba(22,163,74,.22);background:rgba(22,163,74,.1);color:#15803d}.broker-deposit-status.is-warning{border-color:rgba(217,119,6,.22);background:rgba(245,158,11,.12);color:#b45309}.broker-deposit-status.is-danger{border-color:rgba(225,29,72,.22);background:rgba(244,63,94,.1);color:#be123c}.broker-deposit-status.is-info{border-color:rgba(2,132,199,.22);background:rgba(14,165,233,.1);color:#0369a1}.broker-deposit-status i{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}.broker-deposit-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;border-radius:12px;padding:7px 10px;font-size:13px;font-weight:950;letter-spacing:0}.broker-deposit-amount.is-success{background:linear-gradient(135deg,rgba(22,163,74,.14),rgba(240,253,244,.92));color:#15803d}.broker-deposit-amount.is-warning{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(255,251,235,.94));color:#b45309}.broker-deposit-amount.is-danger{background:linear-gradient(135deg,rgba(244,63,94,.13),rgba(255,241,242,.94));color:#be123c}.broker-deposit-amount.is-info{background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(240,249,255,.94));color:#0369a1}.dark .broker-deposit-status.is-success,.dark .broker-deposit-amount.is-success{color:#86efac}.dark .broker-deposit-status.is-warning,.dark .broker-deposit-amount.is-warning{color:#fcd34d}.dark .broker-deposit-status.is-danger,.dark .broker-deposit-amount.is-danger{color:#fda4af}.dark .broker-deposit-status.is-info,.dark .broker-deposit-amount.is-info{color:#7dd3fc}"
       + " .bp-pnl-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;font-variant-numeric:tabular-nums;font-size:13px;font-weight:950}.bp-pnl-amount.is-profit{color:#15803d}.bp-pnl-amount.is-loss{color:#be123c}.bp-pnl-amount.is-flat{color:hsl(var(--muted-foreground))}.dark .bp-pnl-amount.is-profit{color:#86efac}.dark .bp-pnl-amount.is-loss{color:#fda4af}"
+      + " .bp-market-search{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;gap:12px;align-items:end;margin-bottom:18px}.bp-market-search label{display:grid;gap:7px;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.bp-market-search input,.bp-market-search select{min-height:44px;border:1px solid #d7e2dc;border-radius:14px;background:#fff;color:#0f172a;padding:10px 12px;font-size:13px;font-weight:750;outline:none}.bp-market-search input:focus,.bp-market-search select:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.bp-market-search-actions{display:flex;gap:8px}.bp-market-search-actions button,.bp-market-actions button{border:1px solid rgba(22,163,74,.28);border-radius:12px;background:#fff;color:#15803d;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-market-search-actions button:first-child,.bp-market-actions button:first-child{background:#16a34a;color:#fff;border-color:#16a34a}.bp-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.bp-market-card{display:grid;gap:14px;border:1px solid rgba(148,163,184,.22);border-radius:20px;background:linear-gradient(180deg,#fff,#f8fbf9);padding:16px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.bp-market-card-head,.bp-market-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.bp-market-title{display:flex;align-items:flex-start;gap:12px;min-width:0}.bp-market-title strong{display:block;color:#0f172a;font-size:16px;font-weight:950}.bp-market-title span{display:block;margin-top:2px;color:#64748b;font-size:12px;font-weight:650;line-height:1.35}.bp-market-logo{display:flex;flex:none;width:42px;height:42px;align-items:center;justify-content:center;border-radius:14px;background:#eef8f0;object-fit:contain;box-shadow:inset 0 0 0 1px rgba(22,163,74,.12)}.bp-market-logo-fallback{color:#15803d;font-size:12px;font-weight:950}.bp-market-price{display:flex;align-items:end;gap:8px}.bp-market-price strong{color:#0f172a;font-size:24px;font-weight:950;letter-spacing:-.03em}.bp-market-price span,.bp-market-snapshot{color:#64748b;font-size:12px;font-weight:700}.bp-market-tags{display:flex;flex-wrap:wrap;gap:7px}.bp-market-tags span{border:1px solid rgba(148,163,184,.24);border-radius:999px;background:#fff;padding:5px 8px;color:#475569;font-size:11px;font-weight:850}.bp-trading-panel{overflow:hidden;border:1px solid rgba(148,163,184,.26);border-radius:18px;background:#0f172a}.bp-tradingview-frame{display:block;width:100%;min-height:520px;border:0}.dark .bp-market-search input,.dark .bp-market-search select,.dark .bp-market-card,.dark .bp-market-search-actions button,.dark .bp-market-actions button,.dark .bp-market-tags span{background:#101713;color:#f8fafc;border-color:rgba(148,163,184,.22)}.dark .bp-market-title strong,.dark .bp-market-price strong{color:#f8fafc}.dark .bp-market-title span,.dark .bp-market-price span,.dark .bp-market-snapshot{color:#94a3b8}@media (max-width:1100px){.bp-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bp-market-search{grid-template-columns:1fr 1fr}}@media (max-width:700px){.bp-market-grid,.bp-market-search{grid-template-columns:1fr}.bp-market-card-head,.bp-market-actions{align-items:stretch;flex-direction:column}.bp-tradingview-frame{min-height:420px}}"
       + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
       + " @media (max-width:860px){.broker-deposit-proof-layout{grid-template-columns:1fr}.broker-deposit-proof-card{position:static}.broker-deposit-proof-form .broker-form-grid{grid-template-columns:1fr}}"
       + " @media (max-width:640px){.broker-kyc-summary{grid-template-columns:1fr}.broker-kyc-requirement-head,.broker-kyc-slot{align-items:flex-start;flex-direction:column}.broker-kyc-mode{white-space:normal}.broker-kyc-slot-action{width:100%;justify-content:space-between}.broker-kyc-upload{min-height:38px}.broker-modal{align-items:stretch;padding:12px}.broker-modal-panel{max-height:calc(100vh - 24px);border-radius:18px}.broker-modal-header,.broker-modal-body,.broker-modal-actions{padding-left:14px;padding-right:14px}.broker-modal-actions{flex-wrap:wrap}.broker-modal-button{flex:1}.broker-deposit-proof-intro{display:grid}.broker-deposit-proof-card,.broker-deposit-proof-form{padding:14px}}"
