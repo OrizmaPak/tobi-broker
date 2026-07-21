@@ -23,6 +23,30 @@ function clientId(req: { user?: { id: string } }) {
   return req.user.id;
 }
 
+function stableInstrumentFactor(value: string, min = 0, max = 1) {
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const unit = (hash >>> 0) / 4294967295;
+  return min + unit * (max - min);
+}
+
+function fallbackInstrumentPrice(row: { id: string; symbol: string; market: string; category: string; currency: string }) {
+  const market = row.market.toLowerCase();
+  const category = row.category.toLowerCase();
+  const seed = `${row.id}:${row.symbol}:${row.market}:${row.category}`;
+  if (market.includes("forex")) return Number(stableInstrumentFactor(seed, 0.75, 1.65).toFixed(5));
+  if (market.includes("crypto")) return Number(stableInstrumentFactor(seed, 0.25, 75000).toFixed(2));
+  if (market.includes("money") && category.includes("money market")) return 1;
+  if (market.includes("money") || market.includes("bond") || category.includes("bond")) return Number(stableInstrumentFactor(seed, 85, 115).toFixed(2));
+  if (market.includes("private credit")) return Number(stableInstrumentFactor(seed, 8, 14).toFixed(2));
+  if (market.includes("commod")) return Number(stableInstrumentFactor(seed, 12, 450).toFixed(2));
+  if (category.includes("fund") || category.includes("etf")) return Number(stableInstrumentFactor(seed, 18, 240).toFixed(2));
+  return Number(stableInstrumentFactor(seed, 15, 650).toFixed(2));
+}
+
 async function verifiedClient(id: string) {
   const client = await prisma.client.findUnique({ where: { id } });
   if (!client) throw new ApiError(404, "Client was not found", "CLIENT_NOT_FOUND");
@@ -729,7 +753,14 @@ v1ClientRouter.get("/instruments", asyncHandler(async (req, res) => {
     } : {})
   };
   const rows = await prisma.instrument.findMany({ where, include: { marketRecord: true }, orderBy: [{ market: "asc" }, { symbol: "asc" }], take: limit });
-  return ok(res, rows);
+  return ok(res, rows.map((row) => {
+    const hasCurrentPrice = row.currentPrice !== null;
+    return {
+      ...row,
+      fallbackPrice: hasCurrentPrice ? null : fallbackInstrumentPrice(row),
+      marketPriceMode: hasCurrentPrice ? "ADMIN_MANAGED" : "DEMO_FALLBACK"
+    };
+  }));
 }));
 
 v1ClientRouter.get("/watchlist", asyncHandler(async (req, res) => {

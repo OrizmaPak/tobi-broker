@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { InvestmentStatus, Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { ApiError, asyncHandler, hashValue, ok, pageInput, pageMeta, reference } from "../../lib/http";
@@ -634,9 +634,12 @@ v1AdminBrokerRouter.get("/profit-schedules", readRoles, asyncHandler(async (req,
   await accrueAllInvestmentProfits();
   const { page, limit, skip } = pageInput(req.query);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  const investmentStatusInput = typeof req.query.investmentStatus === "string" ? req.query.investmentStatus.toUpperCase() : undefined;
+  const investmentStatus = investmentStatusInput && Object.values(InvestmentStatus).includes(investmentStatusInput as InvestmentStatus) ? investmentStatusInput as InvestmentStatus : undefined;
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
   const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
   const filterWhere: Prisma.InvestmentProfitScheduleWhereInput = {
+    ...(investmentStatus ? { investment: { status: investmentStatus } } : {}),
     ...(clientId ? { clientId } : {}),
     ...(productId ? { productId } : {})
   };

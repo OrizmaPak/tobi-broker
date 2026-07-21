@@ -836,6 +836,7 @@
     if (isDividendsProfitPage) {
       profitScheduleParams.set("limit", "20");
       profitScheduleParams.set("page", queryParam("page") || "1");
+      profitScheduleParams.set("investmentStatus", "ACTIVE");
       if (queryParam("clientId")) profitScheduleParams.set("clientId", queryParam("clientId"));
       if (queryParam("productId")) profitScheduleParams.set("productId", queryParam("productId"));
     } else {
@@ -1100,7 +1101,6 @@
           instrumentLogoCell(row.instrument, "Portfolio"),
           pnlAmountCell(amount),
           payoutToneCell(mode === "RUNNING_PNL" ? "Running P/L" : mode, amount),
-          badge(label(row.status)),
           action
         ];
       });
@@ -1298,6 +1298,10 @@
 
   function filterableTable(placeholder, headers, rows) {
     return filters(placeholder) + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching records. Adjust the search or status filter.</div>';
+  }
+
+  function searchableTable(placeholder, headers, rows) {
+    return '<div class="filter-bar"><label class="filter-search">' + svg("grid") + '<input data-table-search placeholder="' + placeholder + '" /></label></div>' + table(headers, rows) + '<div class="empty-state" data-empty-state>No matching active records. Adjust the search.</div>';
   }
 
   function depositMethodFilters(placeholder) {
@@ -1549,7 +1553,7 @@
     const pagination = totalPages <= 1 ? "" : '<div class="pagination"><a class="btn ' + (currentPage === 1 ? "is-disabled" : "") + '" href="' + (currentPage === 1 ? "#" : pageHref(currentPage - 1)) + '">Previous</a><span class="pagination-pages">' + Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => '<a class="btn ' + (page === currentPage ? "primary" : "") + '" href="' + pageHref(page) + '">' + page + '</a>').join("") + '</span><a class="btn ' + (currentPage === totalPages ? "is-disabled" : "") + '" href="' + (currentPage === totalPages ? "#" : pageHref(currentPage + 1)) + '">Next</a></div>';
     return section("Client and product filter", "Choose a client first, then choose one of the products that client is invested in.", '<div class="action-row">' + clientLinks + '</div><div class="action-row" style="margin-top:12px">' + productLinks + '</div>') +
       (selectedClientId ? section("Selected client investments", selectedClientName ? "Products currently linked to " + escapeHtml(selectedClientName) + "." : "Products currently linked to this client.", investmentRows.length ? table(["Product", "Invested", "Current value", "Running profit", "Actualized", "Status"], investmentRows) : '<div class="empty-state" style="display:block">No investments were found for this client.</div>') : "") +
-      section("Dividend and profit history", "This mirrors the client portal Dividends & Profits table, with admin actions for pending rows.", filterableTable("Search source, instrument, status...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"], data.profitSchedules) + pagination);
+      section("Dividend and profit history", "Shows dividend and profit rows for active investments only.", searchableTable("Search source, instrument...", ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Receipt"], data.profitSchedules) + pagination);
   }
 
   function payoutsPage() {

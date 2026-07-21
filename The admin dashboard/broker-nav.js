@@ -281,6 +281,7 @@
     notificationInitialised: false,
     notificationUnreadCount: 0,
     seenNotificationIds: {},
+    marketDemoTimer: null,
     loginMfaRequired: false,
     mfaSetup: null
   };
@@ -409,6 +410,13 @@
   function money(value) {
     const sign = value < 0 ? "-" : "";
     return sign + "$" + Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  }
+
+  function marketMoney(value) {
+    const amount = numberValue(value);
+    if (Math.abs(amount) >= 1000) return "$" + amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    if (Math.abs(amount) >= 1) return "$" + amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return "$" + amount.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   }
 
   function riskTone(risk) {
@@ -1242,6 +1250,29 @@
     return Number.isFinite(next) ? next : 0;
   }
 
+  function stableDemoUnit(value) {
+    let hash = 2166136261;
+    String(value || "").split("").forEach(function (char) {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    });
+    return (hash >>> 0) / 4294967295;
+  }
+
+  function demoMarketMove(row) {
+    const base = numberValue(row.basePrice || row.fallbackPrice || row.currentPrice || row.price);
+    const period = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+    const unit = stableDemoUnit((row.id || row.symbol || row.name || "market") + ":" + period);
+    const percent = (unit - 0.5) * 1.8;
+    const price = base > 0 ? base * (1 + percent / 100) : 0;
+    return {
+      price: price,
+      percent: percent,
+      label: (percent >= 0 ? "+" : "") + percent.toFixed(2) + "%",
+      tone: percent >= 0 ? "up" : "down"
+    };
+  }
+
   function signedMoney(value) {
     const amount = numberValue(value);
     return (amount > 0 ? "+" : "") + money(amount);
@@ -1414,6 +1445,8 @@
     const category = row.category || "Market";
     const risk = labelize(row.riskLevel || "Moderate");
     const status = labelize(row.status || "Watch");
+    const basePrice = row.currentPrice == null ? row.fallbackPrice : row.currentPrice;
+    const hasFallbackPrice = row.currentPrice == null && row.fallbackPrice != null;
     return {
       id: row.id,
       symbol: row.symbol,
@@ -1424,8 +1457,11 @@
       marketSlug: row.marketRecord && row.marketRecord.slug ? row.marketRecord.slug : "",
       logoUrl: row.logoUrl || "",
       currency: row.currency || "USD",
-      price: row.currentPrice == null ? "Unavailable" : money(numberValue(row.currentPrice)),
-      priceSource: row.priceSource || "Admin managed",
+      basePrice: basePrice == null ? 0 : numberValue(basePrice),
+      fallbackPrice: row.fallbackPrice == null ? null : numberValue(row.fallbackPrice),
+      price: basePrice == null ? "Unavailable" : marketMoney(numberValue(basePrice)),
+      priceSource: row.priceSource || (hasFallbackPrice ? "Fallback price" : "Admin managed"),
+      priceMode: row.marketPriceMode || (hasFallbackPrice ? "DEMO_FALLBACK" : "ADMIN_MANAGED"),
       priceAsOf: row.priceAsOf || null,
       risk: risk,
       dividend: row.dividendEligible ? "Eligible" : "No",
@@ -1844,6 +1880,20 @@
     focusDepositTarget();
     patchApiStatus();
     if (message) toast(message, tone || "success");
+  }
+
+  function startMarketDemoRefresh() {
+    if (currentFile() !== "market.html" || appState.marketDemoTimer) return;
+    appState.marketDemoTimer = window.setInterval(function () {
+      if (currentFile() !== "market.html") {
+        window.clearInterval(appState.marketDemoTimer);
+        appState.marketDemoTimer = null;
+        return;
+      }
+      renderPage();
+      patchChromeUI();
+      bindActions();
+    }, 24 * 60 * 60 * 1000);
   }
 
   function focusDepositTarget() {
@@ -2395,10 +2445,13 @@
     const categories = Array.from(new Set(DEMO.instruments.map(function (row) { return row.category; }).filter(Boolean))).sort();
     const filters = '<form class="bp-market-search" data-broker-market-search="true"><label><span>Search instruments</span><input name="q" value="' + escapeHtml(search) + '" placeholder="Search BTC, Apple, ETF, NASDAQ..."></label><label><span>Market</span><select name="market"><option value="">All markets</option>' + markets.map(function (market) { return '<option value="' + escapeHtml(market) + '" ' + (market === selectedMarket ? "selected" : "") + ">" + escapeHtml(market) + "</option>"; }).join("") + '</select></label><label><span>Category</span><select name="category"><option value="">All categories</option>' + categories.map(function (category) { return '<option value="' + escapeHtml(category) + '" ' + (category === selectedCategory ? "selected" : "") + ">" + escapeHtml(category) + "</option>"; }).join("") + '</select></label><div class="bp-market-search-actions"><button type="submit">Search market</button><button type="button" data-broker-action="market-clear">Clear</button></div></form>';
     const cards = DEMO.instruments.length ? '<div class="bp-market-grid">' + DEMO.instruments.map(function (row) {
-      const snapshot = row.priceAsOf ? "Updated " + formatDate(row.priceAsOf) : "Awaiting broker snapshot";
+      const move = demoMarketMove(row);
+      const snapshot = row.priceMode === "DEMO_FALLBACK"
+        ? "Fallback price; demo movement refreshes every 24 hours"
+        : row.priceAsOf ? "Updated " + formatDate(row.priceAsOf) + "; demo movement refreshes every 24 hours" : "Demo movement refreshes every 24 hours";
       return '<article class="bp-market-card">'
         + '<div class="bp-market-card-head"><div class="bp-market-title">' + instrumentLogo(row) + '<div><strong>' + escapeHtml(row.symbol) + '</strong><span>' + escapeHtml(row.name) + '</span></div></div>' + badge(row.risk, riskTone(row.risk)) + '</div>'
-        + '<div class="bp-market-price"><strong>' + escapeHtml(row.price) + '</strong><span>' + escapeHtml(row.currency) + '</span></div>'
+        + '<div class="bp-market-price"><strong>' + escapeHtml(marketMoney(move.price)) + '</strong><span>' + escapeHtml(row.currency) + '</span><em class="bp-market-change is-' + move.tone + '">' + escapeHtml(move.label) + '</em></div>'
         + '<div class="bp-market-tags"><span>' + escapeHtml(row.market) + '</span><span>' + escapeHtml(row.category) + '</span><span>' + escapeHtml(row.tradable === "Yes" ? "Tradable" : "Watch only") + '</span><span>' + escapeHtml(row.investable === "Yes" ? "Investable" : "Not investable") + '</span></div>'
         + '<p class="bp-market-snapshot">' + escapeHtml(snapshot) + '</p>'
         + '<div class="bp-market-actions"><button type="button" data-broker-action="watchlist-add" data-broker-instrument-id="' + escapeHtml(row.id) + '">Add to watchlist</button><button type="button" data-broker-action="trading-open" data-broker-instrument-id="' + escapeHtml(row.id) + '">Open trading panel</button></div>'
@@ -2933,6 +2986,7 @@
     }
 
     if (!main) return;
+    startMarketDemoRefresh();
 
     const meta = currentMeta();
     let body = "";
@@ -4278,7 +4332,7 @@
       + " .broker-deposit-proof-modal{display:grid;gap:16px}.broker-deposit-proof-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border:1px solid rgba(22,163,74,.18);border-radius:18px;background:linear-gradient(135deg,rgba(240,253,244,.92),rgba(255,255,255,.92));padding:14px 16px}.broker-deposit-proof-intro span{display:inline-flex;flex:none;border-radius:999px;background:#16a34a;color:#fff;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.broker-deposit-proof-intro p{margin:0;color:#475569;font-size:13px;line-height:1.55}.broker-deposit-proof-layout{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1fr);gap:16px;align-items:start}.broker-deposit-proof-card,.broker-deposit-proof-form{min-width:0;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#fff;padding:16px;box-shadow:0 14px 32px rgba(15,23,42,.06)}.broker-deposit-proof-card{position:sticky;top:0;background:linear-gradient(180deg,#ffffff,#f8fbf9)}.broker-deposit-proof-card>small{display:block;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-card>strong{display:block;margin-top:6px;color:#101713;font-size:18px;font-weight:900;line-height:1.25}.broker-deposit-proof-card .grid{margin-top:14px}.broker-deposit-proof-note{margin-top:12px;border-radius:14px;background:#f8fafc;padding:12px}.broker-deposit-proof-note span{display:block;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.broker-deposit-proof-note p{margin:5px 0 0;color:#101713;font-size:13px;font-weight:750;line-height:1.45}.broker-deposit-proof-instructions{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-deposit-proof-form .broker-form-grid{margin-top:0;grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-proof-form .broker-form-field:has(textarea),.broker-deposit-proof-form .broker-form-field:has(input[type=file]),.broker-deposit-proof-form .text-xs{grid-column:1/-1}.broker-deposit-proof-form .text-xs{margin:-4px 0 0;color:#64748b;font-size:12px;line-height:1.45}"
       + " .broker-deposit-status{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}.broker-deposit-status i{height:7px;width:7px;border-radius:999px;background:currentColor;box-shadow:0 0 0 4px currentColor;opacity:.72}.broker-deposit-status.is-success{border-color:rgba(22,163,74,.22);background:rgba(22,163,74,.1);color:#15803d}.broker-deposit-status.is-warning{border-color:rgba(217,119,6,.22);background:rgba(245,158,11,.12);color:#b45309}.broker-deposit-status.is-danger{border-color:rgba(225,29,72,.22);background:rgba(244,63,94,.1);color:#be123c}.broker-deposit-status.is-info{border-color:rgba(2,132,199,.22);background:rgba(14,165,233,.1);color:#0369a1}.broker-deposit-status i{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}.broker-deposit-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;border-radius:12px;padding:7px 10px;font-size:13px;font-weight:950;letter-spacing:0}.broker-deposit-amount.is-success{background:linear-gradient(135deg,rgba(22,163,74,.14),rgba(240,253,244,.92));color:#15803d}.broker-deposit-amount.is-warning{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(255,251,235,.94));color:#b45309}.broker-deposit-amount.is-danger{background:linear-gradient(135deg,rgba(244,63,94,.13),rgba(255,241,242,.94));color:#be123c}.broker-deposit-amount.is-info{background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(240,249,255,.94));color:#0369a1}.dark .broker-deposit-status.is-success,.dark .broker-deposit-amount.is-success{color:#86efac}.dark .broker-deposit-status.is-warning,.dark .broker-deposit-amount.is-warning{color:#fcd34d}.dark .broker-deposit-status.is-danger,.dark .broker-deposit-amount.is-danger{color:#fda4af}.dark .broker-deposit-status.is-info,.dark .broker-deposit-amount.is-info{color:#7dd3fc}"
       + " .bp-pnl-amount{display:inline-flex;align-items:center;justify-content:flex-end;min-width:92px;font-variant-numeric:tabular-nums;font-size:13px;font-weight:950}.bp-pnl-amount.is-profit{color:#15803d}.bp-pnl-amount.is-loss{color:#be123c}.bp-pnl-amount.is-flat{color:hsl(var(--muted-foreground))}.bp-instrument-cell{display:inline-flex;align-items:center;gap:10px;min-width:150px}.bp-instrument-logo{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:linear-gradient(135deg,#f8fafc,#e2e8f0);color:#0f172a;font-size:11px;font-weight:950;overflow:hidden}.bp-instrument-logo img{width:22px;height:22px;object-fit:contain}.bp-instrument-cell strong{display:block;font-size:13px;font-weight:900;line-height:1.1}.bp-instrument-cell em{display:block;margin-top:3px;color:hsl(var(--muted-foreground));font-size:11px;font-style:normal;line-height:1.2}.bp-payout-tone{display:inline-flex;align-items:center;white-space:nowrap;font-size:12px;font-weight:900}.bp-payout-tone.is-profit{color:#15803d}.bp-payout-tone.is-loss{color:#be123c}.bp-payout-tone.is-flat{color:hsl(var(--muted-foreground))}.dark .bp-pnl-amount.is-profit,.dark .bp-payout-tone.is-profit{color:#86efac}.dark .bp-pnl-amount.is-loss,.dark .bp-payout-tone.is-loss{color:#fda4af}.dark .bp-instrument-logo{border-color:rgba(148,163,184,.22);background:linear-gradient(135deg,rgba(15,23,18,.92),rgba(30,41,59,.7));color:#e2e8f0}"
-      + " .bp-market-search{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;gap:12px;align-items:end;margin-bottom:18px}.bp-market-search label{display:grid;gap:7px;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.bp-market-search input,.bp-market-search select{min-height:44px;border:1px solid #d7e2dc;border-radius:14px;background:#fff;color:#0f172a;padding:10px 12px;font-size:13px;font-weight:750;outline:none}.bp-market-search input:focus,.bp-market-search select:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.bp-market-search-actions{display:flex;gap:8px}.bp-market-search-actions button,.bp-market-actions button{border:1px solid rgba(22,163,74,.28);border-radius:12px;background:#fff;color:#15803d;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-market-search-actions button:first-child,.bp-market-actions button:first-child{background:#16a34a;color:#fff;border-color:#16a34a}.bp-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.bp-market-card{display:grid;gap:14px;border:1px solid rgba(148,163,184,.22);border-radius:20px;background:linear-gradient(180deg,#fff,#f8fbf9);padding:16px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.bp-market-card-head,.bp-market-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.bp-market-title{display:flex;align-items:flex-start;gap:12px;min-width:0}.bp-market-title strong{display:block;color:#0f172a;font-size:16px;font-weight:950}.bp-market-title span{display:block;margin-top:2px;color:#64748b;font-size:12px;font-weight:650;line-height:1.35}.bp-market-logo{display:flex;flex:none;width:42px;height:42px;align-items:center;justify-content:center;border-radius:14px;background:#eef8f0;object-fit:contain;box-shadow:inset 0 0 0 1px rgba(22,163,74,.12)}.bp-market-logo-fallback{color:#15803d;font-size:12px;font-weight:950}.bp-market-price{display:flex;align-items:end;gap:8px}.bp-market-price strong{color:#0f172a;font-size:24px;font-weight:950;letter-spacing:-.03em}.bp-market-price span,.bp-market-snapshot{color:#64748b;font-size:12px;font-weight:700}.bp-market-tags{display:flex;flex-wrap:wrap;gap:7px}.bp-market-tags span{border:1px solid rgba(148,163,184,.24);border-radius:999px;background:#fff;padding:5px 8px;color:#475569;font-size:11px;font-weight:850}.bp-trading-panel{overflow:hidden;border:1px solid rgba(148,163,184,.26);border-radius:18px;background:#0f172a}.bp-tradingview-frame{display:block;width:100%;min-height:520px;border:0}.dark .bp-market-search input,.dark .bp-market-search select,.dark .bp-market-card,.dark .bp-market-search-actions button,.dark .bp-market-actions button,.dark .bp-market-tags span{background:#101713;color:#f8fafc;border-color:rgba(148,163,184,.22)}.dark .bp-market-title strong,.dark .bp-market-price strong{color:#f8fafc}.dark .bp-market-title span,.dark .bp-market-price span,.dark .bp-market-snapshot{color:#94a3b8}@media (max-width:1100px){.bp-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bp-market-search{grid-template-columns:1fr 1fr}}@media (max-width:700px){.bp-market-grid,.bp-market-search{grid-template-columns:1fr}.bp-market-card-head,.bp-market-actions{align-items:stretch;flex-direction:column}.bp-tradingview-frame{min-height:420px}}"
+      + " .bp-market-search{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;gap:12px;align-items:end;margin-bottom:18px}.bp-market-search label{display:grid;gap:7px;color:#64748b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.bp-market-search input,.bp-market-search select{min-height:44px;border:1px solid #d7e2dc;border-radius:14px;background:#fff;color:#0f172a;padding:10px 12px;font-size:13px;font-weight:750;outline:none}.bp-market-search input:focus,.bp-market-search select:focus{border-color:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}.bp-market-search-actions{display:flex;gap:8px}.bp-market-search-actions button,.bp-market-actions button{border:1px solid rgba(22,163,74,.28);border-radius:12px;background:#fff;color:#15803d;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer}.bp-market-search-actions button:first-child,.bp-market-actions button:first-child{background:#16a34a;color:#fff;border-color:#16a34a}.bp-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.bp-market-card{display:grid;gap:14px;border:1px solid rgba(148,163,184,.22);border-radius:20px;background:linear-gradient(180deg,#fff,#f8fbf9);padding:16px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.bp-market-card-head,.bp-market-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.bp-market-title{display:flex;align-items:flex-start;gap:12px;min-width:0}.bp-market-title strong{display:block;color:#0f172a;font-size:16px;font-weight:950}.bp-market-title span{display:block;margin-top:2px;color:#64748b;font-size:12px;font-weight:650;line-height:1.35}.bp-market-logo{display:flex;flex:none;width:42px;height:42px;align-items:center;justify-content:center;border-radius:14px;background:#eef8f0;object-fit:contain;box-shadow:inset 0 0 0 1px rgba(22,163,74,.12)}.bp-market-logo-fallback{color:#15803d;font-size:12px;font-weight:950}.bp-market-price{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.bp-market-price strong{color:#0f172a;font-size:24px;font-weight:950;letter-spacing:-.03em}.bp-market-price span,.bp-market-snapshot{color:#64748b;font-size:12px;font-weight:700}.bp-market-change{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:11px;font-style:normal;font-weight:950;line-height:1}.bp-market-change.is-up{background:rgba(22,163,74,.12);color:#15803d}.bp-market-change.is-down{background:rgba(225,29,72,.11);color:#be123c}.bp-market-tags{display:flex;flex-wrap:wrap;gap:7px}.bp-market-tags span{border:1px solid rgba(148,163,184,.24);border-radius:999px;background:#fff;padding:5px 8px;color:#475569;font-size:11px;font-weight:850}.bp-trading-panel{overflow:hidden;border:1px solid rgba(148,163,184,.26);border-radius:18px;background:#0f172a}.bp-tradingview-frame{display:block;width:100%;min-height:520px;border:0}.dark .bp-market-search input,.dark .bp-market-search select,.dark .bp-market-card,.dark .bp-market-search-actions button,.dark .bp-market-actions button,.dark .bp-market-tags span{background:#101713;color:#f8fafc;border-color:rgba(148,163,184,.22)}.dark .bp-market-title strong,.dark .bp-market-price strong{color:#f8fafc}.dark .bp-market-title span,.dark .bp-market-price span,.dark .bp-market-snapshot{color:#94a3b8}.dark .bp-market-change.is-up{color:#86efac}.dark .bp-market-change.is-down{color:#fda4af}@media (max-width:1100px){.bp-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bp-market-search{grid-template-columns:1fr 1fr}}@media (max-width:700px){.bp-market-grid,.bp-market-search{grid-template-columns:1fr}.bp-market-card-head,.bp-market-actions{align-items:stretch;flex-direction:column}.bp-tradingview-frame{min-height:420px}}"
       + " @media (max-width:1100px){.broker-deposit-columns{grid-template-columns:1fr}}"
       + " @media (max-width:860px){.broker-deposit-proof-layout{grid-template-columns:1fr}.broker-deposit-proof-card{position:static}.broker-deposit-proof-form .broker-form-grid{grid-template-columns:1fr}}"
       + " @media (max-width:640px){.broker-kyc-summary{grid-template-columns:1fr}.broker-kyc-requirement-head,.broker-kyc-slot{align-items:flex-start;flex-direction:column}.broker-kyc-mode{white-space:normal}.broker-kyc-slot-action{width:100%;justify-content:space-between}.broker-kyc-upload{min-height:38px}.broker-modal{align-items:stretch;padding:12px}.broker-modal-panel{max-height:calc(100vh - 24px);border-radius:18px}.broker-modal-header,.broker-modal-body,.broker-modal-actions{padding-left:14px;padding-right:14px}.broker-modal-actions{flex-wrap:wrap}.broker-modal-button{flex:1}.broker-deposit-proof-intro{display:grid}.broker-deposit-proof-card,.broker-deposit-proof-form{padding:14px}}"
