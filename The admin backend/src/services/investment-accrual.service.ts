@@ -281,6 +281,33 @@ async function postProfitScheduleTx(tx: Db, investment: InvestmentForProfit, sch
     where: { id: schedule.id },
     data: { status: "POSTED", actualAmount, postedAt: now }
   });
+  const amountLabel = actualAmount.abs().toFixed(2);
+  const currency = updated.product.currency || "USD";
+  const isProfit = actualAmount.greaterThanOrEqualTo(0);
+  await notifyClientTx(tx, {
+    clientId: investment.clientId,
+    category: "Distribution",
+    eventKey: "investment.profit.posted",
+    severity: isProfit ? "SUCCESS" : "WARNING",
+    title: isProfit ? "Profit receipt posted" : "Trading adjustment posted",
+    body: isProfit
+      ? `${currency} ${amountLabel} profit from ${updated.product.name} is now available in your dividends and profits history.`
+      : `${currency} ${amountLabel} trading adjustment from ${updated.product.name} was posted to your dividends and profits history.`,
+    actionUrl: "dividends.html",
+    entity: { type: "InvestmentTradeReceipt", id: receipt.id },
+    metadata: {
+      investmentId: investment.id,
+      scheduleId: schedule.id,
+      receiptId: receipt.id,
+      receiptReference: receipt.reference,
+      productId: updated.productId,
+      productName: updated.product.name,
+      amount: actualAmount.toFixed(2),
+      currency,
+      scheduledAt: schedule.scheduledAt.toISOString()
+    },
+    dedupeKey: `investment.profit.posted:${schedule.id}`
+  });
   return updated;
 }
 

@@ -580,6 +580,13 @@
     };
   }
 
+  function pnlAmountCell(value) {
+    const amount = numberValue(value);
+    const tone = amount > 0 ? "text-emerald-600 dark:text-emerald-300" : amount < 0 ? "text-rose-600 dark:text-rose-300" : "text-muted-foreground";
+    const prefix = amount > 0 ? "+" : "";
+    return '<span class="font-semibold tabular-nums ' + tone + '">' + prefix + money(amount) + "</span>";
+  }
+
   function investmentCanCancel(status) {
     return ["CANCELLED", "CLOSED"].indexOf(String(status || "").toUpperCase()) === -1;
   }
@@ -1484,11 +1491,13 @@
     DEMO.risk.concentration = actualHoldings.length ? "Holdings monitored" : "Not calculated";
     appState.riskAlerts = riskAlerts;
     replaceList(DEMO.payouts, payouts.map(function (row) {
+      const amount = numberValue(row.amount);
       return {
         source: row.source,
         date: formatDate(row.payoutDate),
         type: row.mode || "Payout",
-        amount: money(numberValue(row.amount)),
+        amount: money(amount),
+        amountValue: amount,
         mode: row.mode || "Wallet credit",
         status: labelize(row.status)
       };
@@ -1497,11 +1506,13 @@
       replaceList(DEMO.payouts, distributions.map(function (row) {
         const receipt = row.receipt || null;
         const instrument = row.instrument || (receipt && receipt.instrument) || null;
+        const amount = numberValue(row.netAmount);
         return {
           source: row.investment && row.investment.product ? row.investment.product.name : (row.batch ? labelize(row.batch.type) : "Distribution"),
           date: formatDate(row.createdAt),
           type: row.batch ? labelize(row.batch.type) : labelize(row.type || "Bot Profit"),
-          amount: money(numberValue(row.netAmount)),
+          amount: money(amount),
+          amountValue: amount,
           mode: row.mode === "RUNNING_PNL" ? "Running P/L" : labelize(row.mode || "WALLET"),
           status: labelize(row.status),
           instrument: instrument ? (instrument.symbol || instrument.name || "Instrument") : "Portfolio",
@@ -2444,7 +2455,7 @@
         ["Source", "Date", "Type", "Instrument", "Amount", "Settlement", "Status", "Receipt"],
         DEMO.payouts.map(function (row) {
           const receipt = row.receipt && row.receipt !== "-" ? '<span class="font-semibold text-primary">' + escapeHtml(row.receipt) + '</span><p class="mt-1 text-xs text-muted-foreground">' + escapeHtml(row.receiptMeta || "") + '</p>' : '<span class="text-xs text-muted-foreground">No receipt</span>';
-          return [escapeHtml(row.source), row.date, row.type, escapeHtml(row.instrument || "Portfolio"), row.amount, row.mode, badge(row.status, statusTone(row.status)), receipt];
+          return [escapeHtml(row.source), row.date, row.type, escapeHtml(row.instrument || "Portfolio"), pnlAmountCell(row.amountValue ?? row.amount), row.mode, badge(row.status, statusTone(row.status)), receipt];
         })
       ));
   }

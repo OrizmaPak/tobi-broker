@@ -45,6 +45,7 @@ export async function clientDashboard(clientId: string) {
       withdrawals: { orderBy: { createdAt: "desc" }, take: 10 },
       beneficiaries: { orderBy: { createdAt: "desc" } },
       investments: { include: { product: true }, orderBy: { updatedAt: "desc" } },
+      tradeReceipts: { orderBy: { createdAt: "desc" }, take: 200 },
       payouts: { orderBy: { payoutDate: "desc" }, take: 12 },
       distributionItems: { include: { batch: true }, orderBy: { createdAt: "desc" }, take: 20 },
       notifications: { where: { recipientType: "CLIENT" }, orderBy: { createdAt: "desc" }, take: 12 },
@@ -70,7 +71,8 @@ export async function clientDashboard(clientId: string) {
   const totalPortfolioValue = metricInvestments.reduce((sum, item) => sum + money(item.currentValue), 0);
   const totalInvested = metricInvestments.reduce((sum, item) => sum + money(item.investedAmount), 0);
   const totalDividends = client.distributionItems.filter((item) => item.batch.type === "DIVIDEND" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
-  const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
+  const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0)
+    + client.tradeReceipts.filter((receipt) => money(receipt.netPnl) > 0).reduce((sum, receipt) => sum + money(receipt.netPnl), 0);
   const nextPayout = client.payouts.filter((item) => item.payoutDate >= new Date()).sort((a, b) => a.payoutDate.getTime() - b.payoutDate.getTime())[0];
   const approvedCase = client.kycCases.find((item) => item.status === "APPROVED" && (!item.expiresAt || item.expiresAt > new Date()));
   const approvedLegacy = client.kycReviews.find((item) => item.status === "APPROVED");
@@ -160,6 +162,7 @@ export async function clientSnapshot(clientId: string) {
       },
       payouts: { orderBy: { payoutDate: "desc" }, take: 50 },
       distributionItems: { include: { batch: true }, orderBy: { createdAt: "desc" }, take: 50 },
+      tradeReceipts: { orderBy: { createdAt: "desc" }, take: 200 },
       watchlist: { include: { instrument: true }, orderBy: { createdAt: "desc" } },
       orders: { include: { instrument: true, fills: true }, orderBy: { submittedAt: "desc" }, take: 50 },
       positions: { include: { instrument: true }, orderBy: { marketValue: "desc" } },
@@ -204,7 +207,8 @@ export async function clientSnapshot(clientId: string) {
   const totalPortfolioValue = metricInvestments.reduce((sum, item) => sum + money(item.currentValue), 0);
   const totalInvested = metricInvestments.reduce((sum, item) => sum + money(item.investedAmount), 0);
   const totalDividends = client.distributionItems.filter((item) => item.batch.type === "DIVIDEND" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
-  const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0);
+  const totalProfits = client.distributionItems.filter((item) => item.batch.type === "PROFIT" && item.status === "POSTED").reduce((sum, item) => sum + money(item.netAmount), 0)
+    + client.tradeReceipts.filter((receipt) => money(receipt.netPnl) > 0).reduce((sum, receipt) => sum + money(receipt.netPnl), 0);
   const nextPayout = client.payouts.filter((item) => item.payoutDate >= new Date()).sort((a, b) => a.payoutDate.getTime() - b.payoutDate.getTime())[0];
   const approvedCase = client.kycCases.find((item) => item.status === "APPROVED" && (!item.expiresAt || item.expiresAt > new Date()));
   const approvedLegacy = client.kycReviews.find((item) => item.status === "APPROVED");
