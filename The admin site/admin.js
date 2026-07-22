@@ -1964,9 +1964,10 @@
   }
 
   function renderAdminLogin(message, requireMfa) {
-    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card">' + adminBrand("dark", "Broker operations console") + '<div class="auth-heading"><p class="eyebrow">Restricted access</p><h1>Sign in to operations</h1><p>Use your assigned admin account. Access is role-controlled and session-audited.</p></div>' + (message ? '<p class="auth-error">' + escapeHtml(message) + '</p>' : '') + '<form class="auth-form" data-admin-login-form><label>Email address<input name="email" type="email" autocomplete="username" required value="' + escapeHtml(appState.pendingLogin?.email || "") + '"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label>' + (requireMfa ? '<label>Authenticator or recovery code<input name="mfaCode" autocomplete="one-time-code" required></label>' : '') + '<button class="btn primary" type="submit">Sign in securely</button></form></section></main>';
+    document.getElementById("admin-root").innerHTML = '<main class="admin-auth"><section class="admin-auth-card">' + adminBrand("dark", "Broker operations console") + '<div class="auth-heading"><p class="eyebrow">Restricted access</p><h1>Sign in to operations</h1><p>Use your assigned admin account. Access is role-controlled and session-audited.</p></div>' + (message ? '<p class="auth-error">' + escapeHtml(message) + '</p>' : '') + '<form class="auth-form" data-admin-login-form><label>Email address<input name="email" type="email" autocomplete="username" required value="' + escapeHtml(appState.pendingLogin?.email || "") + '"></label><label>Password<span class="admin-password-field"><input id="admin-login-password" name="password" type="password" autocomplete="current-password" required><button type="button" data-action="toggle-admin-password" data-password-target="admin-login-password" aria-label="Show password">Show</button></span></label>' + (requireMfa ? '<label>Authenticator or recovery code<input name="mfaCode" autocomplete="one-time-code" required></label>' : '') + '<button class="btn primary" type="submit">Sign in securely</button></form></section></main>';
     const form = document.querySelector("[data-admin-login-form]");
     form?.addEventListener("submit", submitAdminLogin);
+    bindActions();
   }
 
   function renderMfaSetup() {
@@ -2242,6 +2243,14 @@
           if (action === "goto-queues") location.href = "queues.html";
           else if (action === "goto-clients") location.href = "clients.html";
           else if (action === "toggle-menu") document.querySelector(".app")?.classList.toggle("menu-open");
+          else if (action === "toggle-admin-password") {
+            const input = document.getElementById(node.dataset.passwordTarget || "");
+            if (!input) return;
+            const visible = input.getAttribute("type") === "text";
+            input.setAttribute("type", visible ? "password" : "text");
+            node.textContent = visible ? "Show" : "Hide";
+            node.setAttribute("aria-label", visible ? "Show password" : "Hide password");
+          }
           else if (action === "admin-notifications-toggle") showAdminNotificationMenu(node);
           else if (action === "admin-account-toggle") showAdminAccountMenu(node);
           else if (action === "admin-account-open") closeAdminAccountMenu();
