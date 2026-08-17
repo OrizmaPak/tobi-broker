@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BullPort Client Portal</title>
   <meta name="description" content="BullPort broker client portal for wallets, managed portfolios, markets, dividends, reports, notifications, support, and risk monitoring." />
+  <meta name="theme-color" content="#19b72f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BullPort" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png" />
   <link rel="preload" href="_next/static/media/2b3f1035ed87a788-s.p.woff2" as="font" crossorigin type="font/woff2" />
   <link rel="preload" href="_next/static/media/93f479601ee12b01-s.p.woff2" as="font" crossorigin type="font/woff2" />
   <link rel="stylesheet" href="_next/static/css/642a8584326f74d6.css" />
@@ -18,6 +24,13 @@
   <script>(function(){try{var f=(location.pathname.split("/").pop()||"index.html").toLowerCase();if(!/^(login|register|forgot-password)\.html$/.test(f)){document.documentElement.classList.add("bp-booting")}}catch(e){document.documentElement.classList.add("bp-booting")}})();</script>
   <style id="bp-boot-style">html.bp-booting,html.bp-booting body{min-height:100%;background:#f4faf5}html.bp-booting body>.min-h-screen{visibility:hidden;opacity:0}.bp-boot-screen{display:none}.bp-booting .bp-boot-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f4faf5 0%,#ffffff 46%,#edf7ef 100%);color:#101713}.bp-boot-card{display:flex;min-width:min(360px,calc(100vw - 40px));flex-direction:column;align-items:center;gap:18px;border:1px solid rgba(25,183,47,.16);border-radius:24px;background:rgba(255,255,255,.92);padding:34px 28px;box-shadow:0 28px 80px rgba(15,23,42,.14);text-align:center}.bp-boot-logo{width:168px;height:auto;animation:bpBootPulse 1.35s ease-in-out infinite}.bp-boot-card strong{font-size:15px;font-weight:800}.bp-boot-card span{font-size:12px;font-weight:700;color:#647164;text-transform:uppercase;letter-spacing:.12em}@keyframes bpBootPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.58;transform:scale(.985)}}</style></head>
 <body class="__variable_08814d __variable_508d3e antialiased">
+  <div class="bp-boot-screen" role="status" aria-live="polite" aria-label="BullPort is loading">
+    <div class="bp-boot-card">
+      <img class="bp-boot-logo" src="data:image/png;base64,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" alt="BullPort" />
+      <strong>Loading BullPort</strong>
+      <span data-bp-loader-message>Fetching fresh account data</span>
+    </div>
+  </div>
   <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none">Skip to content</a>
   <div class="min-h-screen bg-background">
     <div class="flex min-h-screen">
@@ -63,6 +76,8 @@
     </div>
   </div>
   <section aria-label="Notifications alt+T" tabindex="-1" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></section>
-  <script src="broker-nav.js?v=instrument-symbol-fix-v1"></script>
+  <script src="pwa.js?v=push-v1"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="broker-nav.js?v=crypto-deposit-qr-v1"></script>
 </body>
 </html>

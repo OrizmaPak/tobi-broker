@@ -248,7 +248,6 @@
     }
   };
 
-  const STATE_KEY = "bullport-portal-state-v3";
   const TAB_SESSION_KEY = "bullport-client-tab-session-v1";
   const LIVE_SESSION_KEY = "bullport-client-live-session-v1";
   const LIVE_SESSION_TTL = 12000;
@@ -265,6 +264,7 @@
     withdrawals: [],
     payouts: DEMO.payouts.slice()
   };
+  let volatilePortalState = null;
 
   const DEFAULT_API_BASE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:4000" : "";
   const API_BASE = (localStorage.getItem("bullport_api_base") || DEFAULT_API_BASE).replace(/\/$/, "");
@@ -284,7 +284,8 @@
     marketDemoTimer: null,
     tradingQuoteTimer: null,
     loginMfaRequired: false,
-    mfaSetup: null
+    mfaSetup: null,
+    blockingLoadCount: 0
   };
 
   const NAV_GROUPS = [
@@ -329,6 +330,22 @@
   function currentFile() {
     const file = location.pathname.split("/").pop() || "index.html";
     return file === "" ? "index.html" : file;
+  }
+
+  function currentRelativeUrl() {
+    return currentFile() + location.search + location.hash;
+  }
+
+  function safePortalTarget(value, fallback) {
+    try {
+      const target = new URL(String(value || fallback || "dashboard.html"), location.href);
+      if (target.origin !== location.origin) return fallback || "dashboard.html";
+      const file = target.pathname.split("/").pop() || "dashboard.html";
+      if (!/^[a-z0-9-]+\.html$/i.test(file)) return fallback || "dashboard.html";
+      return file + target.search + target.hash;
+    } catch (error) {
+      return fallback || "dashboard.html";
+    }
   }
 
   function queryValue(name) {
@@ -387,6 +404,7 @@
         headers: headers,
         body: "{}",
         credentials: "include",
+        cache: "no-store",
         keepalive: true
       }).catch(function () {});
     } catch (error) {}
@@ -520,17 +538,12 @@
   }
 
   function getState() {
-    try {
-      const raw = sessionStorage.getItem(STATE_KEY);
-      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
-      return Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_STATE)), JSON.parse(raw));
-    } catch (error) {
-      return JSON.parse(JSON.stringify(DEFAULT_STATE));
-    }
+    if (!volatilePortalState) volatilePortalState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+    return volatilePortalState;
   }
 
   function saveState(state) {
-    sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
+    volatilePortalState = state;
   }
 
   function cloneList(rows) {
@@ -832,6 +845,43 @@
     return '<span class="broker-address-copy"><span class="broker-address">' + escapeHtml(value || "-") + '</span><button type="button" class="broker-copy-button" data-broker-action="copy-crypto-address" data-broker-copy-value="' + escapeHtml(value) + '" aria-label="Copy crypto wallet address" title="Copy address"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>Copy</span></button></span>';
   }
 
+  function cryptoDepositQrCard(method, compact) {
+    const address = String(method && method.address ? method.address : "").trim();
+    if (!address) return "";
+    const asset = cryptoDepositAsset(method);
+    const network = String(method && method.network ? method.network : "").trim();
+    return '<div class="broker-crypto-qr-card ' + (compact ? "is-compact" : "") + '"><div class="broker-crypto-qr-head"><span>Scan wallet QR</span><strong>' + escapeHtml([asset, network].filter(Boolean).join(" / ") || "Crypto wallet") + '</strong></div><div class="broker-crypto-qr-canvas" data-broker-crypto-qr="' + escapeHtml(address) + '" data-broker-crypto-label="' + escapeHtml([asset, network].filter(Boolean).join(" ")) + '" aria-label="QR code for crypto deposit wallet"></div><p>Scan this code at a Bitcoin ATM, crypto ATM, or wallet app to deposit to the address above.</p></div>';
+  }
+
+  function renderCryptoQrCodes(root) {
+    const scope = root || document;
+    scope.querySelectorAll("[data-broker-crypto-qr]").forEach(function (target) {
+      if (target.dataset.brokerQrRendered === "true") return;
+      const address = target.getAttribute("data-broker-crypto-qr") || "";
+      if (!address) return;
+      target.dataset.brokerQrRendered = "true";
+      target.innerHTML = "";
+      if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+        target.textContent = "QR code unavailable";
+        target.classList.add("is-unavailable");
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      target.appendChild(canvas);
+      window.QRCode.toCanvas(canvas, address, {
+        width: 172,
+        margin: 1,
+        errorCorrectionLevel: "M",
+        color: { dark: "#101713ff", light: "#ffffffff" }
+      }, function (error) {
+        if (!error) return;
+        target.innerHTML = "";
+        target.textContent = "QR code unavailable";
+        target.classList.add("is-unavailable");
+      });
+    });
+  }
+
   function depositRouteTitle(method) {
     if (method.type === "BANK") return method.bankName || "Bank transfer";
     if (method.type === "CRYPTO") return [method.name || method.currency || "Crypto", method.network].filter(Boolean).join(" - ");
@@ -873,7 +923,7 @@
         { label: "Wallet address", value: cryptoAddressCopyControl(method.address) },
         { label: "Tag or memo", value: escapeHtml(method.tagOrMemo || "Not required") },
         { label: "Posting rule", value: escapeHtml(method.postingWindow || "After chain and finance confirmation") }
-      ]) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Submit the transaction hash after sending funds to this wallet.") + '</div>';
+      ]) + cryptoDepositQrCard(method, false) + '<div class="broker-funding-note">' + escapeHtml(method.instructions || "Submit the transaction hash after sending funds to this wallet.") + '</div>';
     } else {
       detail = '<div class="broker-card-logos" aria-label="Supported card networks">' + (method.networks || ["VISA", "Mastercard", "Verve", "AmEx"]).map(function (network) { return "<span>" + escapeHtml(network) + "</span>"; }).join("") + '</div><div class="broker-funding-note">' + escapeHtml(method.description || "Card funding is reserved for the next release.") + "</div>";
     }
@@ -916,7 +966,7 @@
       { label: "Account number", value: escapeHtml(method.accountNumber || "-") },
       { label: "Sort / SWIFT", value: escapeHtml([method.sortCode, method.swift].filter(Boolean).join(" / ") || "-") }
     ];
-    return '<div class="broker-deposit-proof-modal"><div class="broker-deposit-proof-intro"><span>' + (isResubmission ? "Proof resubmission" : isCrypto ? "Crypto funding" : "Bank transfer") + '</span><p>' + (isResubmission ? "Operations requested fresh proof for " + escapeHtml(deposit.reference || "this deposit") + "." : note) + ' Finance reviews the proof before wallet credit.</p></div><div class="broker-deposit-proof-layout"><aside class="broker-deposit-proof-card"><small>Funding destination</small><strong>' + title + '</strong>' + keyValueRows(destinationRows) + '<div class="broker-deposit-proof-note"><span>Posting window</span><p>' + timeline + '</p></div><div class="broker-deposit-proof-note"><span>Required proof</span><p>' + escapeHtml(depositProofSummary(method)) + '</p></div>' + (deposit && deposit.reviewNote ? '<div class="broker-deposit-proof-note"><span>Operations note</span><p>' + escapeHtml(deposit.reviewNote) + '</p></div>' : '') + '<p class="broker-deposit-proof-instructions">' + escapeHtml(method.proofInstructions || method.instructions || "Use your BullPort account reference, then submit proof.") + '</p></aside><div class="broker-deposit-proof-form"><input type="hidden" name="depositMethodId" value="' + escapeHtml(method.id) + '"><input type="hidden" name="depositMethodType" value="' + escapeHtml(method.type) + '">' + (isResubmission ? '<input type="hidden" name="depositResubmitId" value="' + escapeHtml(deposit.id) + '">' : '') + '<div class="broker-form-grid">' + depositProofFields(method, deposit) + '</div></div></div></div>';
+    return '<div class="broker-deposit-proof-modal"><div class="broker-deposit-proof-intro"><span>' + (isResubmission ? "Proof resubmission" : isCrypto ? "Crypto funding" : "Bank transfer") + '</span><p>' + (isResubmission ? "Operations requested fresh proof for " + escapeHtml(deposit.reference || "this deposit") + "." : note) + ' Finance reviews the proof before wallet credit.</p></div><div class="broker-deposit-proof-layout"><aside class="broker-deposit-proof-card"><small>Funding destination</small><strong>' + title + '</strong>' + keyValueRows(destinationRows) + (isCrypto ? cryptoDepositQrCard(method, true) : '') + '<div class="broker-deposit-proof-note"><span>Posting window</span><p>' + timeline + '</p></div><div class="broker-deposit-proof-note"><span>Required proof</span><p>' + escapeHtml(depositProofSummary(method)) + '</p></div>' + (deposit && deposit.reviewNote ? '<div class="broker-deposit-proof-note"><span>Operations note</span><p>' + escapeHtml(deposit.reviewNote) + '</p></div>' : '') + '<p class="broker-deposit-proof-instructions">' + escapeHtml(method.proofInstructions || method.instructions || "Use your BullPort account reference, then submit proof.") + '</p></aside><div class="broker-deposit-proof-form"><input type="hidden" name="depositMethodId" value="' + escapeHtml(method.id) + '"><input type="hidden" name="depositMethodType" value="' + escapeHtml(method.type) + '">' + (isResubmission ? '<input type="hidden" name="depositResubmitId" value="' + escapeHtml(deposit.id) + '">' : '') + '<div class="broker-form-grid">' + depositProofFields(method, deposit) + '</div></div></div></div>';
   }
 
   function depositProofFields(method, deposit) {
@@ -1393,6 +1443,11 @@
     state.notifications = DEMO.notifications.slice();
     saveState(state);
     if (appState.data) appState.data.notifications = rows || [];
+    if (appState.notificationUnreadCount > 0 && navigator.setAppBadge) {
+      navigator.setAppBadge(appState.notificationUnreadCount).catch(function () {});
+    } else if (navigator.clearAppBadge) {
+      navigator.clearAppBadge().catch(function () {});
+    }
     updateNotificationBell();
     refreshOpenNotificationMenu();
   }
@@ -1809,6 +1864,7 @@
       const response = await fetch(API_BASE + path, Object.assign({}, options || {}, {
         headers: headers,
         credentials: "include",
+        cache: "no-store",
         signal: controller ? controller.signal : undefined
       }));
       const payload = await response.json().catch(function () { return {}; });
@@ -1884,7 +1940,7 @@
         }
         if (!hasClientTabSession()) {
           appState.authRedirecting = true;
-          sessionStorage.setItem("bullport_return_to", currentFile());
+          sessionStorage.setItem("bullport_return_to", currentRelativeUrl());
           clearClientTabSession();
           closeCookieSession();
           appState.apiMessage = "Sign in required";
@@ -1896,6 +1952,10 @@
         const data = await apiRequest("/api/v1/client/dashboard", { method: "GET" }, false);
         await pageSpecificData(data);
         syncBackendData(data);
+        if (window.BullPortPWA && typeof window.BullPortPWA.reconcile === "function") {
+          await window.BullPortPWA.reconcile();
+        }
+        await handlePushNotificationDeepLink();
         appState.apiOnline = true;
         appState.apiMessage = "API live";
         appState.apiLoaded = true;
@@ -1908,7 +1968,7 @@
         appState.apiLoaded = true;
         if (error && error.status === 401 && !isAuthPage()) {
           appState.authRedirecting = true;
-          sessionStorage.setItem("bullport_return_to", currentFile());
+          sessionStorage.setItem("bullport_return_to", currentRelativeUrl());
           setTimeout(function () { location.replace("login.html"); }, 50);
         }
         return false;
@@ -2001,6 +2061,22 @@
     if (severity === "SUCCESS") return "success";
     if (severity === "WARNING" || severity === "CRITICAL") return "warning";
     return "info";
+  }
+
+  async function handlePushNotificationDeepLink() {
+    const notificationId = queryValue("pushNotification");
+    if (!notificationId) return;
+    try {
+      await apiRequest("/api/v1/client/notifications/" + encodeURIComponent(notificationId) + "/read", {
+        method: "POST",
+        body: "{}"
+      }, false);
+    } catch (error) {
+      if (error && error.status === 401) return;
+    }
+    const params = new URLSearchParams(location.search);
+    params.delete("pushNotification");
+    history.replaceState({}, "", currentFile() + (params.toString() ? "?" + params.toString() : "") + location.hash);
   }
 
   async function pollClientNotifications(showToast) {
@@ -2845,6 +2921,51 @@
     ]) + '<div class="mt-4 flex flex-wrap gap-3"><button type="button" data-broker-action="profile-edit" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Edit profile</button>' + (DEMO.client.emailVerified ? '' : '<button type="button" data-broker-action="verification-resend" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Resend verification</button>') + '</div>');
   }
 
+  function pushDeviceSettingsBody() {
+    const pwa = window.BullPortPWA;
+    const pushState = pwa && typeof pwa.getState === "function"
+      ? pwa.getState()
+      : { supported: false, permission: "unsupported", installed: false, installAvailable: false, serverEnabled: null, subscribed: false, error: "" };
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    let title = "Ready to enable";
+    let detail = "BullPort will ask for permission only after you choose Enable notifications.";
+    let tone = "is-ready";
+    if (!pushState.supported) {
+      title = "Not supported on this browser";
+      detail = "Use a current Chrome, Edge, Safari, Android, or installed iPhone/iPad web app.";
+      tone = "is-warning";
+    } else if (pushState.serverEnabled === false) {
+      title = "Waiting for secure server setup";
+      detail = "Device notifications will become available after BullPort enables its delivery keys.";
+      tone = "is-warning";
+    } else if (pushState.permission === "denied") {
+      title = "Notifications are blocked";
+      detail = "Re-enable BullPort notifications in your browser or device settings, then return here.";
+      tone = "is-warning";
+    } else if (ios && !pushState.installed) {
+      title = "Install BullPort first";
+      detail = "On iPhone or iPad, use Share, then Add to Home Screen. Open the installed app and return to Settings.";
+      tone = "is-warning";
+    } else if (pushState.subscribed) {
+      title = "Notifications enabled on this device";
+      detail = "Privacy-safe alerts can arrive when BullPort is closed. Account details remain inside the signed-in portal.";
+      tone = "is-live";
+    } else if (pushState.permission === "granted") {
+      title = "Permission granted";
+      detail = "Choose Enable notifications to securely connect this device to your BullPort account.";
+    }
+    if (pushState.error) detail = pushState.error;
+
+    const primaryAction = pushState.subscribed
+      ? '<button type="button" data-broker-action="push-disable" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Disable on this device</button>'
+      : '<button type="button" data-broker-action="push-enable" class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" ' + (!pushState.supported || pushState.serverEnabled === false || pushState.permission === "denied" || (ios && !pushState.installed) ? "disabled" : "") + '>Enable notifications on this device</button>';
+    const installAction = !pushState.installed && (pushState.installAvailable || ios)
+      ? '<button type="button" data-broker-action="pwa-install" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Install BullPort</button>'
+      : "";
+
+    return '<div class="bp-push-device ' + tone + '"><div class="bp-push-device-icon" aria-hidden="true">' + svg("bell", true) + '</div><div class="bp-push-device-copy"><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(detail) + '</p><small>Lock-screen messages never include balances, amounts, KYC details, or other private account data.</small><div class="bp-push-device-actions">' + primaryAction + installAction + '</div></div></div>';
+  }
+
   function settingsBody() {
     const preferences = appState.preferences || {};
     const sessions = (appState.data && appState.data.sessions) || [];
@@ -2852,6 +2973,7 @@
       + '<div class="xl:col-span-7">' + section("Notification and payout preferences", "These controls update the client account and active investment instructions.", '<div class="broker-form-grid"><label class="broker-form-field"><span><input data-setting="emailNotifications" type="checkbox" ' + (preferences.emailNotifications !== false ? 'checked' : '') + '> Email notifications</span></label><label class="broker-form-field"><span><input data-setting="inAppNotifications" type="checkbox" ' + (preferences.inAppNotifications !== false ? 'checked' : '') + '> In-app notifications</span></label><label class="broker-form-field"><span><input data-setting="marketAlerts" type="checkbox" ' + (preferences.marketAlerts !== false ? 'checked' : '') + '> Market alerts</span></label><label class="broker-form-field"><span>Distribution preference</span><select data-setting="distributionPreference"><option value="WALLET" ' + (preferences.distributionPreference !== 'REINVEST' ? 'selected' : '') + '>Credit wallet</option><option value="REINVEST" ' + (preferences.distributionPreference === 'REINVEST' ? 'selected' : '') + '>Reinvest</option></select></label></div><button type="button" data-broker-action="settings-save" class="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save preferences</button>') + '</div>'
       + '<div class="xl:col-span-5">' + section("Password security", "Changing your password revokes every other active session.", '<button type="button" data-broker-action="password-change" class="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground">Change password</button>') + '</div>'
       + '</div>'
+      + section("Device notifications", "Install BullPort and choose which signed-in devices may receive background alerts.", pushDeviceSettingsBody())
       + section("Active sessions", "Review and revoke browser sessions connected to this account.", sessions.length ? table(["Browser", "IP address", "Last used", "Expires", "Action"], sessions.map(function (row) { return [row.userAgent || "Unknown browser", row.ipAddress || "Unknown", row.lastUsedAt ? formatDate(row.lastUsedAt) : "Not recorded", formatDate(row.expiresAt), '<button type="button" data-broker-action="session-revoke" data-broker-session-id="' + row.id + '" class="font-semibold text-primary">Revoke</button>']; })) : '<div class="rounded-lg border border-border/70 bg-background/60 px-4 py-4 text-sm text-muted-foreground">No active sessions were returned.</div>');
   }
 
@@ -3100,7 +3222,7 @@
     markClientTabSession();
     startClientTabHeartbeat();
     toast(message || "Signed in. Redirecting to the dashboard.", "success");
-    const returnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+    const returnTo = safePortalTarget(sessionStorage.getItem("bullport_return_to"), "dashboard.html");
     sessionStorage.removeItem("bullport_return_to");
     setTimeout(function () { navigateTo(returnTo); }, 250);
   }
@@ -3220,10 +3342,39 @@
   }
 
   function clearBootScreen() {
+    if (appState.blockingLoadCount > 0) return;
     document.documentElement.classList.remove("bp-booting");
+    document.body.removeAttribute("aria-busy");
     document.querySelectorAll(".bp-boot-screen").forEach(function (node) {
       node.setAttribute("hidden", "hidden");
     });
+  }
+
+  function ensureGlobalLoadingScreen() {
+    let screen = document.querySelector(".bp-boot-screen");
+    if (screen) return screen;
+    screen = document.createElement("div");
+    screen.className = "bp-boot-screen";
+    screen.setAttribute("role", "status");
+    screen.setAttribute("aria-live", "polite");
+    screen.setAttribute("aria-label", "BullPort is loading");
+    screen.innerHTML = '<div class="bp-boot-card"><img class="bp-boot-logo" src="/assets/images/bullport-logo.png" alt="BullPort"><strong>Loading BullPort</strong><span data-bp-loader-message>Fetching fresh account data</span></div>';
+    document.body.insertBefore(screen, document.body.firstChild);
+    return screen;
+  }
+
+  function beginGlobalLoading(message) {
+    appState.blockingLoadCount += 1;
+    const screen = ensureGlobalLoadingScreen();
+    const label = screen.querySelector("[data-bp-loader-message]");
+    if (label) label.textContent = message || "Fetching fresh account data";
+    screen.removeAttribute("hidden");
+    document.documentElement.classList.add("bp-booting");
+    document.body.setAttribute("aria-busy", "true");
+    return function () {
+      appState.blockingLoadCount = Math.max(0, appState.blockingLoadCount - 1);
+      if (appState.blockingLoadCount === 0) clearBootScreen();
+    };
   }
 
   function patchNav() {
@@ -3668,12 +3819,14 @@
     const targetTitle = (PAGE_META[targetPage] && PAGE_META[targetPage].title) || "BullPort";
     appState.apiLoaded = false;
     appState.apiMessage = "Securing your BullPort session before opening " + targetTitle + ".";
+    beginGlobalLoading("Opening " + targetTitle);
     renderPortalState(appState.apiMessage, false);
     patchApiStatus();
   }
 
   function navigateTo(page) {
-    showSecureNavigationState(page);
+    if (isAuthPage()) beginGlobalLoading("Opening BullPort");
+    else showSecureNavigationState(page);
     setTimeout(function () { location.href = page; }, 120);
   }
 
@@ -3716,6 +3869,18 @@
       "notifications-toggle", "notification-open", "user-menu-toggle",
       "goto-profile", "goto-settings", "support-create", "support-reply"
     ].indexOf(action) === -1;
+  }
+
+  function brokerActionBlocksPage(action) {
+    return [
+      "api-retry", "auth-login", "auth-mfa-confirm", "auth-register", "auth-reset", "auth-logout",
+      "deposit-bank-confirm", "deposit-crypto-confirm", "deposit-proof-confirm", "beneficiary-confirm", "withdraw-confirm",
+      "plan-detail-submit", "subscribe-plan-confirm", "investment-profit-transfer", "investment-cancel", "download-report",
+      "kyc-start", "kyc-upload-confirm", "kyc-submit", "watchlist-add", "watchlist-remove", "order-confirm", "options-confirm",
+      "profile-confirm", "verification-resend", "settings-save", "password-confirm", "session-revoke",
+      "notification-read", "notifications-read-all", "notification-open", "support-create-confirm", "support-reply-confirm",
+      "push-enable", "push-disable"
+    ].indexOf(action) !== -1;
   }
 
   function setBrokerButtonLoading(node, text) {
@@ -3831,7 +3996,7 @@
           markClientTabSession();
           startClientTabHeartbeat();
           toast("Signed in. Redirecting to the dashboard.", "success");
-          const returnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+          const returnTo = safePortalTarget(sessionStorage.getItem("bullport_return_to"), "dashboard.html");
           sessionStorage.removeItem("bullport_return_to");
           setTimeout(function () { navigateTo(returnTo); }, 250);
         } catch (error) {
@@ -3867,7 +4032,7 @@
           markClientTabSession();
           startClientTabHeartbeat();
           toast("MFA enabled. Redirecting to the dashboard.", "success");
-          const mfaReturnTo = sessionStorage.getItem("bullport_return_to") || "dashboard.html";
+          const mfaReturnTo = safePortalTarget(sessionStorage.getItem("bullport_return_to"), "dashboard.html");
           sessionStorage.removeItem("bullport_return_to");
           setTimeout(function () { navigateTo(mfaReturnTo); }, 250);
         } catch (error) {
@@ -3922,13 +4087,16 @@
         closeUserMenu();
         closeNotificationMenu();
         stopClientNotificationPolling();
+        if (window.BullPortPWA && typeof window.BullPortPWA.disable === "function") {
+          try { await window.BullPortPWA.disable(); } catch (error) {}
+        }
         try {
           await apiRequest("/api/v1/auth/client/logout", { method: "POST", body: "{}" }, false);
         } catch (error) {
           if (!error || error.status !== 401) toast(error.message || "Could not close the session cleanly.", "warning");
         }
         clearClientTabSession();
-        sessionStorage.removeItem(STATE_KEY);
+        volatilePortalState = null;
         navigateTo("login.html");
         return;
       case "goto-deposit":
@@ -4115,7 +4283,7 @@
         try {
           const reportId = node.getAttribute("data-broker-report-id");
           if (!reportId) throw new Error("This report is not available for download.");
-          const response = await fetch(API_BASE + "/api/v1/client/reports/" + encodeURIComponent(reportId) + "/download", { credentials: "include" });
+          const response = await fetch(API_BASE + "/api/v1/client/reports/" + encodeURIComponent(reportId) + "/download", { credentials: "include", cache: "no-store" });
           if (!response.ok) { const payload = await response.json().catch(function () { return {}; }); throw new Error(payload.error && payload.error.message ? payload.error.message : "Report download failed"); }
           const blob = await response.blob();
           const link = document.createElement("a");
@@ -4242,6 +4410,45 @@
           await refreshLiveView("Account preferences updated.", "success");
         } catch (error) { toast((error && error.message) || "Could not update preferences.", "warning"); }
         return;
+      case "push-enable":
+        try {
+          if (!window.BullPortPWA || typeof window.BullPortPWA.enable !== "function") throw new Error("This browser cannot enable BullPort notifications.");
+          await window.BullPortPWA.enable();
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          toast("Notifications enabled on this device.", "success");
+        } catch (error) {
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          toast((error && error.message) || "Could not enable device notifications.", "warning");
+        }
+        return;
+      case "push-disable":
+        try {
+          if (!window.BullPortPWA || typeof window.BullPortPWA.disable !== "function") throw new Error("This browser cannot manage BullPort notifications.");
+          await window.BullPortPWA.disable();
+          renderPage();
+          patchChromeUI();
+          bindActions();
+          toast("Notifications disabled on this device.", "success");
+        } catch (error) {
+          toast((error && error.message) || "Could not disable device notifications.", "warning");
+        }
+        return;
+      case "pwa-install":
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true)) {
+          toast("On iPhone or iPad, use Share, then Add to Home Screen.", "info");
+          return;
+        }
+        try {
+          const installed = window.BullPortPWA && await window.BullPortPWA.install();
+          toast(installed ? "BullPort installed." : "Use your browser menu to install BullPort.", installed ? "success" : "info");
+        } catch (error) {
+          toast("Use your browser menu to install BullPort.", "info");
+        }
+        return;
       case "password-change":
         showModal("Change password", '<p>Your other active sessions will be revoked after this change.</p><div class="broker-form-grid">' + modalField("Current password", "currentPassword", "password", "", 'required autocomplete="current-password"') + modalField("New password", "newPassword", "password", "", 'required autocomplete="new-password" minlength="10"') + '</div>', '<button type="button" class="broker-modal-button" data-broker-close-modal="true">Cancel</button><button type="button" class="broker-modal-button is-primary" data-broker-action="password-confirm">Change password</button>');
         return;
@@ -4256,7 +4463,7 @@
         try {
           const result = await apiRequest("/api/v1/auth/client/sessions/" + encodeURIComponent(node.getAttribute("data-broker-session-id") || ""), { method: "DELETE", body: "{}" }, false);
           if (result.currentSession) {
-            sessionStorage.removeItem(STATE_KEY);
+            volatilePortalState = null;
             navigateTo("login.html");
             return;
           }
@@ -4338,6 +4545,7 @@
 
   function bindActions() {
     markRequiredFields();
+    renderCryptoQrCodes();
     document.querySelectorAll("[data-broker-action]").forEach(function (node) {
       if (node.dataset.brokerBound === "true") return;
       node.dataset.brokerBound = "true";
@@ -4345,10 +4553,12 @@
         if (node.dataset.brokerBusy === "true") return;
         const action = node.getAttribute("data-broker-action");
         const stopLoading = brokerActionHasLoading(action) ? setBrokerButtonLoading(node) : function () {};
+        const stopPageLoading = brokerActionBlocksPage(action) ? beginGlobalLoading("Loading fresh BullPort data") : function () {};
         try {
           await handleAction(action, node);
         } finally {
           stopLoading();
+          stopPageLoading();
         }
       });
       if (node.getAttribute("role") === "button") {
@@ -4403,12 +4613,14 @@
     style.textContent = ""
       + "@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;font-display:swap;src:url('assets/fonts/chakrapetch-869a9485.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}"
       + "html,body{max-width:100%;overflow-x:hidden}"
+      + "html.bp-booting,html.bp-booting body{min-height:100%;background:#f4faf5}html.bp-booting body>.min-h-screen,html.bp-booting body>.bp-auth-page{visibility:hidden;opacity:0}.bp-boot-screen{display:none}.bp-booting .bp-boot-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f4faf5 0%,#fff 46%,#edf7ef 100%);color:#101713}.bp-boot-card{display:flex;min-width:min(360px,calc(100vw - 40px));flex-direction:column;align-items:center;gap:18px;border:1px solid rgba(25,183,47,.16);border-radius:24px;background:rgba(255,255,255,.96);padding:34px 28px;box-shadow:0 28px 80px rgba(15,23,42,.14);text-align:center}.bp-boot-logo{width:168px;height:auto;animation:bpBootPulse 1.35s ease-in-out infinite}.bp-boot-card strong{font-size:15px;font-weight:800}.bp-boot-card span{font-size:12px;font-weight:700;color:#647164;text-transform:uppercase;letter-spacing:.12em}@keyframes bpBootPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.58;transform:scale(.985)}}"
       + ":root,.dark{--sidebar:oklch(12% .02 142);--sidebar-foreground:oklch(87% .005 142);--sidebar-accent:oklch(18% .025 142);--sidebar-accent-foreground:oklch(95% .005 142);--sidebar-border:oklch(20% .025 142);--sidebar-primary:oklch(60% .195 142);--sidebar-primary-foreground:oklch(98.5% 0 0)}"
       + ".broker-axis-label{fill:currentColor;opacity:.65;font-size:11px}"
       + " main table{table-layout:auto}"
       + " main a{text-decoration:none}"
       + " main h1,main h2,main h3{letter-spacing:0}"
       + " .required-asterisk{display:inline-flex;margin-left:4px;color:#ef4444;font-weight:950;line-height:1}.has-required-field>span:first-child .required-asterisk,.bp-auth-field>span .required-asterisk{color:#ef4444}.bp-auth-terms.has-required-field span:after,.bp-terms-check.has-required-field span:after{content:' *';color:#ef4444;font-weight:950}"
+      + " .bp-push-device{display:flex;align-items:flex-start;gap:16px;border:1px solid rgba(25,183,47,.18);border-radius:18px;background:linear-gradient(135deg,#f8fbf8,#fff);padding:18px}.bp-push-device.is-live{border-color:rgba(22,163,74,.34);background:linear-gradient(135deg,#effcf2,#fff)}.bp-push-device.is-warning{border-color:rgba(245,158,11,.3);background:linear-gradient(135deg,#fffbeb,#fff)}.bp-push-device-icon{display:flex;height:46px;width:46px;flex:none;align-items:center;justify-content:center;border-radius:14px;background:rgba(25,183,47,.12);color:#15803d}.bp-push-device-icon svg{height:21px;width:21px}.bp-push-device-copy{min-width:0}.bp-push-device-copy>strong{display:block;color:#101713;font-size:15px;font-weight:900}.bp-push-device-copy>p{margin:5px 0 0;color:#536055;font-size:13px;line-height:1.55}.bp-push-device-copy>small{display:block;margin-top:7px;color:#647164;font-size:11px;line-height:1.5}.bp-push-device-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.bp-push-device-actions button:disabled{cursor:not-allowed;opacity:.5}.dark .bp-push-device{background:#101713;border-color:rgba(74,222,128,.22)}.dark .bp-push-device-copy>strong{color:#f8fafc}.dark .bp-push-device-copy>p,.dark .bp-push-device-copy>small{color:#94a3b8}"
       + " main .rounded-xl{border-radius:12px}"
       + " main .rounded-2xl{border-radius:18px}"
       + " aside.bg-sidebar{background:#111b15!important;color:#dbe7dd;border-right:1px solid rgba(255,255,255,.08)}"
@@ -4472,6 +4684,7 @@
       + " .broker-user-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;border-bottom:1px solid #e2e8f0;padding:15px 16px}.broker-user-avatar{display:flex;height:42px;width:42px;align-items:center;justify-content:center;border-radius:999px;background:#19b72f;color:#fff;font-size:13px;font-weight:900}.broker-user-head strong{display:block;font-size:14px;font-weight:850}.broker-user-head span{display:block;margin-top:2px;overflow:hidden;color:#64748b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.broker-user-list{display:grid;padding:6px}.broker-user-item{display:grid;grid-template-columns:36px 1fr;gap:10px;align-items:center;width:100%;border:0;border-radius:12px;background:transparent;padding:10px;text-align:left;cursor:pointer}.broker-user-item:hover{background:#f1f8f3}.broker-user-item i{display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:10px;background:#eef8f0;color:#16a34a}.broker-user-item svg{height:17px;width:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-user-item span{display:block}.broker-user-item strong{display:block;color:#101713;font-size:13px;font-weight:850}.broker-user-item em{display:block;margin-top:4px;color:#64748b;font-size:12px;font-style:normal}.broker-user-item.is-danger i{background:#fef2f2;color:#b91c1c}.broker-user-item.is-danger strong{color:#b91c1c}.broker-user-item.is-danger:hover{background:#fef2f2}"
       + " .broker-deposit-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.broker-deposit-columns.is-count-1{grid-template-columns:minmax(0,1fr)}.broker-deposit-columns.is-count-2{grid-template-columns:repeat(2,minmax(0,1fr))}.broker-deposit-column{min-width:0;border:1px solid rgba(148,163,184,.24);border-radius:18px;background:linear-gradient(180deg,rgba(248,250,252,.74),rgba(255,255,255,.58));padding:14px}.broker-deposit-column-head{padding:4px 4px 13px}.broker-deposit-column-head h2{margin:0;color:#101713;font-size:16px;font-weight:900}.broker-deposit-column-head p{margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.5}.broker-deposit-routes{display:grid;gap:12px}.broker-empty-route{border:1px dashed rgba(148,163,184,.35);border-radius:14px;background:rgba(255,255,255,.64);padding:15px;color:#64748b;font-size:13px}.broker-deposit-column .broker-funding-route summary{min-height:118px}.dark .broker-deposit-column{border-color:rgba(148,163,184,.18);background:linear-gradient(180deg,rgba(15,23,18,.58),rgba(15,23,42,.36))}.dark .broker-deposit-column-head h2{color:#f8fafc}.dark .broker-deposit-column-head p,.dark .broker-empty-route{color:#94a3b8}.dark .broker-empty-route{background:rgba(15,23,18,.38)}"
       + " .broker-funding-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.broker-funding-grid.is-withdrawal{grid-template-columns:repeat(2,minmax(0,1fr))}.broker-funding-route{overflow:hidden;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(248,250,252,.76));box-shadow:0 14px 34px rgba(15,23,42,.06)}.broker-funding-route.is-primary{border-color:rgba(34,197,94,.24);background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(240,253,244,.82))}.broker-funding-route summary{display:flex;min-height:132px;cursor:pointer;list-style:none;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.broker-funding-route summary:hover{background:rgba(22,163,74,.035)}.broker-funding-route summary::-webkit-details-marker{display:none}.broker-funding-route summary span{min-width:0}.broker-funding-route summary em{display:inline-flex;height:28px;width:28px;align-items:center;justify-content:center;border-radius:999px;background:#eef8f0;color:#15803d;font-size:11px;font-style:normal;font-weight:900}.broker-funding-route summary strong{display:block;margin-top:14px;color:#101713;font-size:16px;font-weight:850}.broker-funding-route summary small{display:block;margin-top:7px;color:#64748b;font-size:12px;line-height:1.45}.broker-route-side{display:flex!important;flex:none!important;align-items:center;gap:8px}.broker-route-side i{display:inline-flex;height:30px;width:30px;align-items:center;justify-content:center;border:1px solid rgba(22,163,74,.22);border-radius:999px;background:linear-gradient(180deg,#fff,#f4fbf6);color:#15803d;font-style:normal;box-shadow:0 8px 18px rgba(15,23,42,.08);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.broker-route-side i svg{height:16px;width:16px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}.broker-funding-route summary:hover .broker-route-side i{border-color:rgba(22,163,74,.42);box-shadow:0 10px 24px rgba(22,163,74,.14)}.broker-funding-route[open] .broker-route-side i{transform:rotate(180deg);border-color:rgba(22,163,74,.46);box-shadow:0 0 0 3px rgba(22,163,74,.1)}.broker-funding-detail{border-top:1px solid rgba(148,163,184,.2);padding:16px 18px 18px}.broker-funding-note{margin:12px 0;border-radius:12px;background:rgba(15,23,42,.04);padding:11px 12px;color:#475569;font-size:12px;line-height:1.5}.broker-address{display:inline-block;max-width:100%;overflow-wrap:anywhere}.broker-address-copy{display:flex;align-items:center;gap:8px;max-width:100%}.broker-address-copy .broker-address{min-width:0;flex:1}.broker-copy-button{display:inline-flex;flex:none;align-items:center;gap:6px;border:1px solid rgba(22,163,74,.24);border-radius:8px;background:#fff;padding:5px 8px;color:#15803d;font-size:11px;font-weight:800;line-height:1;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease}.broker-copy-button:hover,.broker-copy-button:focus-visible{border-color:rgba(22,163,74,.46);background:#f0fdf4;box-shadow:0 0 0 3px rgba(22,163,74,.1);outline:none}.broker-copy-button svg{height:14px;width:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.broker-card-logos{display:flex;flex-wrap:wrap;gap:8px}.broker-card-logos span{display:inline-flex;height:34px;align-items:center;border:1px solid rgba(148,163,184,.28);border-radius:10px;background:#fff;padding:0 12px;color:#0f172a;font-size:11px;font-weight:900;letter-spacing:.04em}.dark .broker-funding-route{border-color:rgba(148,163,184,.18);background:linear-gradient(135deg,rgba(15,23,18,.84),rgba(15,23,42,.56))}.dark .broker-funding-route.is-primary{border-color:rgba(74,222,128,.24);background:linear-gradient(135deg,rgba(15,23,18,.88),rgba(20,83,45,.24))}.dark .broker-funding-route summary strong{color:#f8fafc}.dark .broker-funding-route summary small,.dark .broker-funding-note{color:#94a3b8}.dark .broker-funding-note{background:rgba(255,255,255,.05)}.dark .broker-route-side i{border-color:rgba(74,222,128,.24);background:linear-gradient(180deg,rgba(15,23,18,.92),rgba(22,101,52,.2));color:#86efac}.dark .broker-copy-button{border-color:rgba(74,222,128,.24);background:rgba(15,23,18,.82);color:#86efac}.dark .broker-copy-button:hover,.dark .broker-copy-button:focus-visible{border-color:rgba(74,222,128,.46);background:rgba(22,101,52,.22)}.dark .broker-card-logos span{border-color:rgba(148,163,184,.22);background:rgba(15,23,18,.8);color:#e2e8f0}@media (max-width:1100px){.broker-funding-grid,.broker-funding-grid.is-withdrawal{grid-template-columns:1fr}.broker-funding-route summary{min-height:auto}}@media (max-width:640px){.broker-address-copy{align-items:flex-start;flex-direction:column}.broker-copy-button{width:max-content}}"
+      + " .broker-crypto-qr-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;margin:14px 0;border:1px solid rgba(22,163,74,.2);border-radius:16px;background:linear-gradient(135deg,#f0fdf4,#fff);padding:14px;color:#101713}.broker-crypto-qr-card.is-compact{grid-template-columns:1fr;justify-items:center;text-align:center}.broker-crypto-qr-head{min-width:0}.broker-crypto-qr-head span{display:block;color:#15803d;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.broker-crypto-qr-head strong{display:block;margin-top:5px;overflow-wrap:anywhere;font-size:13px;font-weight:900;line-height:1.3}.broker-crypto-qr-card p{grid-column:1/-1;margin:0;color:#475569;font-size:12px;line-height:1.5}.broker-crypto-qr-canvas{display:grid;place-items:center;width:188px;height:188px;border:8px solid #fff;border-radius:14px;background:#fff;box-shadow:0 12px 28px rgba(15,23,42,.1)}.broker-crypto-qr-card.is-compact .broker-crypto-qr-canvas{width:168px;height:168px}.broker-crypto-qr-canvas canvas{width:100%!important;height:100%!important}.broker-crypto-qr-canvas.is-unavailable{padding:14px;color:#b45309;font-size:12px;font-weight:850;text-align:center}.dark .broker-crypto-qr-card{border-color:rgba(74,222,128,.24);background:linear-gradient(135deg,rgba(20,83,45,.22),rgba(15,23,18,.88));color:#f8fafc}.dark .broker-crypto-qr-head span{color:#86efac}.dark .broker-crypto-qr-card p{color:#94a3b8}.dark .broker-crypto-qr-canvas{border-color:#fff;background:#fff}@media (max-width:640px){.broker-crypto-qr-card{grid-template-columns:1fr;justify-items:center;text-align:center}.broker-crypto-qr-canvas{width:172px;height:172px}}"
       + " .broker-kyc-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}.broker-kyc-summary div{border:1px solid rgba(148,163,184,.25);border-radius:12px;background:rgba(248,250,252,.72);padding:12px}.broker-kyc-summary span{display:block;color:#64748b;font-size:11px;font-weight:750;text-transform:uppercase}.broker-kyc-summary strong{display:block;margin-top:5px;color:#101713;font-size:17px}.broker-kyc-requirement{overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:14px;background:rgba(255,255,255,.72)}.broker-kyc-requirement+.broker-kyc-requirement{margin-top:14px}.broker-kyc-requirement-head{display:flex;justify-content:space-between;gap:18px;padding:16px}.broker-kyc-title-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px}.broker-kyc-title-row h3{margin:0;font-size:15px;font-weight:800}.broker-kyc-requirement-head p{max-width:620px;margin:7px 0 0;color:#64748b;font-size:12px;line-height:1.55}.broker-kyc-mode{flex:none;color:#15803d;font-size:11px;font-weight:800;text-transform:uppercase}.broker-kyc-slots{display:grid;border-top:1px solid rgba(148,163,184,.22)}.broker-kyc-slot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 16px}.broker-kyc-slot+.broker-kyc-slot{border-top:1px solid rgba(148,163,184,.18)}.broker-kyc-slot-copy{min-width:0}.broker-kyc-slot-copy>span{display:block;color:#64748b;font-size:10px;font-weight:800;text-transform:uppercase}.broker-kyc-slot-copy strong{display:block;overflow:hidden;margin-top:3px;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.broker-kyc-slot-copy small{display:block;margin-top:3px;color:#64748b;font-size:11px}.broker-kyc-slot-action{display:flex;flex:none;align-items:center;gap:9px}.broker-kyc-upload{border:1px solid rgba(34,197,94,.35);border-radius:9px;background:rgba(34,197,94,.08);color:#15803d;padding:8px 10px;font-size:11px;font-weight:800;cursor:pointer}.broker-kyc-upload:hover{background:rgba(34,197,94,.15)}.broker-kyc-rejection{margin:7px 0 0!important;color:#be123c!important;font-size:11px!important;font-weight:650}.dark .broker-kyc-summary div,.dark .broker-kyc-requirement{background:rgba(15,23,18,.58)}.dark .broker-kyc-summary strong{color:#e7f2e9}.dark .broker-kyc-requirement-head p,.dark .broker-kyc-slot-copy>span,.dark .broker-kyc-slot-copy small{color:#94a3b8}.dark .broker-kyc-mode,.dark .broker-kyc-upload{color:#86efac}"
       + " .broker-modal{position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px}"
       + " .broker-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.56);backdrop-filter:blur(5px)}"
@@ -4582,6 +4795,26 @@
       });
     }
   }
+
+  window.addEventListener("bullport:push-received", function () {
+    if (isAuthPage() || !appState.apiOnline) return;
+    pollClientNotifications(false).then(function () {
+      updateNotificationBell();
+      if (currentFile() === "notifications.html") {
+        renderPage();
+        patchChromeUI();
+        bindActions();
+      }
+    });
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible" || isAuthPage() || !appState.apiOnline) return;
+    pollClientNotifications(false);
+    if (window.BullPortPWA && typeof window.BullPortPWA.reconcile === "function") {
+      window.BullPortPWA.reconcile();
+    }
+  });
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", apply);
